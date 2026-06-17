@@ -54,6 +54,10 @@ local function main()
 	end
 
 	local function collectScripts()
+		if env.GetClientScripts then
+			return env.GetClientScripts(false)
+		end
+
 		local scripts = {}
 		for _, obj in pairs(game:GetDescendants()) do
 			if isSearchableScript(obj) then
@@ -236,7 +240,12 @@ local function main()
 				local percent = math.floor((i / total) * 1000) / 10
 				setStatus(("Indexing: %d / %d scripts (%.1f%%)"):format(i, total, percent))
 
-				local success = pcall(env.decompile, scriptInstance)
+				local success
+				if env.DecompileQueue and env.DecompileQueue.Submit then
+					success = pcall(env.DecompileQueue.Submit, scriptInstance, {Priority = 10})
+				else
+					success = pcall(env.decompile, scriptInstance)
+				end
 				if success then
 					indexed += 1
 				end
@@ -246,7 +255,12 @@ local function main()
 
 			indexing = false
 			rebuildScriptLookup()
-			setStatus(("Index complete: %d / %d scripts processed."):format(indexed, total))
+			if env.GetClientSurfaceCoverage then
+				local coverage = env.GetClientSurfaceCoverage()
+				setStatus(("Index complete: %d / %d processed. Surface: %d scripts, %d remotes."):format(indexed, total, coverage.AllScripts, coverage.Remotes))
+			else
+				setStatus(("Index complete: %d / %d scripts processed."):format(indexed, total))
+			end
 		end)
 	end
 

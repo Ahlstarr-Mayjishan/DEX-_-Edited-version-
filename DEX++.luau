@@ -87,7 +87,7 @@ end
 local isFsSupported = readfile and writefile and isfile and isfolder and listfiles and delfile and delfolder
 
 -- Main vars
-local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
+local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
 local API, RMD
 
 -- Default Settings
@@ -226,7 +226,7 @@ end
 Main = (function()
 	local Main = {}
 
-	Main.ModuleList = {"Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations"}
+	Main.ModuleList = {"Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap"}
 	Main.Elevated = false
 	Main.AllowDraggableOnMobile = true
 	Main.MissingEnv = {}
@@ -498,6 +498,7 @@ Main = (function()
 		SettingsWindow = Apps.SettingsWindow
 		CodeSearch = Apps.CodeSearch
 		ScriptRelations = Apps.ScriptRelations
+		RemoteUsageMap = Apps.RemoteUsageMap
 		
 		
 		--SecretServicePanel = Apps.SecretServicePanel
@@ -511,7 +512,8 @@ Main = (function()
 			Notebook = Notebook,
 			SettingsWindow = SettingsWindow,
 			CodeSearch = CodeSearch,
-			ScriptRelations = ScriptRelations
+			ScriptRelations = ScriptRelations,
+			RemoteUsageMap = RemoteUsageMap
 			--SecretServicePanel = SecretServicePanel,
 		}
 		
@@ -589,6 +591,7 @@ Main = (function()
 		env.setclipboard = setclipboard
 		env.getnilinstances = getnilinstances or get_nil_instances
 		env.getloadedmodules = getloadedmodules
+		env.getconnections = getconnections
 		
 		env.isViableDecompileScript = function(obj)
 			if obj:IsA("ModuleScript") then
@@ -599,6 +602,151 @@ Main = (function()
 				return true
 			end
 			return false
+		end
+
+		local remoteClassMap = {
+			RemoteEvent = true,
+			RemoteFunction = true,
+			UnreliableRemoteEvent = true,
+			BindableEvent = true,
+			BindableFunction = true,
+		}
+
+		local function addUniqueInstance(list, seen, obj)
+			if typeof(obj) == "Instance" and not seen[obj] then
+				seen[obj] = true
+				list[#list+1] = obj
+				return true
+			end
+			return false
+		end
+
+		local function addDescendantMatches(list, seen, predicate)
+			for _, obj in pairs(game:GetDescendants()) do
+				if predicate(obj) then
+					addUniqueInstance(list, seen, obj)
+				end
+			end
+		end
+
+		local function addNilMatches(list, seen, predicate)
+			if not env.getnilinstances then return end
+			local success, nilInstances = pcall(env.getnilinstances)
+			if not success or type(nilInstances) ~= "table" then return end
+			for _, obj in pairs(nilInstances) do
+				if predicate(obj) then
+					addUniqueInstance(list, seen, obj)
+				end
+			end
+		end
+
+		local function addLoadedModules(list, seen)
+			if not env.getloadedmodules then return end
+			local success, loadedModules = pcall(env.getloadedmodules)
+			if not success or type(loadedModules) ~= "table" then return end
+			for _, obj in pairs(loadedModules) do
+				if typeof(obj) == "Instance" and obj:IsA("ModuleScript") then
+					addUniqueInstance(list, seen, obj)
+				end
+			end
+		end
+
+		local function addGcScriptRefs(list, seen, allowNonViable)
+			if not env.getgc then return end
+			local success, gcObjects = pcall(env.getgc)
+			if not success or type(gcObjects) ~= "table" then return end
+
+			for _, value in pairs(gcObjects) do
+				if typeof(value) == "function" then
+					local envSuccess, fnEnv = pcall(getfenv, value)
+					local scr = envSuccess and type(fnEnv) == "table" and rawget(fnEnv, "script")
+					if typeof(scr) == "Instance" and scr:IsA("LuaSourceContainer") then
+						if allowNonViable or env.isViableDecompileScript(scr) then
+							addUniqueInstance(list, seen, scr)
+						end
+					end
+				end
+			end
+		end
+
+		env.GetClientScripts = function(allowNonViable)
+			local scripts, seen = {}, {}
+			local function isWantedScript(obj)
+				if typeof(obj) ~= "Instance" or not obj:IsA("LuaSourceContainer") then return false end
+				return allowNonViable or env.isViableDecompileScript(obj)
+			end
+
+			addDescendantMatches(scripts, seen, isWantedScript)
+			addNilMatches(scripts, seen, isWantedScript)
+			addLoadedModules(scripts, seen)
+			addGcScriptRefs(scripts, seen, allowNonViable)
+
+			return scripts
+		end
+
+		env.GetClientRemotes = function()
+			local remotes, seen = {}, {}
+			local function isRemote(obj)
+				return typeof(obj) == "Instance" and remoteClassMap[obj.ClassName] == true
+			end
+
+			addDescendantMatches(remotes, seen, isRemote)
+			addNilMatches(remotes, seen, isRemote)
+
+			return remotes
+		end
+
+		env.GetClientSurfaceCoverage = function()
+			local allScripts = env.GetClientScripts(true)
+			local viableScripts = env.GetClientScripts(false)
+			local remotes = env.GetClientRemotes()
+			local cached = 0
+
+			if env.DecompileCache and env.DecompileCache.GetEntries then
+				local entries = env.DecompileCache.GetEntries()
+				for _ in pairs(entries) do
+					cached += 1
+				end
+			end
+
+			return {
+				AllScripts = #allScripts,
+				ViableScripts = #viableScripts,
+				Remotes = #remotes,
+				CachedScripts = cached,
+				HasNilInstances = env.getnilinstances ~= nil,
+				HasLoadedModules = env.getloadedmodules ~= nil,
+				HasGc = env.getgc ~= nil,
+				HasConnections = env.getconnections ~= nil,
+			}
+		end
+
+		env.GetScriptConstants = function(scriptInstance)
+			local constants, seen = {}, {}
+			if not env.getgc or not env.getconstants then return constants end
+
+			local success, gcObjects = pcall(env.getgc)
+			if not success or type(gcObjects) ~= "table" then return constants end
+
+			for _, value in pairs(gcObjects) do
+				if typeof(value) == "function" then
+					local envSuccess, fnEnv = pcall(getfenv, value)
+					if envSuccess and type(fnEnv) == "table" and rawget(fnEnv, "script") == scriptInstance then
+						local constSuccess, constList = pcall(env.getconstants, value)
+						if constSuccess and type(constList) == "table" then
+							for _, constant in pairs(constList) do
+								local key = tostring(constant)
+								if not seen[key] then
+									seen[key] = true
+									constants[#constants+1] = constant
+								end
+							end
+						end
+					end
+				end
+			end
+
+			return constants
 		end
 		env.request = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
 		
@@ -891,8 +1039,7 @@ Main = (function()
 			end
 		end
 
-		-- Hook it directly into Dex with smart fallback chain and cache reuse.
-		env.decompile = function(script_instance, ...)
+		local function decompileWithCache(script_instance, ...)
 			local cache = env.DecompileCache
 			if cache then
 				local cachedSource = cache.Read(script_instance)
@@ -906,6 +1053,136 @@ Main = (function()
 				pcall(cache.Write, script_instance, source)
 			end
 			return source
+		end
+
+		local function createDecompileQueue()
+			local queue = {
+				Jobs = {},
+				Running = false,
+				Paused = false,
+				ActiveJob = nil,
+				LastRun = 0,
+				Completed = 0,
+				Failed = 0,
+				MinDelay = 0.12,
+			}
+
+			local function sortJobs()
+				table.sort(queue.Jobs, function(a, b)
+					if a.Priority == b.Priority then
+						return a.CreatedAt < b.CreatedAt
+					end
+					return a.Priority > b.Priority
+				end)
+			end
+
+			local function startWorker()
+				if queue.Running then return end
+				queue.Running = true
+				task.spawn(function()
+					while #queue.Jobs > 0 do
+						if queue.Paused then
+							task.wait(0.2)
+							continue
+						end
+
+						sortJobs()
+						local job = table.remove(queue.Jobs, 1)
+						queue.ActiveJob = job
+
+						local waitTime = queue.MinDelay - (os.clock() - queue.LastRun)
+						if waitTime > 0 then task.wait(waitTime) end
+
+						local success, result = pcall(decompileWithCache, job.Script, table.unpack(job.Args))
+						job.Success = success
+						job.Result = result
+						job.Done = true
+						queue.LastRun = os.clock()
+						queue.ActiveJob = nil
+
+						if success then
+							queue.Completed += 1
+						else
+							queue.Failed += 1
+						end
+
+						if job.Callback then
+							pcall(job.Callback, success, result, job.Script)
+						end
+
+						task.wait()
+					end
+					queue.Running = false
+				end)
+			end
+
+			queue.Submit = function(script_instance, options, ...)
+				options = options or {}
+				local job = {
+					Script = script_instance,
+					Args = {...},
+					Priority = options.Priority or 50,
+					CreatedAt = os.clock(),
+					Callback = options.Callback,
+					Done = false,
+					Success = false,
+					Result = nil,
+				}
+
+				table.insert(queue.Jobs, job)
+				startWorker()
+
+				if options.Async then
+					return job
+				end
+
+				while not job.Done do
+					task.wait()
+				end
+
+				if not job.Success then
+					error(job.Result)
+				end
+				return job.Result
+			end
+
+			queue.GetStatus = function()
+				return {
+					Queued = #queue.Jobs,
+					Running = queue.Running,
+					Paused = queue.Paused,
+					Active = queue.ActiveJob and queue.ActiveJob.Script or nil,
+					Completed = queue.Completed,
+					Failed = queue.Failed,
+				}
+			end
+
+			queue.SetPaused = function(paused)
+				queue.Paused = paused and true or false
+				if not queue.Paused then startWorker() end
+			end
+
+			queue.CancelQueued = function()
+				for _, job in pairs(queue.Jobs) do
+					job.Done = true
+					job.Success = false
+					job.Result = "Cancelled"
+				end
+				table.clear(queue.Jobs)
+			end
+
+			return queue
+		end
+
+		env.DecompileQueue = createDecompileQueue()
+
+		-- Hook it directly into Dex with smart fallback chain and cache reuse.
+		env.decompile = function(script_instance, ...)
+			return env.DecompileQueue.Submit(script_instance, {Priority = 50}, ...)
+		end
+
+		env.decompilebackground = function(script_instance, callback, priority, ...)
+			return env.DecompileQueue.Submit(script_instance, {Priority = priority or 10, Callback = callback, Async = true}, ...)
 		end
 		
 		if Main.Elevated then
@@ -1765,6 +2042,8 @@ Main = (function()
 
 		Main.CreateApp({Name = "Script Relations", IconMap = Main.LargeIcons, Icon = "Watcher", Window = ScriptRelations.Window})
 
+		Main.CreateApp({Name = "Remote Usage", IconMap = Main.LargeIcons, Icon = "Output", Window = RemoteUsageMap.Window})
+
 		--Main.CreateApp({Name = "Secret Service Panel", IconMap = Main.LargeIcons, Icon = "Output", Window = SecretServicePanel.Window})
 		
 		for _, loadedplugin in pairs(Main.Plugins) do
@@ -1903,6 +2182,7 @@ Main = (function()
 		SettingsWindow.Init()
 		CodeSearch.Init()
 		ScriptRelations.Init()
+		RemoteUsageMap.Init()
 		--SecretServicePanel.Init()
 		
 		

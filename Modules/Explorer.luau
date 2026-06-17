@@ -7,7 +7,7 @@
 
 -- Common Locals
 local Main,Lib,Apps,Settings -- Main Containers
-local Explorer, Properties, ScriptViewer, ModelViewer, ScriptRelations, Notebook -- Major Apps
+local Explorer, Properties, ScriptViewer, ModelViewer, ScriptRelations, RemoteUsageMap, Notebook -- Major Apps
 local API,RMD,env,service,plr,create,createSimple -- Main Locals
 
 local function initDeps(data)
@@ -31,6 +31,7 @@ local function initAfterMain()
 	ScriptViewer = Apps.ScriptViewer
 	ModelViewer = Apps.ModelViewer
 	ScriptRelations = Apps.ScriptRelations
+	RemoteUsageMap = Apps.RemoteUsageMap
 	Notebook = Apps.Notebook
 end
 
@@ -948,6 +949,10 @@ local function main()
 		
 		if presentClasses["BindableFunction"] then context:AddRegistered("BLOCK_REMOTE", env.hookfunction == nil) end
 		if presentClasses["BindableFunction"] then context:AddRegistered("UNBLOCK_REMOTE", env.hookfunction == nil) end
+
+		if presentClasses["RemoteEvent"] or presentClasses["RemoteFunction"] or presentClasses["UnreliableRemoteEvent"] or presentClasses["BindableEvent"] or presentClasses["BindableFunction"] then
+			context:AddRegistered("VIEW_REMOTE_USAGE", #sList ~= 1 or not RemoteUsageMap)
+		end
 		
 		
 		
@@ -1433,6 +1438,11 @@ local function main()
 					--print("unblocking ",functionToHook)
 				end
 			end
+		end})
+
+		context:Register("VIEW_REMOTE_USAGE",{Name = "Remote Usage Map", IconMap = Explorer.MiscIcons, Icon = "ExploreData", DisabledIcon = "Empty", OnClick = function()
+			local remote = selection.List[1] and selection.List[1].Obj
+			if remote and RemoteUsageMap then RemoteUsageMap.ShowForRemote(remote) end
 		end})
 
 		context:Register("COPY_API_PAGE",{Name = "Copy Roblox API Page URL", IconMap = Explorer.MiscIcons, Icon = "Reference", OnClick = function()

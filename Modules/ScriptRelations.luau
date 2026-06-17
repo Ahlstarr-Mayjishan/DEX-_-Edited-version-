@@ -51,6 +51,10 @@ local function main()
 		return success and tostring(path) or tostring(obj)
 	end
 	local function collectScripts()
+		if env.GetClientScripts then
+			return env.GetClientScripts(true)
+		end
+
 		local scripts = {}
 		for _, obj in pairs(game:GetDescendants()) do
 			if isScript(obj) then table.insert(scripts, obj) end

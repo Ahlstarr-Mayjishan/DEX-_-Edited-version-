@@ -889,7 +889,7 @@ end,
     
     -- Common Locals
     local Main,Lib,Apps,Settings -- Main Containers
-    local Explorer, Properties, ScriptViewer, ModelViewer, ScriptRelations, Notebook -- Major Apps
+    local Explorer, Properties, ScriptViewer, ModelViewer, ScriptRelations, RemoteUsageMap, Notebook -- Major Apps
     local API,RMD,env,service,plr,create,createSimple -- Main Locals
     
     local function initDeps(data)
@@ -913,6 +913,7 @@ end,
     	ScriptViewer = Apps.ScriptViewer
     	ModelViewer = Apps.ModelViewer
     	ScriptRelations = Apps.ScriptRelations
+    	RemoteUsageMap = Apps.RemoteUsageMap
     	Notebook = Apps.Notebook
     end
     
@@ -1830,6 +1831,10 @@ end,
     		
     		if presentClasses["BindableFunction"] then context:AddRegistered("BLOCK_REMOTE", env.hookfunction == nil) end
     		if presentClasses["BindableFunction"] then context:AddRegistered("UNBLOCK_REMOTE", env.hookfunction == nil) end
+    
+    		if presentClasses["RemoteEvent"] or presentClasses["RemoteFunction"] or presentClasses["UnreliableRemoteEvent"] or presentClasses["BindableEvent"] or presentClasses["BindableFunction"] then
+    			context:AddRegistered("VIEW_REMOTE_USAGE", #sList ~= 1 or not RemoteUsageMap)
+    		end
     		
     		
     		
@@ -2315,6 +2320,11 @@ end,
     					--print("unblocking ",functionToHook)
     				end
     			end
+    		end})
+    
+    		context:Register("VIEW_REMOTE_USAGE",{Name = "Remote Usage Map", IconMap = Explorer.MiscIcons, Icon = "ExploreData", DisabledIcon = "Empty", OnClick = function()
+    			local remote = selection.List[1] and selection.List[1].Obj
+    			if remote and RemoteUsageMap then RemoteUsageMap.ShowForRemote(remote) end
     		end})
     
     		context:Register("COPY_API_PAGE",{Name = "Copy Roblox API Page URL", IconMap = Explorer.MiscIcons, Icon = "Reference", OnClick = function()
@@ -14185,6 +14195,10 @@ end,
     	end
     
     	local function collectScripts()
+    		if env.GetClientScripts then
+    			return env.GetClientScripts(false)
+    		end
+    
     		local scripts = {}
     		for _, obj in pairs(game:GetDescendants()) do
     			if isSearchableScript(obj) then
@@ -14367,7 +14381,12 @@ end,
     				local percent = math.floor((i / total) * 1000) / 10
     				setStatus(("Indexing: %d / %d scripts (%.1f%%)"):format(i, total, percent))
     
-    				local success = pcall(env.decompile, scriptInstance)
+    				local success
+    				if env.DecompileQueue and env.DecompileQueue.Submit then
+    					success = pcall(env.DecompileQueue.Submit, scriptInstance, {Priority = 10})
+    				else
+    					success = pcall(env.decompile, scriptInstance)
+    				end
     				if success then
     					indexed += 1
     				end
@@ -14377,7 +14396,12 @@ end,
     
     			indexing = false
     			rebuildScriptLookup()
-    			setStatus(("Index complete: %d / %d scripts processed."):format(indexed, total))
+    			if env.GetClientSurfaceCoverage then
+    				local coverage = env.GetClientSurfaceCoverage()
+    				setStatus(("Index complete: %d / %d processed. Surface: %d scripts, %d remotes."):format(indexed, total, coverage.AllScripts, coverage.Remotes))
+    			else
+    				setStatus(("Index complete: %d / %d scripts processed."):format(indexed, total))
+    			end
     		end)
     	end
     
@@ -14525,6 +14549,10 @@ end,
     		return success and tostring(path) or tostring(obj)
     	end
     	local function collectScripts()
+    		if env.GetClientScripts then
+    			return env.GetClientScripts(true)
+    		end
+    
     		local scripts = {}
     		for _, obj in pairs(game:GetDescendants()) do
     			if isScript(obj) then table.insert(scripts, obj) end
@@ -14768,6 +14796,257 @@ end,
     	return {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
     end
 end,
+["RemoteUsageMap"] = function()
+    --!strict
+    --[[
+    	Remote Usage Map App Module
+    	Finds cached scripts that mention selected remotes/bindables.
+    ]]
+    -- Common Locals
+    local Main,Lib,Apps,Settings -- Main Containers
+    local Explorer, Properties, ScriptViewer, RemoteUsageMap, Notebook -- Major Apps
+    local API,RMD,env,service,plr,create,createSimple -- Main Locals
+    local function initDeps(data)
+    	Main = data.Main
+    	Lib = data.Lib
+    	Apps = data.Apps
+    	Settings = data.Settings
+    	API = data.API
+    	RMD = data.RMD
+    	env = data.env
+    	service = data.service
+    	plr = data.plr
+    	create = data.create
+    	createSimple = data.createSimple
+    end
+    local function initAfterMain()
+    	Explorer = Apps.Explorer
+    	Properties = Apps.Properties
+    	ScriptViewer = Apps.ScriptViewer
+    	RemoteUsageMap = Apps.RemoteUsageMap
+    	Notebook = Apps.Notebook
+    end
+    local function main()
+    	local RemoteUsageMap = {}
+    	local window, statusLabel, listFrame
+    	local scanToken = 0
+    	local remoteClasses = {
+    		RemoteEvent = true,
+    		RemoteFunction = true,
+    		UnreliableRemoteEvent = true,
+    		BindableEvent = true,
+    		BindableFunction = true,
+    	}
+    	local classMethods = {
+    		RemoteEvent = {"FireServer","OnClientEvent","OnServerEvent"},
+    		RemoteFunction = {"InvokeServer","OnClientInvoke","OnServerInvoke"},
+    		UnreliableRemoteEvent = {"FireServer","OnClientEvent","OnServerEvent"},
+    		BindableEvent = {"Fire","Event"},
+    		BindableFunction = {"Invoke","OnInvoke"},
+    	}
+    	local function setStatus(text)
+    		if statusLabel then statusLabel.Text = text end
+    	end
+    	local function isRemote(obj)
+    		return typeof(obj) == "Instance" and remoteClasses[obj.ClassName] == true
+    	end
+    	local function getPath(obj)
+    		local success, path = pcall(function()
+    			if Explorer and Explorer.GetInstancePath then return Explorer.GetInstancePath(obj) end
+    			return obj:GetFullName()
+    		end)
+    		return success and tostring(path) or tostring(obj)
+    	end
+    	local function clearRows()
+    		if not listFrame then return end
+    		for _, child in pairs(listFrame:GetChildren()) do
+    			if child:IsA("GuiButton") or child:IsA("TextLabel") then child:Destroy() end
+    		end
+    	end
+    	local function addPadded(gui)
+    		local padding = Instance.new("UIPadding")
+    		padding.PaddingLeft = UDim.new(0,6)
+    		padding.Parent = gui
+    	end
+    	local function addDivider(text)
+    		local label = createSimple("TextLabel",{
+    			BackgroundColor3 = Settings.Theme.Main1, BorderSizePixel = 0, Font = Enum.Font.SourceSansBold,
+    			Size = UDim2.new(1,-8,0,22), Text = text, TextColor3 = Settings.Theme.Text,
+    			TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left, Parent = listFrame
+    		})
+    		addPadded(label)
+    	end
+    	local function addText(text, muted)
+    		local label = createSimple("TextLabel",{
+    			BackgroundTransparency = 1, Font = Enum.Font.SourceSans, Size = UDim2.new(1,-8,0,22),
+    			Text = text, TextColor3 = muted and Settings.Theme.PlaceholderText or Settings.Theme.Text,
+    			TextSize = 14, TextTruncate = Enum.TextTruncate.AtEnd, TextXAlignment = Enum.TextXAlignment.Left,
+    			Parent = listFrame
+    		})
+    		addPadded(label)
+    		return label
+    	end
+    	local function addScriptResult(scriptObj, entry, reason, snippet)
+    		local row = createSimple("TextButton",{
+    			AutoButtonColor = false, BackgroundColor3 = Settings.Theme.Main2, BorderColor3 = Settings.Theme.Outline1,
+    			Font = Enum.Font.SourceSans, Size = UDim2.new(1,-8,0,42), Text = "",
+    			TextColor3 = Settings.Theme.Text, TextSize = 14, Parent = listFrame
+    		})
+    		local title = createSimple("TextLabel",{
+    			BackgroundTransparency = 1, Font = Enum.Font.SourceSans, Position = UDim2.new(0,8,0,2),
+    			Size = UDim2.new(1,-16,0,18), Text = tostring(entry.Path or (scriptObj and getPath(scriptObj)) or entry.Name),
+    			TextColor3 = Settings.Theme.Text, TextSize = 14, TextTruncate = Enum.TextTruncate.AtEnd,
+    			TextXAlignment = Enum.TextXAlignment.Left, Parent = row
+    		})
+    		local detail = createSimple("TextLabel",{
+    			BackgroundTransparency = 1, Font = Enum.Font.SourceSans, Position = UDim2.new(0,8,0,21),
+    			Size = UDim2.new(1,-16,0,18), Text = reason .. " | " .. snippet,
+    			TextColor3 = Settings.Theme.PlaceholderText, TextSize = 13, TextTruncate = Enum.TextTruncate.AtEnd,
+    			TextXAlignment = Enum.TextXAlignment.Left, Parent = row
+    		})
+    		Lib.ButtonAnim(row,{Mode = 2, StartColor = Settings.Theme.Main2, HoverColor = Settings.Theme.ButtonHover, PressColor = Settings.Theme.ButtonPress, OutlineColor = Settings.Theme.Outline1})
+    		row.MouseButton1Click:Connect(function()
+    			if scriptObj and ScriptViewer and ScriptViewer.ViewScript then ScriptViewer.ViewScript(scriptObj) end
+    		end)
+    		return row
+    	end
+    	local function collectScriptsByKey()
+    		local map = {}
+    		if not env.DecompileCache or not env.DecompileCache.GetScriptKey then return map end
+    		local scripts = env.GetClientScripts and env.GetClientScripts(true) or game:GetDescendants()
+    		for _, obj in pairs(scripts) do
+    			if typeof(obj) == "Instance" and obj:IsA("LuaSourceContainer") then
+    				local success, key = pcall(env.DecompileCache.GetScriptKey, obj)
+    				if success and key then map[key] = obj end
+    			end
+    		end
+    		return map
+    	end
+    	local function summarizeHit(source, remote)
+    		local lowerSource = source:lower()
+    		local name = remote.Name:lower()
+    		local remotePath = getPath(remote):lower()
+    		local reasons = {}
+    		for _, method in ipairs(classMethods[remote.ClassName] or {}) do
+    			if lowerSource:find(method:lower(), 1, true) then table.insert(reasons, method) end
+    		end
+    		if #name >= 2 and lowerSource:find(name, 1, true) then table.insert(reasons, "name") end
+    		if #remotePath >= 6 and lowerSource:find(remotePath, 1, true) then table.insert(reasons, "path") end
+    		if #reasons == 0 then return nil, nil end
+    		local hitAt = (#name >= 2 and lowerSource:find(name, 1, true)) or lowerSource:find((reasons[1] or ""):lower(), 1, true) or 1
+    		local snippet = source:sub(math.max(1, hitAt - 48), math.min(#source, hitAt + 110)):gsub("\r"," "):gsub("\n"," ")
+    		return table.concat(reasons, ", "), snippet
+    	end
+    	local function scanCache(remote, token)
+    		if not env.DecompileCache or not env.DecompileCache.GetEntries or not env.isfile then
+    			setStatus("Decompile cache is unavailable.")
+    			return
+    		end
+    		local entries, cacheDir = env.DecompileCache.GetEntries()
+    		local scriptByKey = collectScriptsByKey()
+    		local found, scanned = 0, 0
+    		addDivider("Cached Script Hits")
+    		for key, entry in pairs(entries) do
+    			if token ~= scanToken then return end
+    			if entry.File then
+    				local path = cacheDir .. "/" .. tostring(entry.File)
+    				if env.isfile(path) then
+    					local success, source = pcall(env.readfile, path)
+    					if success and type(source) == "string" then
+    						scanned += 1
+    						local reason, snippet = summarizeHit(source, remote)
+    						if reason then
+    							found += 1
+    							addScriptResult(scriptByKey[key], entry, reason, snippet or "")
+    						end
+    					end
+    				end
+    			end
+    			if scanned % 20 == 0 then
+    				setStatus(("Scanning cache: %d script(s), %d hit(s)..."):format(scanned, found))
+    				task.wait()
+    			end
+    		end
+    		if found == 0 then addText("No cached scripts mention this remote yet.", true) end
+    		setStatus(("Remote usage scan complete: %d hit(s) in %d cached script(s)."):format(found, scanned))
+    	end
+    	local function scanConstants(remote, token)
+    		if not env.GetClientScripts or not env.GetScriptConstants then return end
+    		local nameToken = remote.Name:lower()
+    		if #nameToken < 2 then return end
+    		local hits = 0
+    		addDivider("Runtime Constants Hits")
+    		for _, scriptObj in pairs(env.GetClientScripts(true)) do
+    			if token ~= scanToken then return end
+    			local constants = env.GetScriptConstants(scriptObj)
+    			for _, constant in pairs(constants) do
+    				local text = tostring(constant)
+    				if text:lower():find(nameToken, 1, true) then
+    					hits += 1
+    					addScriptResult(scriptObj, {Path = scriptObj:GetFullName(), Name = scriptObj.Name}, "constant", text)
+    					break
+    				end
+    			end
+    			task.wait()
+    		end
+    		if hits == 0 then addText("No runtime constants mention this remote.", true) end
+    	end
+    	RemoteUsageMap.ShowForRemote = function(remote)
+    		if not isRemote(remote) then setStatus("Select a RemoteEvent/RemoteFunction/Bindable first."); return end
+    		scanToken += 1
+    		local token = scanToken
+    		clearRows()
+    		window:SetTitle("Remote Usage - " .. remote.Name)
+    		addDivider("Selected Remote")
+    		addText(remote.Name .. " [" .. remote.ClassName .. "]", false)
+    		addText(getPath(remote), true)
+    		addText("Tip: run Code Search > Index Scripts first for fuller results.", true)
+    		setStatus("Scanning cached decompiled scripts...")
+    		window:Show()
+    		task.spawn(function()
+    			scanCache(remote, token)
+    			scanConstants(remote, token)
+    		end)
+    	end
+    	RemoteUsageMap.Init = function()
+    		window = Lib.Window.new()
+    		window:SetTitle("Remote Usage")
+    		window:Resize(560,380)
+    		RemoteUsageMap.Window = window
+    		statusLabel = createSimple("TextLabel",{
+    			BackgroundColor3 = Settings.Theme.Main2, BorderSizePixel = 0, Font = Enum.Font.SourceSans,
+    			Position = UDim2.new(0,0,0,0), Size = UDim2.new(1,0,0,24),
+    			Text = "Right click a remote/bindable in Explorer, then choose Remote Usage Map.",
+    			TextColor3 = Settings.Theme.PlaceholderText, TextSize = 14, TextTruncate = Enum.TextTruncate.AtEnd,
+    			TextXAlignment = Enum.TextXAlignment.Left, Parent = window.GuiElems.Content
+    		})
+    		addPadded(statusLabel)
+    		listFrame = createSimple("ScrollingFrame",{
+    			Active = true, AutomaticCanvasSize = Enum.AutomaticSize.Y, BackgroundColor3 = Settings.Theme.Main2,
+    			BorderSizePixel = 0, BottomImage = "", CanvasSize = UDim2.new(0,0,0,0), Position = UDim2.new(0,0,0,24),
+    			ScrollBarImageColor3 = Color3.fromRGB(70,70,70), ScrollBarThickness = 10, Size = UDim2.new(1,0,1,-24),
+    			TopImage = "", Parent = window.GuiElems.Content
+    		})
+    		local layout = Instance.new("UIListLayout")
+    		layout.Padding = UDim.new(0,4)
+    		layout.SortOrder = Enum.SortOrder.LayoutOrder
+    		layout.Parent = listFrame
+    		local padding = Instance.new("UIPadding")
+    		padding.PaddingBottom = UDim.new(0,6)
+    		padding.PaddingLeft = UDim.new(0,4)
+    		padding.PaddingRight = UDim.new(0,4)
+    		padding.PaddingTop = UDim.new(0,4)
+    		padding.Parent = listFrame
+    	end
+    	return RemoteUsageMap
+    end
+    -- TODO: Remove when open source
+    if gethsfuncs then
+    	_G.moduleData = {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
+    else
+    	return {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
+    end
+end,
 }
 local oldgame = oldgame or game
 
@@ -14807,7 +15086,7 @@ end
 local isFsSupported = readfile and writefile and isfile and isfolder and listfiles and delfile and delfolder
 
 -- Main vars
-local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
+local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
 local API, RMD
 
 -- Default Settings
@@ -14946,7 +15225,7 @@ end
 Main = (function()
 	local Main = {}
 
-	Main.ModuleList = {"Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations"}
+	Main.ModuleList = {"Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap"}
 	Main.Elevated = false
 	Main.AllowDraggableOnMobile = true
 	Main.MissingEnv = {}
@@ -15218,6 +15497,7 @@ Main = (function()
 		SettingsWindow = Apps.SettingsWindow
 		CodeSearch = Apps.CodeSearch
 		ScriptRelations = Apps.ScriptRelations
+		RemoteUsageMap = Apps.RemoteUsageMap
 		
 		
 		--SecretServicePanel = Apps.SecretServicePanel
@@ -15231,7 +15511,8 @@ Main = (function()
 			Notebook = Notebook,
 			SettingsWindow = SettingsWindow,
 			CodeSearch = CodeSearch,
-			ScriptRelations = ScriptRelations
+			ScriptRelations = ScriptRelations,
+			RemoteUsageMap = RemoteUsageMap
 			--SecretServicePanel = SecretServicePanel,
 		}
 		
@@ -15309,6 +15590,7 @@ Main = (function()
 		env.setclipboard = setclipboard
 		env.getnilinstances = getnilinstances or get_nil_instances
 		env.getloadedmodules = getloadedmodules
+		env.getconnections = getconnections
 		
 		env.isViableDecompileScript = function(obj)
 			if obj:IsA("ModuleScript") then
@@ -15319,6 +15601,151 @@ Main = (function()
 				return true
 			end
 			return false
+		end
+
+		local remoteClassMap = {
+			RemoteEvent = true,
+			RemoteFunction = true,
+			UnreliableRemoteEvent = true,
+			BindableEvent = true,
+			BindableFunction = true,
+		}
+
+		local function addUniqueInstance(list, seen, obj)
+			if typeof(obj) == "Instance" and not seen[obj] then
+				seen[obj] = true
+				list[#list+1] = obj
+				return true
+			end
+			return false
+		end
+
+		local function addDescendantMatches(list, seen, predicate)
+			for _, obj in pairs(game:GetDescendants()) do
+				if predicate(obj) then
+					addUniqueInstance(list, seen, obj)
+				end
+			end
+		end
+
+		local function addNilMatches(list, seen, predicate)
+			if not env.getnilinstances then return end
+			local success, nilInstances = pcall(env.getnilinstances)
+			if not success or type(nilInstances) ~= "table" then return end
+			for _, obj in pairs(nilInstances) do
+				if predicate(obj) then
+					addUniqueInstance(list, seen, obj)
+				end
+			end
+		end
+
+		local function addLoadedModules(list, seen)
+			if not env.getloadedmodules then return end
+			local success, loadedModules = pcall(env.getloadedmodules)
+			if not success or type(loadedModules) ~= "table" then return end
+			for _, obj in pairs(loadedModules) do
+				if typeof(obj) == "Instance" and obj:IsA("ModuleScript") then
+					addUniqueInstance(list, seen, obj)
+				end
+			end
+		end
+
+		local function addGcScriptRefs(list, seen, allowNonViable)
+			if not env.getgc then return end
+			local success, gcObjects = pcall(env.getgc)
+			if not success or type(gcObjects) ~= "table" then return end
+
+			for _, value in pairs(gcObjects) do
+				if typeof(value) == "function" then
+					local envSuccess, fnEnv = pcall(getfenv, value)
+					local scr = envSuccess and type(fnEnv) == "table" and rawget(fnEnv, "script")
+					if typeof(scr) == "Instance" and scr:IsA("LuaSourceContainer") then
+						if allowNonViable or env.isViableDecompileScript(scr) then
+							addUniqueInstance(list, seen, scr)
+						end
+					end
+				end
+			end
+		end
+
+		env.GetClientScripts = function(allowNonViable)
+			local scripts, seen = {}, {}
+			local function isWantedScript(obj)
+				if typeof(obj) ~= "Instance" or not obj:IsA("LuaSourceContainer") then return false end
+				return allowNonViable or env.isViableDecompileScript(obj)
+			end
+
+			addDescendantMatches(scripts, seen, isWantedScript)
+			addNilMatches(scripts, seen, isWantedScript)
+			addLoadedModules(scripts, seen)
+			addGcScriptRefs(scripts, seen, allowNonViable)
+
+			return scripts
+		end
+
+		env.GetClientRemotes = function()
+			local remotes, seen = {}, {}
+			local function isRemote(obj)
+				return typeof(obj) == "Instance" and remoteClassMap[obj.ClassName] == true
+			end
+
+			addDescendantMatches(remotes, seen, isRemote)
+			addNilMatches(remotes, seen, isRemote)
+
+			return remotes
+		end
+
+		env.GetClientSurfaceCoverage = function()
+			local allScripts = env.GetClientScripts(true)
+			local viableScripts = env.GetClientScripts(false)
+			local remotes = env.GetClientRemotes()
+			local cached = 0
+
+			if env.DecompileCache and env.DecompileCache.GetEntries then
+				local entries = env.DecompileCache.GetEntries()
+				for _ in pairs(entries) do
+					cached += 1
+				end
+			end
+
+			return {
+				AllScripts = #allScripts,
+				ViableScripts = #viableScripts,
+				Remotes = #remotes,
+				CachedScripts = cached,
+				HasNilInstances = env.getnilinstances ~= nil,
+				HasLoadedModules = env.getloadedmodules ~= nil,
+				HasGc = env.getgc ~= nil,
+				HasConnections = env.getconnections ~= nil,
+			}
+		end
+
+		env.GetScriptConstants = function(scriptInstance)
+			local constants, seen = {}, {}
+			if not env.getgc or not env.getconstants then return constants end
+
+			local success, gcObjects = pcall(env.getgc)
+			if not success or type(gcObjects) ~= "table" then return constants end
+
+			for _, value in pairs(gcObjects) do
+				if typeof(value) == "function" then
+					local envSuccess, fnEnv = pcall(getfenv, value)
+					if envSuccess and type(fnEnv) == "table" and rawget(fnEnv, "script") == scriptInstance then
+						local constSuccess, constList = pcall(env.getconstants, value)
+						if constSuccess and type(constList) == "table" then
+							for _, constant in pairs(constList) do
+								local key = tostring(constant)
+								if not seen[key] then
+									seen[key] = true
+									constants[#constants+1] = constant
+								end
+							end
+						end
+					end
+				end
+			end
+
+			return constants
 		end
 		env.request = (syn and syn.request) or (http and http.request) or http_request or (fluxus and fluxus.request) or request
 		
@@ -15611,8 +16038,7 @@ Main = (function()
 			end
 		end
 
-		-- Hook it directly into Dex with smart fallback chain and cache reuse.
-		env.decompile = function(script_instance, ...)
+		local function decompileWithCache(script_instance, ...)
 			local cache = env.DecompileCache
 			if cache then
 				local cachedSource = cache.Read(script_instance)
@@ -15626,6 +16052,136 @@ Main = (function()
 				pcall(cache.Write, script_instance, source)
 			end
 			return source
+		end
+
+		local function createDecompileQueue()
+			local queue = {
+				Jobs = {},
+				Running = false,
+				Paused = false,
+				ActiveJob = nil,
+				LastRun = 0,
+				Completed = 0,
+				Failed = 0,
+				MinDelay = 0.12,
+			}
+
+			local function sortJobs()
+				table.sort(queue.Jobs, function(a, b)
+					if a.Priority == b.Priority then
+						return a.CreatedAt < b.CreatedAt
+					end
+					return a.Priority > b.Priority
+				end)
+			end
+
+			local function startWorker()
+				if queue.Running then return end
+				queue.Running = true
+				task.spawn(function()
+					while #queue.Jobs > 0 do
+						if queue.Paused then
+							task.wait(0.2)
+							continue
+						end
+
+						sortJobs()
+						local job = table.remove(queue.Jobs, 1)
+						queue.ActiveJob = job
+
+						local waitTime = queue.MinDelay - (os.clock() - queue.LastRun)
+						if waitTime > 0 then task.wait(waitTime) end
+
+						local success, result = pcall(decompileWithCache, job.Script, table.unpack(job.Args))
+						job.Success = success
+						job.Result = result
+						job.Done = true
+						queue.LastRun = os.clock()
+						queue.ActiveJob = nil
+
+						if success then
+							queue.Completed += 1
+						else
+							queue.Failed += 1
+						end
+
+						if job.Callback then
+							pcall(job.Callback, success, result, job.Script)
+						end
+
+						task.wait()
+					end
+					queue.Running = false
+				end)
+			end
+
+			queue.Submit = function(script_instance, options, ...)
+				options = options or {}
+				local job = {
+					Script = script_instance,
+					Args = {...},
+					Priority = options.Priority or 50,
+					CreatedAt = os.clock(),
+					Callback = options.Callback,
+					Done = false,
+					Success = false,
+					Result = nil,
+				}
+
+				table.insert(queue.Jobs, job)
+				startWorker()
+
+				if options.Async then
+					return job
+				end
+
+				while not job.Done do
+					task.wait()
+				end
+
+				if not job.Success then
+					error(job.Result)
+				end
+				return job.Result
+			end
+
+			queue.GetStatus = function()
+				return {
+					Queued = #queue.Jobs,
+					Running = queue.Running,
+					Paused = queue.Paused,
+					Active = queue.ActiveJob and queue.ActiveJob.Script or nil,
+					Completed = queue.Completed,
+					Failed = queue.Failed,
+				}
+			end
+
+			queue.SetPaused = function(paused)
+				queue.Paused = paused and true or false
+				if not queue.Paused then startWorker() end
+			end
+
+			queue.CancelQueued = function()
+				for _, job in pairs(queue.Jobs) do
+					job.Done = true
+					job.Success = false
+					job.Result = "Cancelled"
+				end
+				table.clear(queue.Jobs)
+			end
+
+			return queue
+		end
+
+		env.DecompileQueue = createDecompileQueue()
+
+		-- Hook it directly into Dex with smart fallback chain and cache reuse.
+		env.decompile = function(script_instance, ...)
+			return env.DecompileQueue.Submit(script_instance, {Priority = 50}, ...)
+		end
+
+		env.decompilebackground = function(script_instance, callback, priority, ...)
+			return env.DecompileQueue.Submit(script_instance, {Priority = priority or 10, Callback = callback, Async = true}, ...)
 		end
 		
 		if Main.Elevated then
@@ -16485,6 +17041,8 @@ Main = (function()
 
 		Main.CreateApp({Name = "Script Relations", IconMap = Main.LargeIcons, Icon = "Watcher", Window = ScriptRelations.Window})
 
+		Main.CreateApp({Name = "Remote Usage", IconMap = Main.LargeIcons, Icon = "Output", Window = RemoteUsageMap.Window})
+
 		--Main.CreateApp({Name = "Secret Service Panel", IconMap = Main.LargeIcons, Icon = "Output", Window = SecretServicePanel.Window})
 		
 		for _, loadedplugin in pairs(Main.Plugins) do
@@ -16623,6 +17181,7 @@ Main = (function()
 		SettingsWindow.Init()
 		CodeSearch.Init()
 		ScriptRelations.Init()
+		RemoteUsageMap.Init()
 		--SecretServicePanel.Init()
 		
 		
