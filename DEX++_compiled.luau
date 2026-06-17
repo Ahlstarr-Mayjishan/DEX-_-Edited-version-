@@ -47,7 +47,142 @@ cloneref = cloneref or function(ref)
 end
 
 local EmbeddedModules = {
-    ["Console"] = function()
+    ["Theme"] = function()
+    --[[
+    	Theme Module
+    	
+    	Centralizes UI aesthetics, fonts, custom colors, and transition helpers.
+    ]]
+    
+    -- Common Locals
+    local Main, Lib, Apps, Settings -- Main Containers
+    local Explorer, Properties, ScriptViewer, Notebook -- Major Apps
+    local API, RMD, env, service, plr, create, createSimple -- Main Locals
+    
+    local function initDeps(data)
+    	Main = data.Main
+    	Lib = data.Lib
+    	Apps = data.Apps
+    	Settings = data.Settings
+    
+    	API = data.API
+    	RMD = data.RMD
+    	env = data.env
+    	service = data.service
+    	plr = data.plr
+    	create = data.create
+    	createSimple = data.createSimple
+    end
+    
+    local function initAfterMain(t)
+    	Explorer = t.Explorer
+    	Properties = t.Properties
+    	ScriptViewer = t.ScriptViewer
+    	Notebook = t.Notebook
+    end
+    
+    local function main()
+    	local Theme = {}
+    
+    	-- Font Mapping: Upgrades basic SourceSans font to modern Gotham family
+    	function Theme.MapFont(font)
+    		if font == Enum.Font.SourceSans then
+    			return Enum.Font.Gotham
+    		elseif font == Enum.Font.SourceSansBold then
+    			return Enum.Font.GothamBold
+    		end
+    		return font
+    	end
+    
+    	-- Rounded Corners Helper
+    	function Theme.ApplyRounding(guiInstance, radius)
+    		local corner = guiInstance:FindFirstChildOfClass("UICorner")
+    		if not corner then
+    			corner = Instance.new("UICorner")
+    			corner.Parent = guiInstance
+    		end
+    		corner.CornerRadius = UDim.new(0, radius or 4)
+    		return corner
+    	end
+    
+    	-- Outline Stroke Helper (Replaces ugly BordersizePixel)
+    	function Theme.ApplyStroke(guiInstance, color, thickness, transparency)
+    		guiInstance.BorderSizePixel = 0
+    		local stroke = guiInstance:FindFirstChildOfClass("UIStroke")
+    		if not stroke then
+    			stroke = Instance.new("UIStroke")
+    			stroke.Parent = guiInstance
+    		end
+    		stroke.Color = color or Settings.Theme.Outline1
+    		stroke.Thickness = thickness or 1
+    		stroke.Transparency = transparency or 0
+    		stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    		return stroke
+    	end
+    
+    	-- Standardized Button Styling with Smooth Tweens
+    	function Theme.StyleButton(button, isAccent)
+    		Theme.ApplyRounding(button, 4)
+    		button.Font = Theme.MapFont(button.Font)
+    		button.BorderSizePixel = 0
+    
+    		local theme = Settings.Theme
+    		local startCol = isAccent and theme.ListSelection or theme.Button
+    		local hoverCol = theme.ButtonHover
+    		local pressCol = theme.ButtonPress
+    
+    		button.BackgroundColor3 = startCol
+    		button.TextColor3 = theme.Text
+    
+    		button.MouseEnter:Connect(function()
+    			service.TweenService:Create(button, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+    				BackgroundColor3 = hoverCol
+    			}):Play()
+    		end)
+    		button.MouseLeave:Connect(function()
+    			service.TweenService:Create(button, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+    				BackgroundColor3 = startCol
+    			}):Play()
+    		end)
+    		button.MouseButton1Down:Connect(function()
+    			service.TweenService:Create(button, TweenInfo.new(0.05, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+    				BackgroundColor3 = pressCol
+    			}):Play()
+    		end)
+    		button.MouseButton1Up:Connect(function()
+    			service.TweenService:Create(button, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+    				BackgroundColor3 = hoverCol
+    			}):Play()
+    		end)
+    	end
+    
+    	-- Standardized TextBox Styling
+    	function Theme.StyleTextBox(textBox)
+    		Theme.ApplyRounding(textBox, 4)
+    		Theme.ApplyStroke(textBox, Settings.Theme.Outline3, 1, 0.3)
+    		textBox.Font = Theme.MapFont(textBox.Font)
+    		textBox.BackgroundColor3 = Settings.Theme.TextBox
+    		textBox.TextColor3 = Settings.Theme.Text
+    		textBox.PlaceholderColor3 = Settings.Theme.PlaceholderText
+    		textBox.BorderSizePixel = 0
+    	end
+    
+    	-- Standardized Frame Styling
+    	function Theme.StyleFrame(frame, mainType)
+    		Theme.ApplyRounding(frame, 4)
+    		local theme = Settings.Theme
+    		local bgCol = (mainType == 1) and theme.Main1 or ((mainType == 2) and theme.Main2 or theme.Menu)
+    		frame.BackgroundColor3 = bgCol
+    		frame.BorderSizePixel = 0
+    		Theme.ApplyStroke(frame, theme.Outline1, 1, 0.4)
+    	end
+    
+    	return Theme
+    end
+    
+    return {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
+end,
+["Console"] = function()
     --[[
         Regional AssetID Bypasser , not fully implemented
     ]]
@@ -14158,6 +14293,11 @@ end,
     			Settings.Window.TitleOnMiddle = titleonmiddle.Toggled
     		end)
     		
+    		local autocheckupdate = AddCheckbox("Auto Check Update", Settings.AutoCheckUpdate ~= false)
+    		autocheckupdate.OnInput:Connect(function()
+    			Settings.AutoCheckUpdate = autocheckupdate.Toggled
+    		end)
+    		
     		local bgTransparency = AddTextbox("Background Transparency", tostring(Settings.Window.Transparency), 15)
     		bgTransparency.FocusLost:Connect(function()
     			Settings.Window.Transparency = tonumber(bgTransparency.Text)
@@ -15581,8 +15721,8 @@ end,
     	local raknetRunning = false
     	local buffers = {RemoteCall = {}, Packet = {}, Correlation = {}}
     	local packetStats = {}
-    	local limits = {RemoteCall = 300, Packet = 300, Correlation = 300}
-    	local state = {RemoteEnabled = false, RakNetEnabled = false, CaptureArgs = true, PacketSample = false}
+    	local limits = {RemoteCall = 120, Packet = 80, Correlation = 120}
+    	local state = {RemoteEnabled = false, RakNetEnabled = false, CaptureArgs = false, PacketSample = false}
     	local remoteMethods = {FireServer = true, InvokeServer = true, Fire = true, Invoke = true}
     	local function now()
     		return os.clock()
@@ -15750,7 +15890,10 @@ end,
     		if onClick then row.MouseButton1Click:Connect(onClick) end
     	end
     	local function renderRemoteCalls()
+    		local rendered = 0
     		for _, call in ipairs(buffers.RemoteCall) do
+    			rendered += 1
+    			if rendered > 120 then break end
     			addRow(call.Method .. " " .. call.Path, call.Caller .. " | argc " .. tostring(call.ArgCount) .. " | " .. call.Args, function()
     				if call.Remote and RemoteUsageMap then RemoteUsageMap.ShowForRemote(call.Remote) end
     			end)
@@ -15765,12 +15908,18 @@ end,
     		end
     	end
     	local function renderCorrelations()
+    		local rendered = 0
     		for _, item in ipairs(buffers.Correlation) do
+    			rendered += 1
+    			if rendered > 120 then break end
     			addRow(("%s -> packet %s (%d bytes)"):format(item.Method, tostring(item.PacketId), item.Bytes), ("%0.3fs | %s"):format(item.Delta or 0, item.RemotePath))
     		end
     	end
     	local function renderPackets()
+    		local rendered = 0
     		for _, packet in ipairs(buffers.Packet) do
+    			rendered += 1
+    			if rendered > 80 then break end
     			addRow(("Packet %s | %d bytes"):format(tostring(packet.PacketId), packet.Size), ("priority %d | reliability %d | channel %d"):format(packet.Priority, packet.Reliability, packet.Channel))
     		end
     	end
@@ -15788,7 +15937,7 @@ end,
     		task.spawn(function()
     			while window and not window.Closed do
     				render()
-    				task.wait(0.5)
+    				task.wait(1)
     			end
     			refreshQueued = false
     		end)
@@ -15874,6 +16023,37 @@ cloneref = cloneref or function(ref)
 				return g
 			end
 		end
+local oldgame = oldgame or game
+
+cloneref = cloneref or function(ref)
+	if not getreg then return ref end
+	
+	local InstanceList
+	
+	local a = Instance.new("Part")
+	for _, c in pairs(getreg()) do
+		if type(c) == "table" and #c then
+			if rawget(c, "__mode") == "kvs" then
+				for d, e in pairs(c) do
+					if e == a then
+						InstanceList = c
+						break
+					end
+				end
+			end
+		end
+	end
+	local f = {}
+	function f.invalidate(g)
+		if not InstanceList then
+			return
+		end
+		for b, c in pairs(InstanceList) do
+			if c == g then
+				InstanceList[b] = nil
+				return g
+			end
+		end
 	end
 	return f.invalidate
 end
@@ -15881,7 +16061,7 @@ end
 local isFsSupported = readfile and writefile and isfile and isfolder and listfiles and delfile and delfolder
 
 -- Main vars
-local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, RuntimeInspector--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
+local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, RuntimeInspector, Theme--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
 local API, RMD
 
 -- Default Settings
@@ -15914,47 +16094,47 @@ DefaultSettings = (function()
 		},
 		Theme = {
 			_Recurse = true,
-			Main1 = rgb(35,39,46),
-			Main2 = rgb(28,32,38),
-			Outline1 = rgb(18,21,26), -- Mainly frames
-			Outline2 = rgb(58,66,78), -- Mainly button
-			Outline3 = rgb(14,17,22), -- Mainly textbox
-			TextBox = rgb(23,27,33),
-			Menu = rgb(20,23,29),
-			ListSelection = rgb(42,126,214),
-			Button = rgb(43,49,58),
-			ButtonHover = rgb(55,63,75),
-			ButtonPress = rgb(30,35,42),
-			Highlight = rgb(70,82,98),
-			Text = rgb(238,242,247),
-			PlaceholderText = rgb(142,151,164),
-			Important = rgb(255,82,82),
+			Main1 = rgb(25, 27, 31),
+			Main2 = rgb(15, 17, 20),
+			Outline1 = rgb(35, 39, 47), -- Mainly frames
+			Outline2 = rgb(55, 65, 81), -- Mainly button
+			Outline3 = rgb(35, 39, 47), -- Mainly textbox
+			TextBox = rgb(20, 22, 26),
+			Menu = rgb(18, 20, 24),
+			ListSelection = rgb(99, 102, 241),
+			Button = rgb(31, 41, 55),
+			ButtonHover = rgb(79, 70, 229),
+			ButtonPress = rgb(67, 56, 202),
+			Highlight = rgb(79, 70, 229),
+			Text = rgb(243, 244, 246),
+			PlaceholderText = rgb(156, 163, 175),
+			Important = rgb(244, 63, 94),
 			ExplorerIconMap = "",
 			MiscIconMap = "",
 			Syntax = {
-				Text = rgb(204,204,204),
-				Background = rgb(36,36,36),
-				Selection = rgb(255,255,255),
-				SelectionBack = rgb(11,90,175),
-				Operator = rgb(204,204,204),
-				Number = rgb(255,198,0),
-				String = rgb(173,241,149),
-				Comment = rgb(102,102,102),
-				Keyword = rgb(248,109,124),
-				Error = rgb(255,0,0),
-				FindBackground = rgb(141,118,0),
-				MatchingWord = rgb(85,85,85),
-				BuiltIn = rgb(132,214,247),
-				CurrentLine = rgb(45,50,65),
-				LocalMethod = rgb(253,251,172),
-				LocalProperty = rgb(97,161,241),
-				Nil = rgb(255,198,0),
-				Bool = rgb(255,198,0),
-				Function = rgb(248,109,124),
-				Local = rgb(248,109,124),
-				Self = rgb(248,109,124),
-				FunctionName = rgb(253,251,172),
-				Bracket = rgb(204,204,204)
+				Text = rgb(171, 178, 191),
+				Background = rgb(20, 22, 26),
+				Selection = rgb(243, 244, 246),
+				SelectionBack = rgb(67, 56, 202),
+				Operator = rgb(86, 182, 224),
+				Number = rgb(209, 154, 102),
+				String = rgb(152, 195, 121),
+				Comment = rgb(92, 99, 112),
+				Keyword = rgb(198, 120, 221),
+				Error = rgb(244, 63, 94),
+				FindBackground = rgb(234, 179, 8),
+				MatchingWord = rgb(75, 85, 99),
+				BuiltIn = rgb(229, 192, 123),
+				CurrentLine = rgb(31, 41, 55),
+				LocalMethod = rgb(97, 175, 239),
+				LocalProperty = rgb(224, 108, 117),
+				Nil = rgb(209, 154, 102),
+				Bool = rgb(209, 154, 102),
+				Function = rgb(198, 120, 221),
+				Local = rgb(198, 120, 221),
+				Self = rgb(224, 108, 117),
+				FunctionName = rgb(97, 175, 239),
+				Bracket = rgb(171, 178, 191)
 			},
 		},
 		ScriptViewer = {
@@ -15969,6 +16149,7 @@ DefaultSettings = (function()
 			PreferDecompilerFallback = false,
 			ShinyDecompilerPort = 3000,
 		},
+		AutoCheckUpdate = true,
 		
 		RemoteBlockWriteAttribute = false, -- writes attribute to remote instance if remote is blocked/unblocked
 		ClassIcon = "NewDark",
@@ -15992,6 +16173,15 @@ local service = setmetatable({},{__index = function(self,name)
 end})
 local plr = service.Players.LocalPlayer or service.Players.PlayerAdded:wait()
 
+local mapFont = function(font)
+	if font == Enum.Font.SourceSans then
+		return Enum.Font.Gotham
+	elseif font == Enum.Font.SourceSansBold then
+		return Enum.Font.GothamBold
+	end
+	return font
+end
+
 local create = function(data)
 	local insts = {}
 	for i,v in pairs(data) do insts[v[1]] = Instance.new(v[2]) end
@@ -16001,7 +16191,11 @@ local create = function(data)
 			if type(val) == "table" then
 				insts[v[1]][prop] = insts[val[1]]
 			else
-				insts[v[1]][prop] = val
+				local actualVal = val
+				if prop == "Font" then
+					actualVal = mapFont(val)
+				end
+				insts[v[1]][prop] = actualVal
 			end
 		end
 	end
@@ -16012,7 +16206,11 @@ end
 local createSimple = function(class,props)
 	local inst = Instance.new(class)
 	for i,v in next,props do
-		inst[i] = v
+		local actualVal = v
+		if i == "Font" then
+			actualVal = mapFont(v)
+		end
+		inst[i] = actualVal
 	end
 	return inst
 end
@@ -16020,7 +16218,7 @@ end
 Main = (function()
 	local Main = {}
 
-	Main.ModuleList = {"Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap","ObjectLinks","RuntimeInspector"}
+	Main.ModuleList = {"Theme","Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap","ObjectLinks","RuntimeInspector"}
 	Main.Elevated = false
 	Main.AllowDraggableOnMobile = true
 	Main.MissingEnv = {}
@@ -16298,10 +16496,12 @@ Main = (function()
 		RemoteUsageMap = Apps.RemoteUsageMap
 		ObjectLinks = Apps.ObjectLinks
 		RuntimeInspector = Apps.RuntimeInspector
+		Theme = Apps.Theme
 		
 		
 		--SecretServicePanel = Apps.SecretServicePanel
 		local appTable = {
+			Theme = Theme,
 			Explorer = Explorer,
 			Properties = Properties,
 			ScriptViewer = ScriptViewer,
@@ -17705,11 +17905,12 @@ Main = (function()
 	end
 
 	Main.CheckForUpdatesAsync = function()
+		if Settings.AutoCheckUpdate == false then return end
 		if Main.UpdateCheckStarted then return end
 		Main.UpdateCheckStarted = true
 		coroutine.wrap(function()
 			task.wait(1)
-			local ok, source = pcall(oldgame.HttpGet, game, Main.UpdateScriptURL, true)
+			local ok, source = pcall(function() return game:HttpGet(Main.UpdateScriptURL, true) end)
 			if not ok or type(source) ~= "string" or source == "" then return end
 			local latestVersion = Main.GetRemoteScriptVersion(source)
 			if not latestVersion then return end
@@ -17835,26 +18036,26 @@ Main = (function()
 	Main.CreateMainGui = function()
 		local gui = create({
 			{1,"ScreenGui",{IgnoreGuiInset=true,Name="MainMenu",}},
-			{2,"TextButton",{AnchorPoint=Vector2.new(0.5,0),AutoButtonColor=false,BackgroundColor3=Color3.fromRGB(28,32,38),BorderSizePixel=0,Font=4,Name="OpenButton",Parent={1},Position=UDim2.new(0.5,0,0,2),Size=UDim2.new(0,68,0,34),Text="Dex++",TextColor3=Color3.fromRGB(238,242,247),TextSize=16,TextTransparency=0.050000000745058,}},
+			{2,"TextButton",{AnchorPoint=Vector2.new(0.5,0),AutoButtonColor=false,BackgroundColor3=Settings.Theme.Main2,BorderSizePixel=0,Font=Enum.Font.Gotham,Name="OpenButton",Parent={1},Position=UDim2.new(0.5,0,0,2),Size=UDim2.new(0,68,0,34),Text="Dex++",TextColor3=Settings.Theme.Text,TextSize=16,TextTransparency=0.050000000745058,}},
 			{3,"UICorner",{CornerRadius=UDim.new(0,4),Parent={2},}},
-			{4,"Frame",{AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.fromRGB(28,32,38),ClipsDescendants=true,Name="MainFrame",Parent={2},Position=UDim2.new(0.5,0,1,-4),Size=UDim2.new(0,292,0,258),}},
+			{4,"Frame",{AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Settings.Theme.Main2,ClipsDescendants=true,Name="MainFrame",Parent={2},Position=UDim2.new(0.5,0,1,-4),Size=UDim2.new(0,292,0,258),}},
 			{5,"UICorner",{CornerRadius=UDim.new(0,4),Parent={4},}},
-			{6,"Frame",{BackgroundColor3=Color3.fromRGB(35,39,46),Name="BottomFrame",Parent={4},Position=UDim2.new(0,0,1,-28),Size=UDim2.new(1,0,0,28),}},
+			{6,"Frame",{BackgroundColor3=Settings.Theme.Main1,Name="BottomFrame",Parent={4},Position=UDim2.new(0,0,1,-28),Size=UDim2.new(1,0,0,28),}},
 			{7,"UICorner",{CornerRadius=UDim.new(0,4),Parent={6},}},
-			{8,"Frame",{BackgroundColor3=Color3.fromRGB(35,39,46),BorderSizePixel=0,Name="CoverFrame",Parent={6},Size=UDim2.new(1,0,0,4),}},
-			{9,"Frame",{BackgroundColor3=Color3.fromRGB(18,21,26),BorderSizePixel=0,Name="Line",Parent={8},Position=UDim2.new(0,0,0,-1),Size=UDim2.new(1,0,0,1),}},
+			{8,"Frame",{BackgroundColor3=Settings.Theme.Main1,BorderSizePixel=0,Name="CoverFrame",Parent={6},Size=UDim2.new(1,0,0,4),}},
+			{9,"Frame",{BackgroundColor3=Settings.Theme.Outline1,BorderSizePixel=0,Name="Line",Parent={8},Position=UDim2.new(0,0,0,-1),Size=UDim2.new(1,0,0,1),}},
 			{10,"TextButton",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Font=3,Name="Settings",Parent={6},Position=UDim2.new(1,-48,0,0),Size=UDim2.new(0,24,1,0),Text="",TextColor3=Color3.new(1,1,1),TextSize=14,}},
-			{11,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://6578871732",ImageColor3=Color3.fromRGB(238,242,247),ImageTransparency=0.10000000149012,Name="Icon",Parent={10},Position=UDim2.new(0,4,0,6),Size=UDim2.new(0,16,0,16),}},
+			{11,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://6578871732",ImageColor3=Settings.Theme.Text,ImageTransparency=0.10000000149012,Name="Icon",Parent={10},Position=UDim2.new(0,4,0,6),Size=UDim2.new(0,16,0,16),}},
 			{12,"TextButton",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Font=3,Name="Information",Parent={6},Position=UDim2.new(1,-24,0,0),Size=UDim2.new(0,24,1,0),Text="",TextColor3=Color3.new(1,1,1),TextSize=14,}},
-			{13,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://6578933307",ImageColor3=Color3.fromRGB(238,242,247),ImageTransparency=0.10000000149012,Name="Icon",Parent={12},Position=UDim2.new(0,4,0,6),Size=UDim2.new(0,16,0,16),}},
-			{14,"ScrollingFrame",{Active=true,AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderColor3=Color3.fromRGB(18,21,26),BorderSizePixel=0,Name="AppsFrame",Parent={4},Position=UDim2.new(0.5,0,0,0),ScrollBarImageColor3=Color3.fromRGB(70,82,98),ScrollBarThickness=4,Size=UDim2.new(0,290,1,-29),}},
+			{13,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://6578933307",ImageColor3=Settings.Theme.Text,ImageTransparency=0.10000000149012,Name="Icon",Parent={12},Position=UDim2.new(0,4,0,6),Size=UDim2.new(0,16,0,16),}},
+			{14,"ScrollingFrame",{Active=true,AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderColor3=Settings.Theme.Outline1,BorderSizePixel=0,Name="AppsFrame",Parent={4},Position=UDim2.new(0.5,0,0,0),ScrollBarImageColor3=Settings.Theme.Highlight,ScrollBarThickness=4,Size=UDim2.new(0,290,1,-29),}},
 			{15,"Frame",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Name="Container",Parent={14},Position=UDim2.new(0,8,0,10),Size=UDim2.new(1,-16,0,2),}},
 			{16,"UIGridLayout",{CellPadding=UDim2.new(0,2,0,4),CellSize=UDim2.new(0,88,0,78),Parent={15},SortOrder=2,}},
 			{17,"Frame",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Name="App",Parent={1},Size=UDim2.new(0,100,0,100),Visible=false,}},
-			{18,"TextButton",{AutoButtonColor=false,BackgroundColor3=Color3.fromRGB(43,49,58),BorderSizePixel=0,Font=3,Name="Main",Parent={17},Size=UDim2.new(1,0,0,64),Text="",TextColor3=Color3.new(0,0,0),TextSize=14,}},
-			{19,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://129589545519436",ImageColor3=Color3.fromRGB(238,242,247),ImageRectSize=Vector2.new(32,32),Name="Icon",Parent={18},Position=UDim2.new(0.5,-16,0,6),ScaleType=4,Size=UDim2.new(0,32,0,32),}},
-			{20,"TextLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderSizePixel=0,Font=3,Name="AppName",Parent={18},Position=UDim2.new(0,4,0,42),Size=UDim2.new(1,-8,1,-44),Text="Explorer",TextColor3=Color3.fromRGB(238,242,247),TextSize=13,TextTransparency=0.050000000745058,TextTruncate=1,TextWrapped=true,TextYAlignment=0,}},
-			{21,"Frame",{BackgroundColor3=Color3.fromRGB(42,126,214),BorderSizePixel=0,Name="Highlight",Parent={18},Position=UDim2.new(0,0,1,-2),Size=UDim2.new(1,0,0,2),}},
+			{18,"TextButton",{AutoButtonColor=false,BackgroundColor3=Settings.Theme.Button,BorderSizePixel=0,Font=3,Name="Main",Parent={17},Size=UDim2.new(1,0,0,64),Text="",TextColor3=Color3.new(0,0,0),TextSize=14,}},
+			{19,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://129589545519436",ImageColor3=Settings.Theme.Text,ImageRectSize=Vector2.new(32,32),Name="Icon",Parent={18},Position=UDim2.new(0.5,-16,0,6),ScaleType=4,Size=UDim2.new(0,32,0,32),}},
+			{20,"TextLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderSizePixel=0,Font=3,Name="AppName",Parent={18},Position=UDim2.new(0,4,0,42),Size=UDim2.new(1,-8,1,-44),Text="Explorer",TextColor3=Settings.Theme.Text,TextSize=13,TextTransparency=0.050000000745058,TextTruncate=1,TextWrapped=true,TextYAlignment=0,}},
+			{21,"Frame",{BackgroundColor3=Settings.Theme.ListSelection,BorderSizePixel=0,Name="Highlight",Parent={18},Position=UDim2.new(0,0,1,-2),Size=UDim2.new(1,0,0,2),}},
 		})
 		Main.MainGui = gui
 		Main.AppsFrame = gui.OpenButton.MainFrame.AppsFrame
@@ -18185,7 +18386,7 @@ Main.Init()
 -- Rspy Plugin
 
 local plugin_src = [[
-local main_ref, lib_ref, apps_ref, settings_ref
+local main_ref, lib_ref, apps_ref, settings_ref, theme_ref
 local explorer_ref, properties_ref
  
 local plugin_data = {
@@ -18203,6 +18404,7 @@ end
 local function initAfterMain(t)
 	explorer_ref   = t.Explorer
 	properties_ref = t.Properties
+	theme_ref      = t.Theme
 end
  
 local function safe_str(v)
@@ -18256,15 +18458,25 @@ local function main()
  
 	local logs        = {}
 	local log_frames  = {}
+	local pending_rows = {}
 	local tree_frames = {}
 	local remote_stats = {}
 	local expanded_paths = { game = true }
 	local filter_text = ""
 	local selected_path = ""
 	local paused      = false
-	local log_limit   = 400
+	local log_limit   = 240
+	local visible_log_limit = 90
+	local flush_interval = 0.12
+	local rows_per_flush = 12
+	local max_logs_per_second = 90
 	local active      = false
 	local last_tree_rebuild = 0
+	local last_status_update = 0
+	local flush_scheduled = false
+	local rate_window_start = 0
+	local rate_window_count = 0
+	local dropped_logs = 0
  
 	local namecall_orig = nil
 	local hook_cons   = {}
@@ -18301,6 +18513,24 @@ local function main()
  
 	local window, list_frame, tree_frame, scroll_v, status_label, detail_label, empty_label
 	local rebuild_list
+
+	local function update_scroll()
+		if scroll_v then
+			scroll_v.TotalSpace = #log_frames
+			scroll_v.Index = math.max(0, #log_frames - scroll_v.VisibleSpace)
+			scroll_v:Update()
+		end
+	end
+
+	local function trim_visible_rows()
+		while #log_frames > visible_log_limit do
+			local old = table.remove(log_frames, 1)
+			if old then old:Destroy() end
+		end
+		for i, row in ipairs(log_frames) do
+			row.LayoutOrder = i
+		end
+	end
  
 	local function color_for(dir, class_name)
 		local is_bind = class_name == "BindableEvent" or class_name == "BindableFunction"
@@ -18432,13 +18662,16 @@ local function main()
 
 			local row = Instance.new("TextButton")
 			row.AutoButtonColor = false
-			row.BackgroundColor3 = is_selected and Color3.fromRGB(42, 78, 124) or Color3.fromRGB(26, 30, 36)
+			row.BackgroundColor3 = is_selected and settings_ref.Theme.ListSelection or settings_ref.Theme.Main2
 			row.BackgroundTransparency = is_selected and 0 or 1
 			row.BorderSizePixel = 0
 			row.Size = UDim2.new(1, -4, 0, 24)
 			row.Text = ""
 			row.LayoutOrder = row_count
 			row.Parent = tree_frame
+			if theme_ref then
+				theme_ref.ApplyRounding(row, 4)
+			end
 
 			local mark = Instance.new("TextLabel", row)
 			mark.BackgroundTransparency = 1
@@ -18446,16 +18679,16 @@ local function main()
 			mark.Size = UDim2.new(0, 14, 1, 0)
 			mark.Font = Enum.Font.Code
 			mark.TextSize = 12
-			mark.TextColor3 = has_children and Color3.fromRGB(170, 180, 192) or color_for("out", node.remote and node.remote.class or "RemoteEvent")
+			mark.TextColor3 = has_children and settings_ref.Theme.PlaceholderText or color_for("out", node.remote and node.remote.class or "RemoteEvent")
 			mark.Text = has_children and (expanded_paths[node.path] and "v" or ">") or "-"
 
 			local name = Instance.new("TextLabel", row)
 			name.BackgroundTransparency = 1
 			name.Position = UDim2.new(0, 20 + depth * 12, 0, 0)
 			name.Size = UDim2.new(1, -74 - depth * 12, 1, 0)
-			name.Font = is_leaf and Enum.Font.SourceSansBold or Enum.Font.SourceSans
+			name.Font = is_leaf and (theme_ref and theme_ref.MapFont(Enum.Font.SourceSansBold) or Enum.Font.SourceSansBold) or (theme_ref and theme_ref.MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans)
 			name.TextSize = 13
-			name.TextColor3 = node.remote and Color3.fromRGB(232, 236, 242) or Color3.fromRGB(180, 188, 200)
+			name.TextColor3 = node.remote and settings_ref.Theme.Text or settings_ref.Theme.PlaceholderText
 			name.TextXAlignment = Enum.TextXAlignment.Left
 			name.TextTruncate = Enum.TextTruncate.AtEnd
 			name.Text = node.name
@@ -18466,14 +18699,14 @@ local function main()
 			count.Size = UDim2.new(0, 46, 1, 0)
 			count.Font = Enum.Font.Code
 			count.TextSize = 11
-			count.TextColor3 = Color3.fromRGB(130, 142, 158)
+			count.TextColor3 = settings_ref.Theme.PlaceholderText
 			count.TextXAlignment = Enum.TextXAlignment.Right
 			count.Text = node.count > 0 and tostring(node.count) or ""
 
 			row.MouseEnter:Connect(function()
 				if selected_path ~= node.path then
 					row.BackgroundTransparency = 0
-					row.BackgroundColor3 = Color3.fromRGB(38, 44, 52)
+					row.BackgroundColor3 = settings_ref.Theme.ButtonHover
 				end
 			end)
 			row.MouseLeave:Connect(function()
@@ -18515,7 +18748,7 @@ local function main()
 		local col = color_for(entry.dir, entry.class)
  
 		local row = Instance.new("Frame")
-		row.BackgroundColor3 = Color3.fromRGB(38, 38, 38)
+		row.BackgroundColor3 = settings_ref.Theme.Main1
 		row.BorderSizePixel  = 0
 		row.Size             = UDim2.new(1, 0, 0, 36)
 		row.ClipsDescendants = true
@@ -18531,7 +18764,7 @@ local function main()
 		tl.Size      = UDim2.new(0, 55, 0, 18)
 		tl.Font      = Enum.Font.Code
 		tl.TextSize  = 11
-		tl.TextColor3 = Color3.fromRGB(130, 130, 130)
+		tl.TextColor3 = settings_ref.Theme.PlaceholderText
 		tl.TextXAlignment = Enum.TextXAlignment.Left
 		tl.Text = entry.time
  
@@ -18539,7 +18772,7 @@ local function main()
 		dl.BackgroundTransparency = 1
 		dl.Position  = UDim2.new(0, 66, 0, 0)
 		dl.Size      = UDim2.new(0, 150, 0, 18)
-		dl.Font      = Enum.Font.SourceSansBold
+		dl.Font      = theme_ref and theme_ref.MapFont(Enum.Font.SourceSansBold) or Enum.Font.SourceSansBold
 		dl.TextSize  = 13
 		dl.TextColor3 = col
 		dl.TextXAlignment = Enum.TextXAlignment.Left
@@ -18551,7 +18784,7 @@ local function main()
 		ml.Size      = UDim2.new(0, 120, 0, 18)
 		ml.Font      = Enum.Font.Code
 		ml.TextSize  = 12
-		ml.TextColor3 = Color3.fromRGB(200, 200, 200)
+		ml.TextColor3 = settings_ref.Theme.Text
 		ml.TextXAlignment = Enum.TextXAlignment.Left
 		ml.Text = ":" .. entry.method .. "()"
  
@@ -18561,7 +18794,7 @@ local function main()
 		pl.Size      = UDim2.new(0.5, -10, 0, 15)
 		pl.Font      = Enum.Font.Code
 		pl.TextSize  = 11
-		pl.TextColor3 = Color3.fromRGB(160, 160, 160)
+		pl.TextColor3 = settings_ref.Theme.PlaceholderText
 		pl.TextXAlignment = Enum.TextXAlignment.Left
 		pl.TextTruncate = Enum.TextTruncate.AtEnd
 		pl.Text = entry.path
@@ -18572,21 +18805,27 @@ local function main()
 		al.Size      = UDim2.new(0.5, -6, 0, 15)
 		al.Font      = Enum.Font.Code
 		al.TextSize  = 11
-		al.TextColor3 = Color3.fromRGB(210, 210, 140)
+		al.TextColor3 = settings_ref.Theme.Syntax.Number or Color3.fromRGB(210, 210, 140)
 		al.TextXAlignment = Enum.TextXAlignment.Right
 		al.TextTruncate = Enum.TextTruncate.AtEnd
 		al.Text = entry.args
+
+		local separator = Instance.new("Frame", row)
+		separator.BackgroundColor3 = settings_ref.Theme.Outline1
+		separator.BorderSizePixel = 0
+		separator.Size = UDim2.new(1, 0, 0, 1)
+		separator.Position = UDim2.new(0, 0, 1, -1)
  
 		row.InputBegan:Connect(function(i)
 			if i.UserInputType == Enum.UserInputType.MouseMovement then
-				row.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+				row.BackgroundColor3 = settings_ref.Theme.ButtonHover
 			elseif i.UserInputType == Enum.UserInputType.MouseButton2 and setclipboard then
 				setclipboard(entry.path)
 			end
 		end)
 		row.InputEnded:Connect(function(i)
 			if i.UserInputType == Enum.UserInputType.MouseMovement then
-				row.BackgroundColor3 = Color3.fromRGB(38, 38, 38)
+				row.BackgroundColor3 = settings_ref.Theme.Main1
 			end
 		end)
  
@@ -18594,9 +18833,49 @@ local function main()
 		row.Parent = list_frame
 		table.insert(log_frames, row)
 	end
+
+	local function schedule_flush()
+		if flush_scheduled then return end
+		flush_scheduled = true
+		task.delay(flush_interval, function()
+			flush_scheduled = false
+			if not list_frame then
+				table.clear(pending_rows)
+				return
+			end
+			local processed = 0
+			while processed < rows_per_flush and #pending_rows > 0 do
+				local entry = table.remove(pending_rows, 1)
+				if entry then
+					push_row(entry)
+					processed += 1
+				end
+			end
+			trim_visible_rows()
+			update_scroll()
+			if #pending_rows > 0 then
+				schedule_flush()
+			end
+		end)
+	end
+
+	local function can_capture_log()
+		local now = os.clock()
+		if now - rate_window_start >= 1 then
+			rate_window_start = now
+			rate_window_count = 0
+		end
+		rate_window_count += 1
+		if rate_window_count > max_logs_per_second then
+			dropped_logs += 1
+			return false
+		end
+		return true
+	end
  
 	local function add_log(dir, inst, method, raw_args)
 		if not active or paused then return end
+		if not can_capture_log() then return end
 
 		local entry = {
 			time   = os.date("%H:%M:%S"),
@@ -18614,34 +18893,43 @@ local function main()
 		end
  
 		if window and not window.Closed and matches(entry) then
-			push_row(entry)
-			if scroll_v then
-				scroll_v.Index = math.max(0, #log_frames - scroll_v.VisibleSpace)
-				scroll_v:Update()
-			end
+			pending_rows[#pending_rows + 1] = entry
+			if #pending_rows > visible_log_limit then table.remove(pending_rows, 1) end
+			schedule_flush()
 		end
  
-		if status_label then
-			status_label.Text = #logs .. " logs"
-		end
 		local now = tick()
-		if created_remote or now - last_tree_rebuild > 0.25 then
+		if status_label and now - last_status_update > 0.25 then
+			last_status_update = now
+			status_label.Text = #logs .. " logs" .. (dropped_logs > 0 and (" | dropped " .. dropped_logs) or "")
+		end
+		if created_remote or now - last_tree_rebuild > 1 then
 			last_tree_rebuild = now
 			rebuild_tree()
 		end
-		update_detail()
+		if now - last_status_update < 0.05 then
+			update_detail()
+		end
 	end
  
 	rebuild_list = function()
 		for _, f in ipairs(log_frames) do f:Destroy() end
 		log_frames = {}
+		table.clear(pending_rows)
 		local visible_count = 0
-		for _, e in ipairs(logs) do
+		local matched = {}
+		for i = #logs, 1, -1 do
+			local e = logs[i]
 			if matches(e) then
-				visible_count = visible_count + 1
-				push_row(e)
+				table.insert(matched, 1, e)
+				if #matched >= visible_log_limit then break end
 			end
 		end
+		for _, e in ipairs(matched) do
+			visible_count += 1
+			push_row(e)
+		end
+		trim_visible_rows()
 		if empty_label then
 			empty_label.Visible = visible_count == 0
 			if selected_path ~= "" then
@@ -18654,7 +18942,7 @@ local function main()
 		end
 		if scroll_v then
 			scroll_v.TotalSpace = #log_frames
-			scroll_v.Index = 0
+			scroll_v.Index = math.max(0, #log_frames - scroll_v.VisibleSpace)
 			scroll_v:Update()
 		end
 	end
@@ -18679,6 +18967,9 @@ local function main()
 	local function start()
 		if active then return end
 		active = true
+		dropped_logs = 0
+		rate_window_start = os.clock()
+		rate_window_count = 0
  
 		if hookmetamethod and not namecall_orig then
 			local ok, orig = pcall(hookmetamethod, game, "__namecall", function(self, ...)
@@ -18746,19 +19037,23 @@ local function main()
  
 	local function make_btn(parent, text, x, w)
 		local btn = Instance.new("TextButton")
-		btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58)
 		btn.BorderSizePixel  = 0
 		btn.Font             = Enum.Font.SourceSans
 		btn.TextSize         = 13
-		btn.TextColor3       = Color3.fromRGB(238, 242, 247)
 		btn.Text             = text
 		btn.AutoButtonColor  = false
 		btn.Size             = UDim2.new(0, w, 0, 18)
 		btn.Position         = UDim2.new(0, x, 0, 2)
 		btn.Parent           = parent
-		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 3)
-		btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(55, 63, 75) end)
-		btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58) end)
+		if theme_ref then
+			theme_ref.StyleButton(btn)
+		else
+			btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58)
+			btn.TextColor3       = Color3.fromRGB(238, 242, 247)
+			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 3)
+			btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(55, 63, 75) end)
+			btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58) end)
+		end
 		return btn
 	end
  
@@ -18769,7 +19064,7 @@ local function main()
 		spy.Window = window
  
 		local toolbar = Instance.new("Frame")
-		toolbar.BackgroundColor3 = Color3.fromRGB(28, 32, 38)
+		toolbar.BackgroundColor3 = settings_ref.Theme.Menu
 		toolbar.BorderSizePixel  = 0
 		toolbar.Size             = UDim2.new(1, 0, 0, 26)
 		toolbar.Parent           = window.GuiElems.Content
@@ -18797,9 +19092,9 @@ local function main()
  
 		status_label = Instance.new("TextLabel")
 		status_label.BackgroundTransparency = 1
-		status_label.Font       = Enum.Font.SourceSans
+		status_label.Font       = theme_ref and theme_ref.MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans
 		status_label.TextSize   = 12
-		status_label.TextColor3 = Color3.fromRGB(142, 151, 164)
+		status_label.TextColor3 = settings_ref.Theme.PlaceholderText
 		status_label.TextXAlignment = Enum.TextXAlignment.Right
 		status_label.Size       = UDim2.new(1, -330, 1, 0)
 		status_label.Position   = UDim2.new(0, 326, 0, 0)
@@ -18807,7 +19102,7 @@ local function main()
 		status_label.Parent     = toolbar
  
 		local search_bar = Instance.new("Frame")
-		search_bar.BackgroundColor3 = Color3.fromRGB(20, 23, 29)
+		search_bar.BackgroundColor3 = settings_ref.Theme.Main1
 		search_bar.BorderSizePixel  = 0
 		search_bar.Size             = UDim2.new(1, 0, 0, 26)
 		search_bar.Position         = UDim2.new(0, 0, 0, 26)
@@ -18816,11 +19111,11 @@ local function main()
 		local search_box = Instance.new("TextBox", search_bar)
 		search_box.BackgroundTransparency = 1
 		search_box.PlaceholderText  = "filter…"
-		search_box.PlaceholderColor3 = Color3.fromRGB(142, 151, 164)
+		search_box.PlaceholderColor3 = settings_ref.Theme.PlaceholderText
 		search_box.Text             = ""
 		search_box.Font             = Enum.Font.Code
 		search_box.TextSize         = 13
-		search_box.TextColor3       = Color3.fromRGB(238, 242, 247)
+		search_box.TextColor3       = settings_ref.Theme.Text
 		search_box.TextXAlignment   = Enum.TextXAlignment.Left
 		search_box.ClearTextOnFocus = false
 		search_box.Size             = UDim2.new(1, -14, 1, 0)
@@ -18832,14 +19127,14 @@ local function main()
 		end)
 
 		local body = Instance.new("Frame")
-		body.BackgroundColor3 = Color3.fromRGB(23, 27, 33)
+		body.BackgroundColor3 = settings_ref.Theme.Main2
 		body.BorderSizePixel = 0
 		body.Position = UDim2.new(0, 0, 0, 52)
 		body.Size = UDim2.new(1, 0, 1, -52)
 		body.Parent = window.GuiElems.Content
 
 		local tree_panel = Instance.new("Frame")
-		tree_panel.BackgroundColor3 = Color3.fromRGB(20, 23, 29)
+		tree_panel.BackgroundColor3 = settings_ref.Theme.Main1
 		tree_panel.BorderSizePixel = 0
 		tree_panel.Size = UDim2.new(0, 218, 1, 0)
 		tree_panel.Parent = body
@@ -18848,9 +19143,9 @@ local function main()
 		tree_title.BackgroundTransparency = 1
 		tree_title.Position = UDim2.new(0, 8, 0, 0)
 		tree_title.Size = UDim2.new(1, -16, 0, 28)
-		tree_title.Font = Enum.Font.SourceSansBold
+		tree_title.Font = theme_ref and theme_ref.MapFont(Enum.Font.SourceSansBold) or Enum.Font.SourceSansBold
 		tree_title.TextSize = 14
-		tree_title.TextColor3 = Color3.fromRGB(238, 242, 247)
+		tree_title.TextColor3 = settings_ref.Theme.Text
 		tree_title.TextXAlignment = Enum.TextXAlignment.Left
 		tree_title.Text = "Remote tree"
 
@@ -18860,7 +19155,7 @@ local function main()
 		tree_scroll.BorderSizePixel = 0
 		tree_scroll.Position = UDim2.new(0, 4, 0, 30)
 		tree_scroll.Size = UDim2.new(1, -4, 1, -34)
-		tree_scroll.ScrollBarImageColor3 = Color3.fromRGB(70, 82, 98)
+		tree_scroll.ScrollBarImageColor3 = settings_ref.Theme.Highlight
 		tree_scroll.ScrollBarThickness = 4
 		tree_scroll.CanvasSize = UDim2.new(0, 0, 0, 24)
 		tree_scroll.Parent = tree_panel
@@ -18875,32 +19170,32 @@ local function main()
 		tree_layout.Padding = UDim.new(0, 1)
 
 		local split_line = Instance.new("Frame", body)
-		split_line.BackgroundColor3 = Color3.fromRGB(18, 21, 26)
+		split_line.BackgroundColor3 = settings_ref.Theme.Outline1
 		split_line.BorderSizePixel = 0
 		split_line.Position = UDim2.new(0, 218, 0, 0)
 		split_line.Size = UDim2.new(0, 1, 1, 0)
 
 		local right_panel = Instance.new("Frame")
-		right_panel.BackgroundColor3 = Color3.fromRGB(23, 27, 33)
+		right_panel.BackgroundColor3 = settings_ref.Theme.Main2
 		right_panel.BorderSizePixel = 0
 		right_panel.Position = UDim2.new(0, 219, 0, 0)
 		right_panel.Size = UDim2.new(1, -219, 1, 0)
 		right_panel.Parent = body
 
 		detail_label = Instance.new("TextLabel", right_panel)
-		detail_label.BackgroundColor3 = Color3.fromRGB(28, 32, 38)
+		detail_label.BackgroundColor3 = settings_ref.Theme.Menu
 		detail_label.BorderSizePixel = 0
 		detail_label.Position = UDim2.new(0, 0, 0, 0)
 		detail_label.Size = UDim2.new(1, 0, 0, 28)
 		detail_label.Font = Enum.Font.Code
 		detail_label.TextSize = 12
-		detail_label.TextColor3 = Color3.fromRGB(180, 188, 200)
+		detail_label.TextColor3 = settings_ref.Theme.PlaceholderText
 		detail_label.TextXAlignment = Enum.TextXAlignment.Left
 		detail_label.TextTruncate = Enum.TextTruncate.AtEnd
 		detail_label.Text = "All remotes"
  
 		local list_container = Instance.new("Frame")
-		list_container.BackgroundColor3 = Color3.fromRGB(23, 27, 33)
+		list_container.BackgroundColor3 = settings_ref.Theme.Main2
 		list_container.BorderSizePixel  = 0
 		list_container.Size             = UDim2.new(1, -16, 1, -28)
 		list_container.Position         = UDim2.new(0, 0, 0, 28)
@@ -18921,9 +19216,9 @@ local function main()
 		empty_label.BackgroundTransparency = 1
 		empty_label.Size = UDim2.new(1, 0, 0, 48)
 		empty_label.Position = UDim2.new(0, 0, 0.5, -24)
-		empty_label.Font = Enum.Font.SourceSans
+		empty_label.Font = theme_ref and theme_ref.MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans
 		empty_label.TextSize = 14
-		empty_label.TextColor3 = Color3.fromRGB(142, 151, 164)
+		empty_label.TextColor3 = settings_ref.Theme.PlaceholderText
 		empty_label.Text = "Start spy to capture calls"
 		empty_label.Visible = true
  
@@ -18937,52 +19232,54 @@ local function main()
 			list_frame.Position = UDim2.new(0, 0, 0, -scroll_v.Index * 37)
 		end)
  
+		local function update_button_states()
+			if not start_btn then return end
+			local theme = settings_ref.Theme
+			
+			if active then
+				start_btn.Text = paused and "Paused" or "Active"
+				start_btn.BackgroundColor3 = paused and Color3.fromRGB(234, 179, 8) or theme.ListSelection
+				
+				stop_btn.Text = "Stop"
+				stop_btn.BackgroundColor3 = theme.Button
+			else
+				start_btn.Text = "Start"
+				start_btn.BackgroundColor3 = theme.Button
+				
+				stop_btn.Text = "Stopped"
+				stop_btn.BackgroundColor3 = Color3.fromRGB(244, 63, 94)
+			end
+			
+			pause_btn.Text = paused and "Resume" or "Pause"
+			pause_btn.BackgroundColor3 = paused and Color3.fromRGB(234, 179, 8) or theme.Button
+		end
+
 		start_btn.MouseButton1Click:Connect(function()
-			start()
-			start_btn.BackgroundColor3 = Color3.fromRGB(28, 95, 48)
-			start_btn.Text = "▶ active"
-			stop_btn.BackgroundColor3  = Color3.fromRGB(55, 55, 55)
-			stop_btn.Text  = "■ stop"
+			if not active then
+				start()
+				paused = false
+				update_button_states()
+				rebuild_tree()
+				rebuild_list()
+			end
 		end)
  
 		stop_btn.MouseButton1Click:Connect(function()
-			stop()
-			start_btn.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-			start_btn.Text = "▶ start"
-			stop_btn.BackgroundColor3  = Color3.fromRGB(100, 38, 38)
-			stop_btn.Text  = "■ stopped"
+			if active then
+				stop()
+				paused = false
+				update_button_states()
+				rebuild_list()
+			end
 		end)
  
 		clear_btn.MouseButton1Click:Connect(function()
 			logs = {}
 			for _, f in ipairs(log_frames) do f:Destroy() end
 			log_frames = {}
+			table.clear(pending_rows)
+			dropped_logs = 0
 			status_label.Text = "0 logs"
-		end)
- 
-		pause_btn.MouseButton1Click:Connect(function()
-			paused = not paused
-			pause_btn.Text = paused and "resume" or "pause"
-			pause_btn.BackgroundColor3 = paused
-				and Color3.fromRGB(95, 75, 20)
-				or  Color3.fromRGB(55, 55, 55)
-		end)
-
-		start_btn.MouseButton1Click:Connect(function()
-			start_btn.Text = "Active"
-			stop_btn.Text = "Stop"
-			stop_btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58)
-			rebuild_tree()
-			rebuild_list()
-		end)
-
-		stop_btn.MouseButton1Click:Connect(function()
-			start_btn.Text = "Start"
-			start_btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58)
-			stop_btn.Text = "Stopped"
-		end)
-
-		clear_btn.MouseButton1Click:Connect(function()
 			for _, stat in pairs(remote_stats) do
 				stat.count = 0
 				stat.last = ""
@@ -18991,11 +19288,11 @@ local function main()
 			rebuild_list()
 			update_detail()
 		end)
-
+ 
 		pause_btn.MouseButton1Click:Connect(function()
-			pause_btn.Text = paused and "Resume" or "Pause"
-			if not paused then
-				pause_btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58)
+			if active then
+				paused = not paused
+				update_button_states()
 			end
 		end)
 

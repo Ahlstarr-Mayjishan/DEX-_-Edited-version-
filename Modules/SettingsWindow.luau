@@ -293,6 +293,11 @@ local function main()
 			Settings.Window.TitleOnMiddle = titleonmiddle.Toggled
 		end)
 		
+		local autocheckupdate = AddCheckbox("Auto Check Update", Settings.AutoCheckUpdate ~= false)
+		autocheckupdate.OnInput:Connect(function()
+			Settings.AutoCheckUpdate = autocheckupdate.Toggled
+		end)
+		
 		local bgTransparency = AddTextbox("Background Transparency", tostring(Settings.Window.Transparency), 15)
 		bgTransparency.FocusLost:Connect(function()
 			Settings.Window.Transparency = tonumber(bgTransparency.Text)

@@ -80,6 +80,37 @@ cloneref = cloneref or function(ref)
 				return g
 			end
 		end
+local oldgame = oldgame or game
+
+cloneref = cloneref or function(ref)
+	if not getreg then return ref end
+	
+	local InstanceList
+	
+	local a = Instance.new("Part")
+	for _, c in pairs(getreg()) do
+		if type(c) == "table" and #c then
+			if rawget(c, "__mode") == "kvs" then
+				for d, e in pairs(c) do
+					if e == a then
+						InstanceList = c
+						break
+					end
+				end
+			end
+		end
+	end
+	local f = {}
+	function f.invalidate(g)
+		if not InstanceList then
+			return
+		end
+		for b, c in pairs(InstanceList) do
+			if c == g then
+				InstanceList[b] = nil
+				return g
+			end
+		end
 	end
 	return f.invalidate
 end
@@ -87,7 +118,7 @@ end
 local isFsSupported = readfile and writefile and isfile and isfolder and listfiles and delfile and delfolder
 
 -- Main vars
-local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, RuntimeInspector--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
+local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, RuntimeInspector, Theme--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
 local API, RMD
 
 -- Default Settings
@@ -120,47 +151,47 @@ DefaultSettings = (function()
 		},
 		Theme = {
 			_Recurse = true,
-			Main1 = rgb(35,39,46),
-			Main2 = rgb(28,32,38),
-			Outline1 = rgb(18,21,26), -- Mainly frames
-			Outline2 = rgb(58,66,78), -- Mainly button
-			Outline3 = rgb(14,17,22), -- Mainly textbox
-			TextBox = rgb(23,27,33),
-			Menu = rgb(20,23,29),
-			ListSelection = rgb(42,126,214),
-			Button = rgb(43,49,58),
-			ButtonHover = rgb(55,63,75),
-			ButtonPress = rgb(30,35,42),
-			Highlight = rgb(70,82,98),
-			Text = rgb(238,242,247),
-			PlaceholderText = rgb(142,151,164),
-			Important = rgb(255,82,82),
+			Main1 = rgb(25, 27, 31),
+			Main2 = rgb(15, 17, 20),
+			Outline1 = rgb(35, 39, 47), -- Mainly frames
+			Outline2 = rgb(55, 65, 81), -- Mainly button
+			Outline3 = rgb(35, 39, 47), -- Mainly textbox
+			TextBox = rgb(20, 22, 26),
+			Menu = rgb(18, 20, 24),
+			ListSelection = rgb(99, 102, 241),
+			Button = rgb(31, 41, 55),
+			ButtonHover = rgb(79, 70, 229),
+			ButtonPress = rgb(67, 56, 202),
+			Highlight = rgb(79, 70, 229),
+			Text = rgb(243, 244, 246),
+			PlaceholderText = rgb(156, 163, 175),
+			Important = rgb(244, 63, 94),
 			ExplorerIconMap = "",
 			MiscIconMap = "",
 			Syntax = {
-				Text = rgb(204,204,204),
-				Background = rgb(36,36,36),
-				Selection = rgb(255,255,255),
-				SelectionBack = rgb(11,90,175),
-				Operator = rgb(204,204,204),
-				Number = rgb(255,198,0),
-				String = rgb(173,241,149),
-				Comment = rgb(102,102,102),
-				Keyword = rgb(248,109,124),
-				Error = rgb(255,0,0),
-				FindBackground = rgb(141,118,0),
-				MatchingWord = rgb(85,85,85),
-				BuiltIn = rgb(132,214,247),
-				CurrentLine = rgb(45,50,65),
-				LocalMethod = rgb(253,251,172),
-				LocalProperty = rgb(97,161,241),
-				Nil = rgb(255,198,0),
-				Bool = rgb(255,198,0),
-				Function = rgb(248,109,124),
-				Local = rgb(248,109,124),
-				Self = rgb(248,109,124),
-				FunctionName = rgb(253,251,172),
-				Bracket = rgb(204,204,204)
+				Text = rgb(171, 178, 191),
+				Background = rgb(20, 22, 26),
+				Selection = rgb(243, 244, 246),
+				SelectionBack = rgb(67, 56, 202),
+				Operator = rgb(86, 182, 224),
+				Number = rgb(209, 154, 102),
+				String = rgb(152, 195, 121),
+				Comment = rgb(92, 99, 112),
+				Keyword = rgb(198, 120, 221),
+				Error = rgb(244, 63, 94),
+				FindBackground = rgb(234, 179, 8),
+				MatchingWord = rgb(75, 85, 99),
+				BuiltIn = rgb(229, 192, 123),
+				CurrentLine = rgb(31, 41, 55),
+				LocalMethod = rgb(97, 175, 239),
+				LocalProperty = rgb(224, 108, 117),
+				Nil = rgb(209, 154, 102),
+				Bool = rgb(209, 154, 102),
+				Function = rgb(198, 120, 221),
+				Local = rgb(198, 120, 221),
+				Self = rgb(224, 108, 117),
+				FunctionName = rgb(97, 175, 239),
+				Bracket = rgb(171, 178, 191)
 			},
 		},
 		ScriptViewer = {
@@ -175,6 +206,7 @@ DefaultSettings = (function()
 			PreferDecompilerFallback = false,
 			ShinyDecompilerPort = 3000,
 		},
+		AutoCheckUpdate = true,
 		
 		RemoteBlockWriteAttribute = false, -- writes attribute to remote instance if remote is blocked/unblocked
 		ClassIcon = "NewDark",
@@ -198,6 +230,15 @@ local service = setmetatable({},{__index = function(self,name)
 end})
 local plr = service.Players.LocalPlayer or service.Players.PlayerAdded:wait()
 
+local mapFont = function(font)
+	if font == Enum.Font.SourceSans then
+		return Enum.Font.Gotham
+	elseif font == Enum.Font.SourceSansBold then
+		return Enum.Font.GothamBold
+	end
+	return font
+end
+
 local create = function(data)
 	local insts = {}
 	for i,v in pairs(data) do insts[v[1]] = Instance.new(v[2]) end
@@ -207,7 +248,11 @@ local create = function(data)
 			if type(val) == "table" then
 				insts[v[1]][prop] = insts[val[1]]
 			else
-				insts[v[1]][prop] = val
+				local actualVal = val
+				if prop == "Font" then
+					actualVal = mapFont(val)
+				end
+				insts[v[1]][prop] = actualVal
 			end
 		end
 	end
@@ -218,7 +263,11 @@ end
 local createSimple = function(class,props)
 	local inst = Instance.new(class)
 	for i,v in next,props do
-		inst[i] = v
+		local actualVal = v
+		if i == "Font" then
+			actualVal = mapFont(v)
+		end
+		inst[i] = actualVal
 	end
 	return inst
 end
@@ -226,7 +275,7 @@ end
 Main = (function()
 	local Main = {}
 
-	Main.ModuleList = {"Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap","ObjectLinks","RuntimeInspector"}
+	Main.ModuleList = {"Theme","Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap","ObjectLinks","RuntimeInspector"}
 	Main.Elevated = false
 	Main.AllowDraggableOnMobile = true
 	Main.MissingEnv = {}
@@ -504,10 +553,12 @@ Main = (function()
 		RemoteUsageMap = Apps.RemoteUsageMap
 		ObjectLinks = Apps.ObjectLinks
 		RuntimeInspector = Apps.RuntimeInspector
+		Theme = Apps.Theme
 		
 		
 		--SecretServicePanel = Apps.SecretServicePanel
 		local appTable = {
+			Theme = Theme,
 			Explorer = Explorer,
 			Properties = Properties,
 			ScriptViewer = ScriptViewer,
@@ -1911,11 +1962,12 @@ Main = (function()
 	end
 
 	Main.CheckForUpdatesAsync = function()
+		if Settings.AutoCheckUpdate == false then return end
 		if Main.UpdateCheckStarted then return end
 		Main.UpdateCheckStarted = true
 		coroutine.wrap(function()
 			task.wait(1)
-			local ok, source = pcall(oldgame.HttpGet, game, Main.UpdateScriptURL, true)
+			local ok, source = pcall(function() return game:HttpGet(Main.UpdateScriptURL, true) end)
 			if not ok or type(source) ~= "string" or source == "" then return end
 			local latestVersion = Main.GetRemoteScriptVersion(source)
 			if not latestVersion then return end
@@ -2041,26 +2093,26 @@ Main = (function()
 	Main.CreateMainGui = function()
 		local gui = create({
 			{1,"ScreenGui",{IgnoreGuiInset=true,Name="MainMenu",}},
-			{2,"TextButton",{AnchorPoint=Vector2.new(0.5,0),AutoButtonColor=false,BackgroundColor3=Color3.fromRGB(28,32,38),BorderSizePixel=0,Font=4,Name="OpenButton",Parent={1},Position=UDim2.new(0.5,0,0,2),Size=UDim2.new(0,68,0,34),Text="Dex++",TextColor3=Color3.fromRGB(238,242,247),TextSize=16,TextTransparency=0.050000000745058,}},
+			{2,"TextButton",{AnchorPoint=Vector2.new(0.5,0),AutoButtonColor=false,BackgroundColor3=Settings.Theme.Main2,BorderSizePixel=0,Font=Enum.Font.Gotham,Name="OpenButton",Parent={1},Position=UDim2.new(0.5,0,0,2),Size=UDim2.new(0,68,0,34),Text="Dex++",TextColor3=Settings.Theme.Text,TextSize=16,TextTransparency=0.050000000745058,}},
 			{3,"UICorner",{CornerRadius=UDim.new(0,4),Parent={2},}},
-			{4,"Frame",{AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.fromRGB(28,32,38),ClipsDescendants=true,Name="MainFrame",Parent={2},Position=UDim2.new(0.5,0,1,-4),Size=UDim2.new(0,292,0,258),}},
+			{4,"Frame",{AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Settings.Theme.Main2,ClipsDescendants=true,Name="MainFrame",Parent={2},Position=UDim2.new(0.5,0,1,-4),Size=UDim2.new(0,292,0,258),}},
 			{5,"UICorner",{CornerRadius=UDim.new(0,4),Parent={4},}},
-			{6,"Frame",{BackgroundColor3=Color3.fromRGB(35,39,46),Name="BottomFrame",Parent={4},Position=UDim2.new(0,0,1,-28),Size=UDim2.new(1,0,0,28),}},
+			{6,"Frame",{BackgroundColor3=Settings.Theme.Main1,Name="BottomFrame",Parent={4},Position=UDim2.new(0,0,1,-28),Size=UDim2.new(1,0,0,28),}},
 			{7,"UICorner",{CornerRadius=UDim.new(0,4),Parent={6},}},
-			{8,"Frame",{BackgroundColor3=Color3.fromRGB(35,39,46),BorderSizePixel=0,Name="CoverFrame",Parent={6},Size=UDim2.new(1,0,0,4),}},
-			{9,"Frame",{BackgroundColor3=Color3.fromRGB(18,21,26),BorderSizePixel=0,Name="Line",Parent={8},Position=UDim2.new(0,0,0,-1),Size=UDim2.new(1,0,0,1),}},
+			{8,"Frame",{BackgroundColor3=Settings.Theme.Main1,BorderSizePixel=0,Name="CoverFrame",Parent={6},Size=UDim2.new(1,0,0,4),}},
+			{9,"Frame",{BackgroundColor3=Settings.Theme.Outline1,BorderSizePixel=0,Name="Line",Parent={8},Position=UDim2.new(0,0,0,-1),Size=UDim2.new(1,0,0,1),}},
 			{10,"TextButton",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Font=3,Name="Settings",Parent={6},Position=UDim2.new(1,-48,0,0),Size=UDim2.new(0,24,1,0),Text="",TextColor3=Color3.new(1,1,1),TextSize=14,}},
-			{11,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://6578871732",ImageColor3=Color3.fromRGB(238,242,247),ImageTransparency=0.10000000149012,Name="Icon",Parent={10},Position=UDim2.new(0,4,0,6),Size=UDim2.new(0,16,0,16),}},
+			{11,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://6578871732",ImageColor3=Settings.Theme.Text,ImageTransparency=0.10000000149012,Name="Icon",Parent={10},Position=UDim2.new(0,4,0,6),Size=UDim2.new(0,16,0,16),}},
 			{12,"TextButton",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Font=3,Name="Information",Parent={6},Position=UDim2.new(1,-24,0,0),Size=UDim2.new(0,24,1,0),Text="",TextColor3=Color3.new(1,1,1),TextSize=14,}},
-			{13,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://6578933307",ImageColor3=Color3.fromRGB(238,242,247),ImageTransparency=0.10000000149012,Name="Icon",Parent={12},Position=UDim2.new(0,4,0,6),Size=UDim2.new(0,16,0,16),}},
-			{14,"ScrollingFrame",{Active=true,AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderColor3=Color3.fromRGB(18,21,26),BorderSizePixel=0,Name="AppsFrame",Parent={4},Position=UDim2.new(0.5,0,0,0),ScrollBarImageColor3=Color3.fromRGB(70,82,98),ScrollBarThickness=4,Size=UDim2.new(0,290,1,-29),}},
+			{13,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://6578933307",ImageColor3=Settings.Theme.Text,ImageTransparency=0.10000000149012,Name="Icon",Parent={12},Position=UDim2.new(0,4,0,6),Size=UDim2.new(0,16,0,16),}},
+			{14,"ScrollingFrame",{Active=true,AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderColor3=Settings.Theme.Outline1,BorderSizePixel=0,Name="AppsFrame",Parent={4},Position=UDim2.new(0.5,0,0,0),ScrollBarImageColor3=Settings.Theme.Highlight,ScrollBarThickness=4,Size=UDim2.new(0,290,1,-29),}},
 			{15,"Frame",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Name="Container",Parent={14},Position=UDim2.new(0,8,0,10),Size=UDim2.new(1,-16,0,2),}},
 			{16,"UIGridLayout",{CellPadding=UDim2.new(0,2,0,4),CellSize=UDim2.new(0,88,0,78),Parent={15},SortOrder=2,}},
 			{17,"Frame",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Name="App",Parent={1},Size=UDim2.new(0,100,0,100),Visible=false,}},
-			{18,"TextButton",{AutoButtonColor=false,BackgroundColor3=Color3.fromRGB(43,49,58),BorderSizePixel=0,Font=3,Name="Main",Parent={17},Size=UDim2.new(1,0,0,64),Text="",TextColor3=Color3.new(0,0,0),TextSize=14,}},
-			{19,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://129589545519436",ImageColor3=Color3.fromRGB(238,242,247),ImageRectSize=Vector2.new(32,32),Name="Icon",Parent={18},Position=UDim2.new(0.5,-16,0,6),ScaleType=4,Size=UDim2.new(0,32,0,32),}},
-			{20,"TextLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderSizePixel=0,Font=3,Name="AppName",Parent={18},Position=UDim2.new(0,4,0,42),Size=UDim2.new(1,-8,1,-44),Text="Explorer",TextColor3=Color3.fromRGB(238,242,247),TextSize=13,TextTransparency=0.050000000745058,TextTruncate=1,TextWrapped=true,TextYAlignment=0,}},
-			{21,"Frame",{BackgroundColor3=Color3.fromRGB(42,126,214),BorderSizePixel=0,Name="Highlight",Parent={18},Position=UDim2.new(0,0,1,-2),Size=UDim2.new(1,0,0,2),}},
+			{18,"TextButton",{AutoButtonColor=false,BackgroundColor3=Settings.Theme.Button,BorderSizePixel=0,Font=3,Name="Main",Parent={17},Size=UDim2.new(1,0,0,64),Text="",TextColor3=Color3.new(0,0,0),TextSize=14,}},
+			{19,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://129589545519436",ImageColor3=Settings.Theme.Text,ImageRectSize=Vector2.new(32,32),Name="Icon",Parent={18},Position=UDim2.new(0.5,-16,0,6),ScaleType=4,Size=UDim2.new(0,32,0,32),}},
+			{20,"TextLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderSizePixel=0,Font=3,Name="AppName",Parent={18},Position=UDim2.new(0,4,0,42),Size=UDim2.new(1,-8,1,-44),Text="Explorer",TextColor3=Settings.Theme.Text,TextSize=13,TextTransparency=0.050000000745058,TextTruncate=1,TextWrapped=true,TextYAlignment=0,}},
+			{21,"Frame",{BackgroundColor3=Settings.Theme.ListSelection,BorderSizePixel=0,Name="Highlight",Parent={18},Position=UDim2.new(0,0,1,-2),Size=UDim2.new(1,0,0,2),}},
 		})
 		Main.MainGui = gui
 		Main.AppsFrame = gui.OpenButton.MainFrame.AppsFrame

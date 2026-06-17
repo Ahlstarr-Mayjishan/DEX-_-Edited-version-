@@ -1,4 +1,4 @@
-local main_ref, lib_ref, apps_ref, settings_ref
+local main_ref, lib_ref, apps_ref, settings_ref, theme_ref
 local explorer_ref, properties_ref
  
 local plugin_data = {
@@ -16,6 +16,7 @@ end
 local function initAfterMain(t)
 	explorer_ref   = t.Explorer
 	properties_ref = t.Properties
+	theme_ref      = t.Theme
 end
  
 local function safe_str(v)
@@ -69,15 +70,25 @@ local function main()
  
 	local logs        = {}
 	local log_frames  = {}
+	local pending_rows = {}
 	local tree_frames = {}
 	local remote_stats = {}
 	local expanded_paths = { game = true }
 	local filter_text = ""
 	local selected_path = ""
 	local paused      = false
-	local log_limit   = 400
+	local log_limit   = 240
+	local visible_log_limit = 90
+	local flush_interval = 0.12
+	local rows_per_flush = 12
+	local max_logs_per_second = 90
 	local active      = false
 	local last_tree_rebuild = 0
+	local last_status_update = 0
+	local flush_scheduled = false
+	local rate_window_start = 0
+	local rate_window_count = 0
+	local dropped_logs = 0
  
 	local namecall_orig = nil
 	local hook_cons   = {}
@@ -114,6 +125,24 @@ local function main()
  
 	local window, list_frame, tree_frame, scroll_v, status_label, detail_label, empty_label
 	local rebuild_list
+
+	local function update_scroll()
+		if scroll_v then
+			scroll_v.TotalSpace = #log_frames
+			scroll_v.Index = math.max(0, #log_frames - scroll_v.VisibleSpace)
+			scroll_v:Update()
+		end
+	end
+
+	local function trim_visible_rows()
+		while #log_frames > visible_log_limit do
+			local old = table.remove(log_frames, 1)
+			if old then old:Destroy() end
+		end
+		for i, row in ipairs(log_frames) do
+			row.LayoutOrder = i
+		end
+	end
  
 	local function color_for(dir, class_name)
 		local is_bind = class_name == "BindableEvent" or class_name == "BindableFunction"
@@ -245,13 +274,16 @@ local function main()
 
 			local row = Instance.new("TextButton")
 			row.AutoButtonColor = false
-			row.BackgroundColor3 = is_selected and Color3.fromRGB(42, 78, 124) or Color3.fromRGB(26, 30, 36)
+			row.BackgroundColor3 = is_selected and settings_ref.Theme.ListSelection or settings_ref.Theme.Main2
 			row.BackgroundTransparency = is_selected and 0 or 1
 			row.BorderSizePixel = 0
 			row.Size = UDim2.new(1, -4, 0, 24)
 			row.Text = ""
 			row.LayoutOrder = row_count
 			row.Parent = tree_frame
+			if theme_ref then
+				theme_ref.ApplyRounding(row, 4)
+			end
 
 			local mark = Instance.new("TextLabel", row)
 			mark.BackgroundTransparency = 1
@@ -259,16 +291,16 @@ local function main()
 			mark.Size = UDim2.new(0, 14, 1, 0)
 			mark.Font = Enum.Font.Code
 			mark.TextSize = 12
-			mark.TextColor3 = has_children and Color3.fromRGB(170, 180, 192) or color_for("out", node.remote and node.remote.class or "RemoteEvent")
+			mark.TextColor3 = has_children and settings_ref.Theme.PlaceholderText or color_for("out", node.remote and node.remote.class or "RemoteEvent")
 			mark.Text = has_children and (expanded_paths[node.path] and "v" or ">") or "-"
 
 			local name = Instance.new("TextLabel", row)
 			name.BackgroundTransparency = 1
 			name.Position = UDim2.new(0, 20 + depth * 12, 0, 0)
 			name.Size = UDim2.new(1, -74 - depth * 12, 1, 0)
-			name.Font = is_leaf and Enum.Font.SourceSansBold or Enum.Font.SourceSans
+			name.Font = is_leaf and (theme_ref and theme_ref.MapFont(Enum.Font.SourceSansBold) or Enum.Font.SourceSansBold) or (theme_ref and theme_ref.MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans)
 			name.TextSize = 13
-			name.TextColor3 = node.remote and Color3.fromRGB(232, 236, 242) or Color3.fromRGB(180, 188, 200)
+			name.TextColor3 = node.remote and settings_ref.Theme.Text or settings_ref.Theme.PlaceholderText
 			name.TextXAlignment = Enum.TextXAlignment.Left
 			name.TextTruncate = Enum.TextTruncate.AtEnd
 			name.Text = node.name
@@ -279,14 +311,14 @@ local function main()
 			count.Size = UDim2.new(0, 46, 1, 0)
 			count.Font = Enum.Font.Code
 			count.TextSize = 11
-			count.TextColor3 = Color3.fromRGB(130, 142, 158)
+			count.TextColor3 = settings_ref.Theme.PlaceholderText
 			count.TextXAlignment = Enum.TextXAlignment.Right
 			count.Text = node.count > 0 and tostring(node.count) or ""
 
 			row.MouseEnter:Connect(function()
 				if selected_path ~= node.path then
 					row.BackgroundTransparency = 0
-					row.BackgroundColor3 = Color3.fromRGB(38, 44, 52)
+					row.BackgroundColor3 = settings_ref.Theme.ButtonHover
 				end
 			end)
 			row.MouseLeave:Connect(function()
@@ -328,7 +360,7 @@ local function main()
 		local col = color_for(entry.dir, entry.class)
  
 		local row = Instance.new("Frame")
-		row.BackgroundColor3 = Color3.fromRGB(38, 38, 38)
+		row.BackgroundColor3 = settings_ref.Theme.Main1
 		row.BorderSizePixel  = 0
 		row.Size             = UDim2.new(1, 0, 0, 36)
 		row.ClipsDescendants = true
@@ -344,7 +376,7 @@ local function main()
 		tl.Size      = UDim2.new(0, 55, 0, 18)
 		tl.Font      = Enum.Font.Code
 		tl.TextSize  = 11
-		tl.TextColor3 = Color3.fromRGB(130, 130, 130)
+		tl.TextColor3 = settings_ref.Theme.PlaceholderText
 		tl.TextXAlignment = Enum.TextXAlignment.Left
 		tl.Text = entry.time
  
@@ -352,7 +384,7 @@ local function main()
 		dl.BackgroundTransparency = 1
 		dl.Position  = UDim2.new(0, 66, 0, 0)
 		dl.Size      = UDim2.new(0, 150, 0, 18)
-		dl.Font      = Enum.Font.SourceSansBold
+		dl.Font      = theme_ref and theme_ref.MapFont(Enum.Font.SourceSansBold) or Enum.Font.SourceSansBold
 		dl.TextSize  = 13
 		dl.TextColor3 = col
 		dl.TextXAlignment = Enum.TextXAlignment.Left
@@ -364,7 +396,7 @@ local function main()
 		ml.Size      = UDim2.new(0, 120, 0, 18)
 		ml.Font      = Enum.Font.Code
 		ml.TextSize  = 12
-		ml.TextColor3 = Color3.fromRGB(200, 200, 200)
+		ml.TextColor3 = settings_ref.Theme.Text
 		ml.TextXAlignment = Enum.TextXAlignment.Left
 		ml.Text = ":" .. entry.method .. "()"
  
@@ -374,7 +406,7 @@ local function main()
 		pl.Size      = UDim2.new(0.5, -10, 0, 15)
 		pl.Font      = Enum.Font.Code
 		pl.TextSize  = 11
-		pl.TextColor3 = Color3.fromRGB(160, 160, 160)
+		pl.TextColor3 = settings_ref.Theme.PlaceholderText
 		pl.TextXAlignment = Enum.TextXAlignment.Left
 		pl.TextTruncate = Enum.TextTruncate.AtEnd
 		pl.Text = entry.path
@@ -385,21 +417,27 @@ local function main()
 		al.Size      = UDim2.new(0.5, -6, 0, 15)
 		al.Font      = Enum.Font.Code
 		al.TextSize  = 11
-		al.TextColor3 = Color3.fromRGB(210, 210, 140)
+		al.TextColor3 = settings_ref.Theme.Syntax.Number or Color3.fromRGB(210, 210, 140)
 		al.TextXAlignment = Enum.TextXAlignment.Right
 		al.TextTruncate = Enum.TextTruncate.AtEnd
 		al.Text = entry.args
+
+		local separator = Instance.new("Frame", row)
+		separator.BackgroundColor3 = settings_ref.Theme.Outline1
+		separator.BorderSizePixel = 0
+		separator.Size = UDim2.new(1, 0, 0, 1)
+		separator.Position = UDim2.new(0, 0, 1, -1)
  
 		row.InputBegan:Connect(function(i)
 			if i.UserInputType == Enum.UserInputType.MouseMovement then
-				row.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+				row.BackgroundColor3 = settings_ref.Theme.ButtonHover
 			elseif i.UserInputType == Enum.UserInputType.MouseButton2 and setclipboard then
 				setclipboard(entry.path)
 			end
 		end)
 		row.InputEnded:Connect(function(i)
 			if i.UserInputType == Enum.UserInputType.MouseMovement then
-				row.BackgroundColor3 = Color3.fromRGB(38, 38, 38)
+				row.BackgroundColor3 = settings_ref.Theme.Main1
 			end
 		end)
  
@@ -407,9 +445,49 @@ local function main()
 		row.Parent = list_frame
 		table.insert(log_frames, row)
 	end
+
+	local function schedule_flush()
+		if flush_scheduled then return end
+		flush_scheduled = true
+		task.delay(flush_interval, function()
+			flush_scheduled = false
+			if not list_frame then
+				table.clear(pending_rows)
+				return
+			end
+			local processed = 0
+			while processed < rows_per_flush and #pending_rows > 0 do
+				local entry = table.remove(pending_rows, 1)
+				if entry then
+					push_row(entry)
+					processed += 1
+				end
+			end
+			trim_visible_rows()
+			update_scroll()
+			if #pending_rows > 0 then
+				schedule_flush()
+			end
+		end)
+	end
+
+	local function can_capture_log()
+		local now = os.clock()
+		if now - rate_window_start >= 1 then
+			rate_window_start = now
+			rate_window_count = 0
+		end
+		rate_window_count += 1
+		if rate_window_count > max_logs_per_second then
+			dropped_logs += 1
+			return false
+		end
+		return true
+	end
  
 	local function add_log(dir, inst, method, raw_args)
 		if not active or paused then return end
+		if not can_capture_log() then return end
 
 		local entry = {
 			time   = os.date("%H:%M:%S"),
@@ -427,34 +505,43 @@ local function main()
 		end
  
 		if window and not window.Closed and matches(entry) then
-			push_row(entry)
-			if scroll_v then
-				scroll_v.Index = math.max(0, #log_frames - scroll_v.VisibleSpace)
-				scroll_v:Update()
-			end
+			pending_rows[#pending_rows + 1] = entry
+			if #pending_rows > visible_log_limit then table.remove(pending_rows, 1) end
+			schedule_flush()
 		end
  
-		if status_label then
-			status_label.Text = #logs .. " logs"
-		end
 		local now = tick()
-		if created_remote or now - last_tree_rebuild > 0.25 then
+		if status_label and now - last_status_update > 0.25 then
+			last_status_update = now
+			status_label.Text = #logs .. " logs" .. (dropped_logs > 0 and (" | dropped " .. dropped_logs) or "")
+		end
+		if created_remote or now - last_tree_rebuild > 1 then
 			last_tree_rebuild = now
 			rebuild_tree()
 		end
-		update_detail()
+		if now - last_status_update < 0.05 then
+			update_detail()
+		end
 	end
  
 	rebuild_list = function()
 		for _, f in ipairs(log_frames) do f:Destroy() end
 		log_frames = {}
+		table.clear(pending_rows)
 		local visible_count = 0
-		for _, e in ipairs(logs) do
+		local matched = {}
+		for i = #logs, 1, -1 do
+			local e = logs[i]
 			if matches(e) then
-				visible_count = visible_count + 1
-				push_row(e)
+				table.insert(matched, 1, e)
+				if #matched >= visible_log_limit then break end
 			end
 		end
+		for _, e in ipairs(matched) do
+			visible_count += 1
+			push_row(e)
+		end
+		trim_visible_rows()
 		if empty_label then
 			empty_label.Visible = visible_count == 0
 			if selected_path ~= "" then
@@ -467,7 +554,7 @@ local function main()
 		end
 		if scroll_v then
 			scroll_v.TotalSpace = #log_frames
-			scroll_v.Index = 0
+			scroll_v.Index = math.max(0, #log_frames - scroll_v.VisibleSpace)
 			scroll_v:Update()
 		end
 	end
@@ -492,6 +579,9 @@ local function main()
 	local function start()
 		if active then return end
 		active = true
+		dropped_logs = 0
+		rate_window_start = os.clock()
+		rate_window_count = 0
  
 		if hookmetamethod and not namecall_orig then
 			local ok, orig = pcall(hookmetamethod, game, "__namecall", function(self, ...)
@@ -559,19 +649,23 @@ local function main()
  
 	local function make_btn(parent, text, x, w)
 		local btn = Instance.new("TextButton")
-		btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58)
 		btn.BorderSizePixel  = 0
 		btn.Font             = Enum.Font.SourceSans
 		btn.TextSize         = 13
-		btn.TextColor3       = Color3.fromRGB(238, 242, 247)
 		btn.Text             = text
 		btn.AutoButtonColor  = false
 		btn.Size             = UDim2.new(0, w, 0, 18)
 		btn.Position         = UDim2.new(0, x, 0, 2)
 		btn.Parent           = parent
-		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 3)
-		btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(55, 63, 75) end)
-		btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58) end)
+		if theme_ref then
+			theme_ref.StyleButton(btn)
+		else
+			btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58)
+			btn.TextColor3       = Color3.fromRGB(238, 242, 247)
+			Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 3)
+			btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(55, 63, 75) end)
+			btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58) end)
+		end
 		return btn
 	end
  
@@ -582,7 +676,7 @@ local function main()
 		spy.Window = window
  
 		local toolbar = Instance.new("Frame")
-		toolbar.BackgroundColor3 = Color3.fromRGB(28, 32, 38)
+		toolbar.BackgroundColor3 = settings_ref.Theme.Menu
 		toolbar.BorderSizePixel  = 0
 		toolbar.Size             = UDim2.new(1, 0, 0, 26)
 		toolbar.Parent           = window.GuiElems.Content
@@ -610,9 +704,9 @@ local function main()
  
 		status_label = Instance.new("TextLabel")
 		status_label.BackgroundTransparency = 1
-		status_label.Font       = Enum.Font.SourceSans
+		status_label.Font       = theme_ref and theme_ref.MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans
 		status_label.TextSize   = 12
-		status_label.TextColor3 = Color3.fromRGB(142, 151, 164)
+		status_label.TextColor3 = settings_ref.Theme.PlaceholderText
 		status_label.TextXAlignment = Enum.TextXAlignment.Right
 		status_label.Size       = UDim2.new(1, -330, 1, 0)
 		status_label.Position   = UDim2.new(0, 326, 0, 0)
@@ -620,7 +714,7 @@ local function main()
 		status_label.Parent     = toolbar
  
 		local search_bar = Instance.new("Frame")
-		search_bar.BackgroundColor3 = Color3.fromRGB(20, 23, 29)
+		search_bar.BackgroundColor3 = settings_ref.Theme.Main1
 		search_bar.BorderSizePixel  = 0
 		search_bar.Size             = UDim2.new(1, 0, 0, 26)
 		search_bar.Position         = UDim2.new(0, 0, 0, 26)
@@ -629,11 +723,11 @@ local function main()
 		local search_box = Instance.new("TextBox", search_bar)
 		search_box.BackgroundTransparency = 1
 		search_box.PlaceholderText  = "filter…"
-		search_box.PlaceholderColor3 = Color3.fromRGB(142, 151, 164)
+		search_box.PlaceholderColor3 = settings_ref.Theme.PlaceholderText
 		search_box.Text             = ""
 		search_box.Font             = Enum.Font.Code
 		search_box.TextSize         = 13
-		search_box.TextColor3       = Color3.fromRGB(238, 242, 247)
+		search_box.TextColor3       = settings_ref.Theme.Text
 		search_box.TextXAlignment   = Enum.TextXAlignment.Left
 		search_box.ClearTextOnFocus = false
 		search_box.Size             = UDim2.new(1, -14, 1, 0)
@@ -645,14 +739,14 @@ local function main()
 		end)
 
 		local body = Instance.new("Frame")
-		body.BackgroundColor3 = Color3.fromRGB(23, 27, 33)
+		body.BackgroundColor3 = settings_ref.Theme.Main2
 		body.BorderSizePixel = 0
 		body.Position = UDim2.new(0, 0, 0, 52)
 		body.Size = UDim2.new(1, 0, 1, -52)
 		body.Parent = window.GuiElems.Content
 
 		local tree_panel = Instance.new("Frame")
-		tree_panel.BackgroundColor3 = Color3.fromRGB(20, 23, 29)
+		tree_panel.BackgroundColor3 = settings_ref.Theme.Main1
 		tree_panel.BorderSizePixel = 0
 		tree_panel.Size = UDim2.new(0, 218, 1, 0)
 		tree_panel.Parent = body
@@ -661,9 +755,9 @@ local function main()
 		tree_title.BackgroundTransparency = 1
 		tree_title.Position = UDim2.new(0, 8, 0, 0)
 		tree_title.Size = UDim2.new(1, -16, 0, 28)
-		tree_title.Font = Enum.Font.SourceSansBold
+		tree_title.Font = theme_ref and theme_ref.MapFont(Enum.Font.SourceSansBold) or Enum.Font.SourceSansBold
 		tree_title.TextSize = 14
-		tree_title.TextColor3 = Color3.fromRGB(238, 242, 247)
+		tree_title.TextColor3 = settings_ref.Theme.Text
 		tree_title.TextXAlignment = Enum.TextXAlignment.Left
 		tree_title.Text = "Remote tree"
 
@@ -673,7 +767,7 @@ local function main()
 		tree_scroll.BorderSizePixel = 0
 		tree_scroll.Position = UDim2.new(0, 4, 0, 30)
 		tree_scroll.Size = UDim2.new(1, -4, 1, -34)
-		tree_scroll.ScrollBarImageColor3 = Color3.fromRGB(70, 82, 98)
+		tree_scroll.ScrollBarImageColor3 = settings_ref.Theme.Highlight
 		tree_scroll.ScrollBarThickness = 4
 		tree_scroll.CanvasSize = UDim2.new(0, 0, 0, 24)
 		tree_scroll.Parent = tree_panel
@@ -688,32 +782,32 @@ local function main()
 		tree_layout.Padding = UDim.new(0, 1)
 
 		local split_line = Instance.new("Frame", body)
-		split_line.BackgroundColor3 = Color3.fromRGB(18, 21, 26)
+		split_line.BackgroundColor3 = settings_ref.Theme.Outline1
 		split_line.BorderSizePixel = 0
 		split_line.Position = UDim2.new(0, 218, 0, 0)
 		split_line.Size = UDim2.new(0, 1, 1, 0)
 
 		local right_panel = Instance.new("Frame")
-		right_panel.BackgroundColor3 = Color3.fromRGB(23, 27, 33)
+		right_panel.BackgroundColor3 = settings_ref.Theme.Main2
 		right_panel.BorderSizePixel = 0
 		right_panel.Position = UDim2.new(0, 219, 0, 0)
 		right_panel.Size = UDim2.new(1, -219, 1, 0)
 		right_panel.Parent = body
 
 		detail_label = Instance.new("TextLabel", right_panel)
-		detail_label.BackgroundColor3 = Color3.fromRGB(28, 32, 38)
+		detail_label.BackgroundColor3 = settings_ref.Theme.Menu
 		detail_label.BorderSizePixel = 0
 		detail_label.Position = UDim2.new(0, 0, 0, 0)
 		detail_label.Size = UDim2.new(1, 0, 0, 28)
 		detail_label.Font = Enum.Font.Code
 		detail_label.TextSize = 12
-		detail_label.TextColor3 = Color3.fromRGB(180, 188, 200)
+		detail_label.TextColor3 = settings_ref.Theme.PlaceholderText
 		detail_label.TextXAlignment = Enum.TextXAlignment.Left
 		detail_label.TextTruncate = Enum.TextTruncate.AtEnd
 		detail_label.Text = "All remotes"
  
 		local list_container = Instance.new("Frame")
-		list_container.BackgroundColor3 = Color3.fromRGB(23, 27, 33)
+		list_container.BackgroundColor3 = settings_ref.Theme.Main2
 		list_container.BorderSizePixel  = 0
 		list_container.Size             = UDim2.new(1, -16, 1, -28)
 		list_container.Position         = UDim2.new(0, 0, 0, 28)
@@ -734,9 +828,9 @@ local function main()
 		empty_label.BackgroundTransparency = 1
 		empty_label.Size = UDim2.new(1, 0, 0, 48)
 		empty_label.Position = UDim2.new(0, 0, 0.5, -24)
-		empty_label.Font = Enum.Font.SourceSans
+		empty_label.Font = theme_ref and theme_ref.MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans
 		empty_label.TextSize = 14
-		empty_label.TextColor3 = Color3.fromRGB(142, 151, 164)
+		empty_label.TextColor3 = settings_ref.Theme.PlaceholderText
 		empty_label.Text = "Start spy to capture calls"
 		empty_label.Visible = true
  
@@ -750,52 +844,54 @@ local function main()
 			list_frame.Position = UDim2.new(0, 0, 0, -scroll_v.Index * 37)
 		end)
  
+		local function update_button_states()
+			if not start_btn then return end
+			local theme = settings_ref.Theme
+			
+			if active then
+				start_btn.Text = paused and "Paused" or "Active"
+				start_btn.BackgroundColor3 = paused and Color3.fromRGB(234, 179, 8) or theme.ListSelection
+				
+				stop_btn.Text = "Stop"
+				stop_btn.BackgroundColor3 = theme.Button
+			else
+				start_btn.Text = "Start"
+				start_btn.BackgroundColor3 = theme.Button
+				
+				stop_btn.Text = "Stopped"
+				stop_btn.BackgroundColor3 = Color3.fromRGB(244, 63, 94)
+			end
+			
+			pause_btn.Text = paused and "Resume" or "Pause"
+			pause_btn.BackgroundColor3 = paused and Color3.fromRGB(234, 179, 8) or theme.Button
+		end
+
 		start_btn.MouseButton1Click:Connect(function()
-			start()
-			start_btn.BackgroundColor3 = Color3.fromRGB(28, 95, 48)
-			start_btn.Text = "▶ active"
-			stop_btn.BackgroundColor3  = Color3.fromRGB(55, 55, 55)
-			stop_btn.Text  = "■ stop"
+			if not active then
+				start()
+				paused = false
+				update_button_states()
+				rebuild_tree()
+				rebuild_list()
+			end
 		end)
  
 		stop_btn.MouseButton1Click:Connect(function()
-			stop()
-			start_btn.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
-			start_btn.Text = "▶ start"
-			stop_btn.BackgroundColor3  = Color3.fromRGB(100, 38, 38)
-			stop_btn.Text  = "■ stopped"
+			if active then
+				stop()
+				paused = false
+				update_button_states()
+				rebuild_list()
+			end
 		end)
  
 		clear_btn.MouseButton1Click:Connect(function()
 			logs = {}
 			for _, f in ipairs(log_frames) do f:Destroy() end
 			log_frames = {}
+			table.clear(pending_rows)
+			dropped_logs = 0
 			status_label.Text = "0 logs"
-		end)
- 
-		pause_btn.MouseButton1Click:Connect(function()
-			paused = not paused
-			pause_btn.Text = paused and "resume" or "pause"
-			pause_btn.BackgroundColor3 = paused
-				and Color3.fromRGB(95, 75, 20)
-				or  Color3.fromRGB(55, 55, 55)
-		end)
-
-		start_btn.MouseButton1Click:Connect(function()
-			start_btn.Text = "Active"
-			stop_btn.Text = "Stop"
-			stop_btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58)
-			rebuild_tree()
-			rebuild_list()
-		end)
-
-		stop_btn.MouseButton1Click:Connect(function()
-			start_btn.Text = "Start"
-			start_btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58)
-			stop_btn.Text = "Stopped"
-		end)
-
-		clear_btn.MouseButton1Click:Connect(function()
 			for _, stat in pairs(remote_stats) do
 				stat.count = 0
 				stat.last = ""
@@ -804,11 +900,11 @@ local function main()
 			rebuild_list()
 			update_detail()
 		end)
-
+ 
 		pause_btn.MouseButton1Click:Connect(function()
-			pause_btn.Text = paused and "Resume" or "Pause"
-			if not paused then
-				pause_btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58)
+			if active then
+				paused = not paused
+				update_button_states()
 			end
 		end)
 

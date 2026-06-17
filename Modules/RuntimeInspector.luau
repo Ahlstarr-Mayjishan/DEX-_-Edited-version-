@@ -36,8 +36,8 @@ local function main()
 	local raknetRunning = false
 	local buffers = {RemoteCall = {}, Packet = {}, Correlation = {}}
 	local packetStats = {}
-	local limits = {RemoteCall = 300, Packet = 300, Correlation = 300}
-	local state = {RemoteEnabled = false, RakNetEnabled = false, CaptureArgs = true, PacketSample = false}
+	local limits = {RemoteCall = 120, Packet = 80, Correlation = 120}
+	local state = {RemoteEnabled = false, RakNetEnabled = false, CaptureArgs = false, PacketSample = false}
 	local remoteMethods = {FireServer = true, InvokeServer = true, Fire = true, Invoke = true}
 	local function now()
 		return os.clock()
@@ -205,7 +205,10 @@ local function main()
 		if onClick then row.MouseButton1Click:Connect(onClick) end
 	end
 	local function renderRemoteCalls()
+		local rendered = 0
 		for _, call in ipairs(buffers.RemoteCall) do
+			rendered += 1
+			if rendered > 120 then break end
 			addRow(call.Method .. " " .. call.Path, call.Caller .. " | argc " .. tostring(call.ArgCount) .. " | " .. call.Args, function()
 				if call.Remote and RemoteUsageMap then RemoteUsageMap.ShowForRemote(call.Remote) end
 			end)
@@ -220,12 +223,18 @@ local function main()
 		end
 	end
 	local function renderCorrelations()
+		local rendered = 0
 		for _, item in ipairs(buffers.Correlation) do
+			rendered += 1
+			if rendered > 120 then break end
 			addRow(("%s -> packet %s (%d bytes)"):format(item.Method, tostring(item.PacketId), item.Bytes), ("%0.3fs | %s"):format(item.Delta or 0, item.RemotePath))
 		end
 	end
 	local function renderPackets()
+		local rendered = 0
 		for _, packet in ipairs(buffers.Packet) do
+			rendered += 1
+			if rendered > 80 then break end
 			addRow(("Packet %s | %d bytes"):format(tostring(packet.PacketId), packet.Size), ("priority %d | reliability %d | channel %d"):format(packet.Priority, packet.Reliability, packet.Channel))
 		end
 	end
@@ -243,7 +252,7 @@ local function main()
 		task.spawn(function()
 			while window and not window.Closed do
 				render()
-				task.wait(0.5)
+				task.wait(1)
 			end
 			refreshQueued = false
 		end)
