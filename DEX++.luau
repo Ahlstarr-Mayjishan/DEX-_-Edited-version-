@@ -87,7 +87,7 @@ end
 local isFsSupported = readfile and writefile and isfile and isfolder and listfiles and delfile and delfolder
 
 -- Main vars
-local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
+local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, RuntimeInspector--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
 local API, RMD
 
 -- Default Settings
@@ -226,7 +226,7 @@ end
 Main = (function()
 	local Main = {}
 
-	Main.ModuleList = {"Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap"}
+	Main.ModuleList = {"Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap","RuntimeInspector"}
 	Main.Elevated = false
 	Main.AllowDraggableOnMobile = true
 	Main.MissingEnv = {}
@@ -499,6 +499,7 @@ Main = (function()
 		CodeSearch = Apps.CodeSearch
 		ScriptRelations = Apps.ScriptRelations
 		RemoteUsageMap = Apps.RemoteUsageMap
+		RuntimeInspector = Apps.RuntimeInspector
 		
 		
 		--SecretServicePanel = Apps.SecretServicePanel
@@ -513,7 +514,8 @@ Main = (function()
 			SettingsWindow = SettingsWindow,
 			CodeSearch = CodeSearch,
 			ScriptRelations = ScriptRelations,
-			RemoteUsageMap = RemoteUsageMap
+			RemoteUsageMap = RemoteUsageMap,
+			RuntimeInspector = RuntimeInspector
 			--SecretServicePanel = SecretServicePanel,
 		}
 		
@@ -2057,6 +2059,8 @@ Main = (function()
 
 		Main.CreateApp({Name = "Remote Usage", IconMap = Main.LargeIcons, Icon = "Output", Window = RemoteUsageMap.Window})
 
+		Main.CreateApp({Name = "Runtime Inspector", IconMap = Main.LargeIcons, Icon = "Watcher", Window = RuntimeInspector.Window})
+
 		--Main.CreateApp({Name = "Secret Service Panel", IconMap = Main.LargeIcons, Icon = "Output", Window = SecretServicePanel.Window})
 		
 		for _, loadedplugin in pairs(Main.Plugins) do
@@ -2196,6 +2200,7 @@ Main = (function()
 		CodeSearch.Init()
 		ScriptRelations.Init()
 		RemoteUsageMap.Init()
+		RuntimeInspector.Init()
 		--SecretServicePanel.Init()
 		
 		
