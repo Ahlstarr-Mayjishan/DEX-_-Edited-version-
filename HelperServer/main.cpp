@@ -16,12 +16,21 @@
 #include <algorithm>
 #include <cctype>
 #include <ctime>
+#include <cstdio>
+#include <mutex>
+#include <thread>
+#include <atomic>
 
 // Link with ws2_32.lib
 #pragma comment(lib, "ws2_32.lib")
 
 #define DEFAULT_PORT "8080"
 #define BUFFER_SIZE 8192
+#define MAX_HEADER_SIZE 32768
+#define MAX_BODY_SIZE 5242880
+#define MAX_LOG_BODY_SIZE 65536
+#define MAX_LOG_FILE_SIZE 5242880
+#define MAX_CLIENT_THREADS 16
 
 struct IndexedScript {
     std::string key;
@@ -37,6 +46,9 @@ struct IndexedScript {
 };
 
 std::unordered_map<std::string, IndexedScript> g_script_index;
+std::mutex g_script_index_mutex;
+std::mutex g_log_mutex;
+std::atomic<int> g_active_clients{0};
 
 // Fast C++ linear-time variable normalizer
 std::string deobfuscate(const std::string& source) {
@@ -467,6 +479,8 @@ std::string index_source_payload(const std::string& body) {
     entry.top_identifiers = top_identifiers(entry.source, 12);
     entry.updated_at = std::time(nullptr);
     std::time_t updated_at = entry.updated_at;
+
+    std::lock_guard<std::mutex> lock(g_script_index_mutex);
     g_script_index[entry.key] = std::move(entry);
 
     size_t bytes = 0;
@@ -481,6 +495,7 @@ std::string index_source_payload(const std::string& body) {
 }
 
 std::string index_status() {
+    std::lock_guard<std::mutex> lock(g_script_index_mutex);
     size_t bytes = 0;
     std::time_t newest = 0;
     std::time_t oldest = 0;
@@ -520,6 +535,7 @@ std::string search_index(const std::string& body) {
     }
 
     std::string query = lower_copy(parts[1]);
+    std::lock_guard<std::mutex> lock(g_script_index_mutex);
     if (query.empty()) {
         return "{\"ok\":true,\"indexed\":" + std::to_string(g_script_index.size()) + ",\"total\":0,\"results\":[]}";
     }
@@ -608,6 +624,67 @@ std::string search_index(const std::string& body) {
     return json.str();
 }
 
+std::string trim_copy(const std::string& value) {
+    size_t first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos) return "";
+    size_t last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+size_t find_header_case_insensitive(const std::string& request, const std::string& header_name) {
+    std::string lower_request = lower_copy(request);
+    std::string lower_header = lower_copy(header_name);
+    return lower_request.find(lower_header);
+}
+
+bool parse_content_length(const std::string& request, size_t& content_length, std::string& error) {
+    content_length = 0;
+    size_t cl_pos = find_header_case_insensitive(request, "Content-Length:");
+    if (cl_pos == std::string::npos) return true;
+
+    size_t cl_end = request.find("\r\n", cl_pos);
+    if (cl_end == std::string::npos) cl_end = request.size();
+
+    std::string cl_str = trim_copy(request.substr(cl_pos + 15, cl_end - (cl_pos + 15)));
+    if (cl_str.empty()) {
+        error = "empty Content-Length header";
+        return false;
+    }
+
+    try {
+        size_t parsed_chars = 0;
+        unsigned long long parsed = std::stoull(cl_str, &parsed_chars, 10);
+        if (parsed_chars != cl_str.size()) {
+            error = "invalid Content-Length value";
+            return false;
+        }
+        if (parsed > MAX_BODY_SIZE) {
+            error = "request body too large";
+            return false;
+        }
+        content_length = static_cast<size_t>(parsed);
+        return true;
+    } catch (...) {
+        error = "invalid Content-Length value";
+        return false;
+    }
+}
+
+size_t file_size_or_zero(const char* path) {
+    std::ifstream file(path, std::ios::binary | std::ios::ate);
+    if (!file.is_open()) return 0;
+    std::streampos size = file.tellg();
+    if (size <= 0) return 0;
+    return static_cast<size_t>(size);
+}
+
+void rotate_log_if_needed(const char* path) {
+    if (file_size_or_zero(path) < MAX_LOG_FILE_SIZE) return;
+    std::string old_path = std::string(path) + ".old";
+    std::remove(old_path.c_str());
+    std::rename(path, old_path.c_str());
+}
+
 // Send HTTP response helper
 void send_response(SOCKET client_socket, int status_code, const std::string& status_text, const std::string& body) {
     std::stringstream response;
@@ -621,6 +698,132 @@ void send_response(SOCKET client_socket, int status_code, const std::string& sta
 
     std::string response_str = response.str();
     send(client_socket, response_str.c_str(), static_cast<int>(response_str.length()), 0);
+}
+
+void close_client(SOCKET client_socket) {
+    shutdown(client_socket, SD_SEND);
+    closesocket(client_socket);
+}
+
+void handle_client(SOCKET ClientSocket) {
+    std::vector<char> recvbuf(BUFFER_SIZE);
+    std::string request_data = "";
+    int bytes_received = recv(ClientSocket, recvbuf.data(), BUFFER_SIZE - 1, 0);
+
+    if (bytes_received > 0) {
+        recvbuf[bytes_received] = '\0';
+        request_data.append(recvbuf.data(), bytes_received);
+
+        size_t header_end = request_data.find("\r\n\r\n");
+        while (header_end == std::string::npos && request_data.size() < MAX_HEADER_SIZE) {
+            int extra = recv(ClientSocket, recvbuf.data(), BUFFER_SIZE - 1, 0);
+            if (extra <= 0) break;
+            recvbuf[extra] = '\0';
+            request_data.append(recvbuf.data(), extra);
+            header_end = request_data.find("\r\n\r\n");
+        }
+
+        if (header_end == std::string::npos) {
+            send_response(ClientSocket, 400, "Bad Request", "Malformed HTTP request headers.");
+            close_client(ClientSocket);
+            return;
+        }
+        if (header_end > MAX_HEADER_SIZE) {
+            send_response(ClientSocket, 413, "Payload Too Large", "HTTP headers are too large.");
+            close_client(ClientSocket);
+            return;
+        }
+
+        std::stringstream ss(request_data.substr(0, header_end));
+        std::string method, path, protocol;
+        ss >> method >> path >> protocol;
+
+        std::string body = request_data.substr(header_end + 4);
+        size_t content_len = 0;
+        std::string content_error;
+        if (!parse_content_length(request_data.substr(0, header_end), content_len, content_error)) {
+            send_response(ClientSocket, 400, "Bad Request", content_error);
+            close_client(ClientSocket);
+            return;
+        }
+        if (body.size() > MAX_BODY_SIZE) {
+            send_response(ClientSocket, 413, "Payload Too Large", "Request body is too large.");
+            close_client(ClientSocket);
+            return;
+        }
+        while (body.size() < content_len) {
+            int extra = recv(ClientSocket, recvbuf.data(), BUFFER_SIZE - 1, 0);
+            if (extra <= 0) break;
+            recvbuf[extra] = '\0';
+            body.append(recvbuf.data(), extra);
+        }
+        if (body.size() < content_len) {
+            send_response(ClientSocket, 400, "Bad Request", "Incomplete request body.");
+            close_client(ClientSocket);
+            return;
+        }
+
+        if (method == "OPTIONS") {
+            send_response(ClientSocket, 204, "No Content", "");
+        } else if (path == "/status" && method == "GET") {
+            send_response(ClientSocket, 200, "OK", "DEX++ C++ Helper Server Active");
+        } else if (path == "/script" && method == "GET") {
+            std::ifstream script_file("DEX++_compiled.luau");
+            if (!script_file.is_open()) {
+                script_file.open("../DEX++_compiled.luau");
+            }
+            if (script_file.is_open()) {
+                std::stringstream buffer;
+                buffer << script_file.rdbuf();
+                script_file.close();
+                send_response(ClientSocket, 200, "OK", buffer.str());
+            } else {
+                send_response(ClientSocket, 404, "Not Found", "-- Error: DEX++_compiled.luau not found on server.");
+            }
+        } else if (path == "/log" && method == "POST") {
+            if (body.size() > MAX_LOG_BODY_SIZE) {
+                send_response(ClientSocket, 413, "Payload Too Large", "Log entry is too large.");
+                close_client(ClientSocket);
+                return;
+            }
+            std::lock_guard<std::mutex> lock(g_log_mutex);
+            rotate_log_if_needed("dex_server_logs.txt");
+            std::ofstream log_file("dex_server_logs.txt", std::ios::app);
+            if (log_file.is_open()) {
+                log_file << body << std::endl;
+                log_file.close();
+            }
+            send_response(ClientSocket, 200, "OK", "Logged");
+        } else if (path == "/deobfuscate" && method == "POST") {
+            std::string deobf = deobfuscate(body);
+            send_response(ClientSocket, 200, "OK", deobf);
+        } else if (path == "/analyze-source" && method == "POST") {
+            send_response(ClientSocket, 200, "OK", analyze_source(body));
+        } else if (path == "/index-source" && method == "POST") {
+            send_response(ClientSocket, 200, "OK", index_source_payload(body));
+        } else if (path == "/search-source" && method == "POST") {
+            send_response(ClientSocket, 200, "OK", search_index(body));
+        } else if (path == "/index-status" && method == "GET") {
+            send_response(ClientSocket, 200, "OK", index_status());
+        } else if (path == "/index-clear" && method == "POST") {
+            std::lock_guard<std::mutex> lock(g_script_index_mutex);
+            g_script_index.clear();
+            send_response(ClientSocket, 200, "OK", "{\"ok\":true,\"total\":0}");
+        } else if (path == "/assign-role" && method == "POST") {
+            send_response(ClientSocket, 200, "OK", assign_role(body));
+        } else if (path == "/decompile" && method == "POST") {
+            send_response(
+                ClientSocket,
+                501,
+                "Not Implemented",
+                "DEX++ Helper does not include a bytecode decompiler. It serves local script delivery, log, deobfuscate, source analysis, and source index/search."
+            );
+        } else {
+            send_response(ClientSocket, 404, "Not Found", "404 Route Not Found");
+        }
+    }
+
+    close_client(ClientSocket);
 }
 
 int main() {
@@ -693,105 +896,21 @@ int main() {
             continue;
         }
 
-        std::vector<char> recvbuf(BUFFER_SIZE);
-        std::string request_data = "";
-        int bytes_received;
-
-        // Receive request data
-        bytes_received = recv(ClientSocket, recvbuf.data(), BUFFER_SIZE - 1, 0);
-        if (bytes_received > 0) {
-            recvbuf[bytes_received] = '\0';
-            request_data.append(recvbuf.data(), bytes_received);
-
-            // Simple HTTP request parsing
-            std::stringstream ss(request_data);
-            std::string method, path, protocol;
-            ss >> method >> path >> protocol;
-
-            // Find body if it's a POST request
-            size_t header_end = request_data.find("\r\n\r\n");
-            std::string body = "";
-            if (header_end != std::string::npos) {
-                body = request_data.substr(header_end + 4);
-                
-                // Read Content-Length header to verify if we need to receive more body bytes
-                size_t cl_pos = request_data.find("Content-Length:");
-                if (cl_pos != std::string::npos) {
-                    size_t cl_end = request_data.find("\r\n", cl_pos);
-                    if (cl_end != std::string::npos) {
-                        std::string cl_str = request_data.substr(cl_pos + 15, cl_end - (cl_pos + 15));
-                        // Trim spaces
-                        cl_str.erase(0, cl_str.find_first_not_of(" \t"));
-                        cl_str.erase(cl_str.find_last_not_of(" \t") + 1);
-                        int content_len = std::stoi(cl_str);
-                        
-                        while (static_cast<int>(body.length()) < content_len) {
-                            int extra = recv(ClientSocket, recvbuf.data(), BUFFER_SIZE - 1, 0);
-                            if (extra <= 0) break;
-                            recvbuf[extra] = '\0';
-                            body.append(recvbuf.data(), extra);
-                        }
-                    }
-                }
-            }
-
-            // Handle API routes
-            if (method == "OPTIONS") {
-                // CORS preflight response
-                send_response(ClientSocket, 204, "No Content", "");
-            } else if (path == "/status" && method == "GET") {
-                send_response(ClientSocket, 200, "OK", "DEX++ C++ Helper Server Active");
-            } else if (path == "/script" && method == "GET") {
-                std::ifstream script_file("DEX++_compiled.luau");
-                if (!script_file.is_open()) {
-                    script_file.open("../DEX++_compiled.luau");
-                }
-                if (script_file.is_open()) {
-                    std::stringstream buffer;
-                    buffer << script_file.rdbuf();
-                    script_file.close();
-                    send_response(ClientSocket, 200, "OK", buffer.str());
-                } else {
-                    send_response(ClientSocket, 404, "Not Found", "-- Error: DEX++_compiled.luau not found on server.");
-                }
-            } else if (path == "/log" && method == "POST") {
-                std::ofstream log_file("dex_server_logs.txt", std::ios::app);
-                if (log_file.is_open()) {
-                    log_file << body << std::endl;
-                    log_file.close();
-                }
-                send_response(ClientSocket, 200, "OK", "Logged");
-            } else if (path == "/deobfuscate" && method == "POST") {
-                std::string deobf = deobfuscate(body);
-                send_response(ClientSocket, 200, "OK", deobf);
-            } else if (path == "/analyze-source" && method == "POST") {
-                send_response(ClientSocket, 200, "OK", analyze_source(body));
-            } else if (path == "/index-source" && method == "POST") {
-                send_response(ClientSocket, 200, "OK", index_source_payload(body));
-            } else if (path == "/search-source" && method == "POST") {
-                send_response(ClientSocket, 200, "OK", search_index(body));
-            } else if (path == "/index-status" && method == "GET") {
-                send_response(ClientSocket, 200, "OK", index_status());
-            } else if (path == "/index-clear" && method == "POST") {
-                g_script_index.clear();
-                send_response(ClientSocket, 200, "OK", "{\"ok\":true,\"total\":0}");
-            } else if (path == "/assign-role" && method == "POST") {
-                send_response(ClientSocket, 200, "OK", assign_role(body));
-            } else if (path == "/decompile" && method == "POST") {
-                send_response(
-                    ClientSocket,
-                    501,
-                    "Not Implemented",
-                    "DEX++ Helper does not include a bytecode decompiler. It serves local script delivery, log, deobfuscate, source analysis, and source index/search."
-                );
-            } else {
-                send_response(ClientSocket, 404, "Not Found", "404 Route Not Found");
-            }
+        if (g_active_clients.load() >= MAX_CLIENT_THREADS) {
+            send_response(ClientSocket, 503, "Service Unavailable", "DEX++ Helper is busy. Try again shortly.");
+            close_client(ClientSocket);
+            continue;
         }
 
-        // shutdown the connection since we're done
-        shutdown(ClientSocket, SD_SEND);
-        closesocket(ClientSocket);
+        g_active_clients.fetch_add(1);
+        std::thread([ClientSocket]() {
+            try {
+                handle_client(ClientSocket);
+            } catch (...) {
+                close_client(ClientSocket);
+            }
+            g_active_clients.fetch_sub(1);
+        }).detach();
     }
 
     closesocket(ListenSocket);

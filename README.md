@@ -16,6 +16,8 @@ DarkDEX++ can run independently using the `DEX++_compiled.luau` file, or fetch t
 - `POST /index-clear`: Clears the helper's in-memory source index.
 - `POST /log`: Records logs from the Property Tracker into `dex_server_logs.txt`.
 
+The helper accepts multiple local clients concurrently, with a small worker cap to keep indexing/search/status/log requests responsive without letting request spikes create unlimited threads.
+
 Important: This C++ helper is **not a bytecode decompiler**. It does not possess an engine to decompile Roblox bytecode into Luau source code, so it does not directly speed up the `decompile(script)` step. The decompile speed still depends on your executor's native decompiler, the Shiny/lua.expert fallbacks, and DarkDEX++'s built-in cache.
 
 If `POST /decompile` is requested, the helper will return `501 Not Implemented` to avoid confusion.
