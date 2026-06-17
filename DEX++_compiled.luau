@@ -13463,6 +13463,9 @@ end,
     local function main()
     	local ScriptViewer = {}
     	local window, codeFrame
+    	local searchBox, searchStatus
+    	local searchMatches = {}
+    	local searchIndex = 0
     	
     	local execute, clear, dumpbtn
     	
@@ -13555,6 +13558,65 @@ end,
     		window:Show()
     	end
     
+    	local function setSearchStatus(text, color)
+    		if not searchStatus then return end
+    		searchStatus.Text = text
+    		searchStatus.TextColor3 = color or Settings.Theme.PlaceholderText
+    	end
+    
+    	local function rebuildSearch()
+    		searchMatches = {}
+    		searchIndex = 0
+    
+    		if not searchBox or not codeFrame then return end
+    		local keyword = searchBox.Text
+    		if keyword == "" then
+    			codeFrame:ResetSelection()
+    			setSearchStatus("0")
+    			return
+    		end
+    
+    		local loweredKeyword = keyword:lower()
+    		for lineIndex, line in ipairs(codeFrame.Lines) do
+    			local loweredLine = line:lower()
+    			local startAt = 1
+    			while true do
+    				local first, last = loweredLine:find(loweredKeyword, startAt, true)
+    				if not first then break end
+    				searchMatches[#searchMatches + 1] = {
+    					line = lineIndex - 1,
+    					first = first - 1,
+    					last = last,
+    				}
+    				startAt = math.max(last + 1, first + 1)
+    			end
+    		end
+    
+    		if #searchMatches == 0 then
+    			codeFrame:ResetSelection()
+    			setSearchStatus("0", Settings.Theme.Important)
+    		else
+    			searchIndex = 1
+    			setSearchStatus("1/" .. #searchMatches)
+    		end
+    	end
+    
+    	local function jumpSearch(delta)
+    		if not codeFrame then return end
+    		if #searchMatches == 0 then
+    			rebuildSearch()
+    		end
+    		if #searchMatches == 0 then return end
+    
+    		searchIndex = ((searchIndex - 1 + delta) % #searchMatches) + 1
+    		local match = searchMatches[searchIndex]
+    		codeFrame.SelectionRange = {{match.first, match.line}, {match.last, match.line}}
+    		codeFrame:MoveCursor(match.first, match.line)
+    		codeFrame:SetCopyableSelection()
+    		codeFrame:Refresh()
+    		setSearchStatus(searchIndex .. "/" .. #searchMatches)
+    	end
+    
     	ScriptViewer.Init = function()
     		window = Lib.Window.new()
     		window:SetTitle("Notepad")
@@ -13562,8 +13624,8 @@ end,
     		ScriptViewer.Window = window
     
     		codeFrame = Lib.CodeFrame.new()
-    		codeFrame.Frame.Position = UDim2.new(0,0,0,20)
-    		codeFrame.Frame.Size = UDim2.new(1,0,1,-40)
+    		codeFrame.Frame.Position = UDim2.new(0,0,0,44)
+    		codeFrame.Frame.Size = UDim2.new(1,0,1,-64)
     		codeFrame.Frame.Parent = window.GuiElems.Content
     		
     		local copy = Instance.new("TextButton",window.GuiElems.Content)
@@ -13628,6 +13690,80 @@ end,
     				pcall(ScriptViewer.DumpFunctions, PreviousScr)
     			end
     		end)
+    
+    		local searchBar = Instance.new("Frame", window.GuiElems.Content)
+    		searchBar.BackgroundColor3 = Settings.Theme.TextBox
+    		searchBar.BorderSizePixel = 0
+    		searchBar.Position = UDim2.new(0, 0, 0, 21)
+    		searchBar.Size = UDim2.new(1, 0, 0, 22)
+    
+    		searchBox = Instance.new("TextBox", searchBar)
+    		searchBox.BackgroundTransparency = 1
+    		searchBox.ClearTextOnFocus = false
+    		searchBox.Font = Enum.Font.Code
+    		searchBox.PlaceholderColor3 = Settings.Theme.PlaceholderText
+    		searchBox.PlaceholderText = "Search keywords..."
+    		searchBox.Position = UDim2.new(0, 8, 0, 0)
+    		searchBox.Size = UDim2.new(1, -138, 1, 0)
+    		searchBox.Text = ""
+    		searchBox.TextColor3 = Settings.Theme.Text
+    		searchBox.TextSize = 13
+    		searchBox.TextXAlignment = Enum.TextXAlignment.Left
+    
+    		local prevBtn = Instance.new("TextButton", searchBar)
+    		prevBtn.AutoButtonColor = false
+    		prevBtn.BackgroundColor3 = Settings.Theme.Button
+    		prevBtn.BorderSizePixel = 0
+    		prevBtn.Font = Enum.Font.SourceSansBold
+    		prevBtn.Position = UDim2.new(1, -128, 0, 2)
+    		prevBtn.Size = UDim2.new(0, 28, 0, 18)
+    		prevBtn.Text = "<"
+    		prevBtn.TextColor3 = Settings.Theme.Text
+    		prevBtn.TextSize = 14
+    
+    		local nextBtn = Instance.new("TextButton", searchBar)
+    		nextBtn.AutoButtonColor = false
+    		nextBtn.BackgroundColor3 = Settings.Theme.Button
+    		nextBtn.BorderSizePixel = 0
+    		nextBtn.Font = Enum.Font.SourceSansBold
+    		nextBtn.Position = UDim2.new(1, -96, 0, 2)
+    		nextBtn.Size = UDim2.new(0, 28, 0, 18)
+    		nextBtn.Text = ">"
+    		nextBtn.TextColor3 = Settings.Theme.Text
+    		nextBtn.TextSize = 14
+    
+    		searchStatus = Instance.new("TextLabel", searchBar)
+    		searchStatus.BackgroundTransparency = 1
+    		searchStatus.Font = Enum.Font.Code
+    		searchStatus.Position = UDim2.new(1, -64, 0, 0)
+    		searchStatus.Size = UDim2.new(0, 58, 1, 0)
+    		searchStatus.Text = "0"
+    		searchStatus.TextColor3 = Settings.Theme.PlaceholderText
+    		searchStatus.TextSize = 12
+    		searchStatus.TextXAlignment = Enum.TextXAlignment.Right
+    
+    		local function hoverButton(btn)
+    			btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Settings.Theme.ButtonHover end)
+    			btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Settings.Theme.Button end)
+    		end
+    		hoverButton(prevBtn)
+    		hoverButton(nextBtn)
+    
+    		searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+    			rebuildSearch()
+    			if #searchMatches > 0 then
+    				jumpSearch(0)
+    			end
+    		end)
+    		searchBox.FocusLost:Connect(function(enterPressed)
+    			if enterPressed then jumpSearch(1) end
+    		end)
+    		prevBtn.MouseButton1Click:Connect(function()
+    			jumpSearch(-1)
+    		end)
+    		nextBtn.MouseButton1Click:Connect(function()
+    			jumpSearch(1)
+    		end)
     		
     		-- Buttons below the editor
     		
@@ -13661,6 +13797,7 @@ end,
     
     		clear.MouseButton1Click:Connect(function()
     			codeFrame:SetText("")
+    			rebuildSearch()
     		end)
     	end
     	
@@ -13704,6 +13841,7 @@ end,
     		end
     
     		codeFrame:SetText(source)
+    		rebuildSearch()
     		window:Show()
     	end
     
@@ -15451,21 +15589,21 @@ DefaultSettings = (function()
 		},
 		Theme = {
 			_Recurse = true,
-			Main1 = rgb(52,52,52),
-			Main2 = rgb(45,45,45),
-			Outline1 = rgb(33,33,33), -- Mainly frames
-			Outline2 = rgb(55,55,55), -- Mainly button
-			Outline3 = rgb(30,30,30), -- Mainly textbox
-			TextBox = rgb(38,38,38),
-			Menu = rgb(32,32,32),
-			ListSelection = rgb(11,90,175),
-			Button = rgb(60,60,60),
-			ButtonHover = rgb(68,68,68),
-			ButtonPress = rgb(40,40,40),
-			Highlight = rgb(75,75,75),
-			Text = rgb(255,255,255),
-			PlaceholderText = rgb(100,100,100),
-			Important = rgb(255,0,0),
+			Main1 = rgb(35,39,46),
+			Main2 = rgb(28,32,38),
+			Outline1 = rgb(18,21,26), -- Mainly frames
+			Outline2 = rgb(58,66,78), -- Mainly button
+			Outline3 = rgb(14,17,22), -- Mainly textbox
+			TextBox = rgb(23,27,33),
+			Menu = rgb(20,23,29),
+			ListSelection = rgb(42,126,214),
+			Button = rgb(43,49,58),
+			ButtonHover = rgb(55,63,75),
+			ButtonPress = rgb(30,35,42),
+			Highlight = rgb(70,82,98),
+			Text = rgb(238,242,247),
+			PlaceholderText = rgb(142,151,164),
+			Important = rgb(255,82,82),
 			ExplorerIconMap = "",
 			MiscIconMap = "",
 			Syntax = {
@@ -15499,7 +15637,7 @@ DefaultSettings = (function()
 		},
 		Window = {
 			TitleOnMiddle = false,
-			Transparency = .2
+			Transparency = .12
 		},
 		Decompiler = {
 			DecompilerFallback = "Konstant", --Konstant, Shiny, AdvancedDecompiler
@@ -15569,6 +15707,9 @@ Main = (function()
 	Main.GitName = "AZYsGithub"
 	Main.RepoName = "DexPlusPlus"
 	Main.GitRepoName = Main.GitName.."/"..Main.RepoName
+	Main.UpdateScriptURL = "https://raw.githubusercontent.com/Ahlstarr-Mayjishan/DarkDEX----edited-version-by-me-/main/DEX%2B%2B_compiled.luau"
+	Main.UpdateCheckStarted = false
+	Main.LatestUpdateSource = nil
 
 	Main.DisplayOrders = {
 		SideWindow = 8,
@@ -17142,6 +17283,104 @@ Main = (function()
 		return {SetProgress = setProgress, Close = close, Object = gui}
 	end
 
+	Main.CompareVersions = function(current, latest)
+		local function nums(version)
+			local out = {}
+			for n in tostring(version or ""):gmatch("%d+") do
+				out[#out + 1] = tonumber(n) or 0
+			end
+			return out
+		end
+
+		local a, b = nums(current), nums(latest)
+		for i = 1, math.max(#a, #b) do
+			local av, bv = a[i] or 0, b[i] or 0
+			if bv > av then return 1 end
+			if bv < av then return -1 end
+		end
+		return 0
+	end
+
+	Main.GetRemoteScriptVersion = function(source)
+		if type(source) ~= "string" then return nil end
+		return source:match('Main%.Version%s*=%s*"([^"]+)"')
+			or source:match("Main%.Version%s*=%s*'([^']+)'")
+			or source:match("Version%s+([%d%.]+)")
+	end
+
+	Main.RestartFromLatest = function()
+		local source = Main.LatestUpdateSource
+		if not source or source == "" then
+			local ok, result = pcall(oldgame.HttpGet, game, Main.UpdateScriptURL, true)
+			if ok then source = result end
+		end
+		if type(source) ~= "string" or source == "" then return false end
+
+		local loader = env and env.loadstring or loadstring
+		if not loader then return false end
+
+		Main.Uninit()
+		task.wait()
+		local ok, fn = pcall(loader, source, "DEX++ Latest")
+		if ok and type(fn) == "function" then
+			coroutine.wrap(fn)()
+			return true
+		end
+		return false
+	end
+
+	Main.ShowUpdatePrompt = function(latestVersion)
+		local gui = create({
+			{1,"ScreenGui",{IgnoreGuiInset=true,Name="UpdatePrompt",ResetOnSpawn=false,}},
+			{2,"Frame",{BackgroundColor3=Color3.fromRGB(0,0,0),BackgroundTransparency=0.35,BorderSizePixel=0,Name="Dim",Parent={1},Size=UDim2.new(1,0,1,0),}},
+			{3,"Frame",{AnchorPoint=Vector2.new(0.5,0.5),BackgroundColor3=Settings.Theme.Main2,BorderSizePixel=0,Name="Card",Parent={2},Position=UDim2.new(0.5,0,0.5,0),Size=UDim2.new(0,360,0,156),}},
+			{4,"UICorner",{CornerRadius=UDim.new(0,6),Parent={3},}},
+			{5,"Frame",{BackgroundColor3=Settings.Theme.ListSelection,BorderSizePixel=0,Name="Accent",Parent={3},Size=UDim2.new(1,0,0,3),}},
+			{6,"TextLabel",{BackgroundTransparency=1,Font=4,Name="Title",Parent={3},Position=UDim2.new(0,18,0,16),Size=UDim2.new(1,-36,0,24),Text="New DEX++ version detected",TextColor3=Settings.Theme.Text,TextSize=18,TextXAlignment=0,}},
+			{7,"TextLabel",{BackgroundTransparency=1,Font=3,Name="Body",Parent={3},Position=UDim2.new(0,18,0,46),Size=UDim2.new(1,-36,0,44),Text="Current: "..tostring(Main.Version).."  |  Latest: "..tostring(latestVersion).."\nRestart now to load the latest script?",TextColor3=Settings.Theme.PlaceholderText,TextSize=14,TextWrapped=true,TextXAlignment=0,TextYAlignment=0,}},
+			{8,"TextButton",{AutoButtonColor=false,BackgroundColor3=Settings.Theme.ListSelection,BorderSizePixel=0,Font=4,Name="Restart",Parent={3},Position=UDim2.new(1,-174,1,-46),Size=UDim2.new(0,78,0,28),Text="Restart",TextColor3=Settings.Theme.Text,TextSize=14,}},
+			{9,"UICorner",{CornerRadius=UDim.new(0,4),Parent={8},}},
+			{10,"TextButton",{AutoButtonColor=false,BackgroundColor3=Settings.Theme.Button,BorderSizePixel=0,Font=4,Name="Later",Parent={3},Position=UDim2.new(1,-88,1,-46),Size=UDim2.new(0,70,0,28),Text="Later",TextColor3=Settings.Theme.Text,TextSize=14,}},
+			{11,"UICorner",{CornerRadius=UDim.new(0,4),Parent={10},}},
+		})
+
+		Main.SecureGui(gui)
+
+		local card = gui.Dim.Card
+		card.Restart.MouseEnter:Connect(function() card.Restart.BackgroundColor3 = Settings.Theme.ButtonHover end)
+		card.Restart.MouseLeave:Connect(function() card.Restart.BackgroundColor3 = Settings.Theme.ListSelection end)
+		card.Later.MouseEnter:Connect(function() card.Later.BackgroundColor3 = Settings.Theme.ButtonHover end)
+		card.Later.MouseLeave:Connect(function() card.Later.BackgroundColor3 = Settings.Theme.Button end)
+		card.Later.MouseButton1Click:Connect(function()
+			gui:Destroy()
+		end)
+		card.Restart.MouseButton1Click:Connect(function()
+			card.Restart.Text = "Loading"
+			card.Restart.Active = false
+			card.Later.Active = false
+			if not Main.RestartFromLatest() then
+				card.Restart.Text = "Failed"
+				task.wait(1.5)
+				if gui.Parent then gui:Destroy() end
+			end
+		end)
+	end
+
+	Main.CheckForUpdatesAsync = function()
+		if Main.UpdateCheckStarted then return end
+		Main.UpdateCheckStarted = true
+		coroutine.wrap(function()
+			task.wait(1)
+			local ok, source = pcall(oldgame.HttpGet, game, Main.UpdateScriptURL, true)
+			if not ok or type(source) ~= "string" or source == "" then return end
+			local latestVersion = Main.GetRemoteScriptVersion(source)
+			if not latestVersion then return end
+			if Main.CompareVersions(Main.Version, latestVersion) <= 0 then return end
+			Main.LatestUpdateSource = source
+			Main.ShowUpdatePrompt(latestVersion)
+		end)()
+	end
+
 	Main.CreateApp = function(data)
 		if Main.MenuApps[data.Name] then return end -- TODO: Handle conflict
 		local control = {}
@@ -17188,8 +17427,8 @@ Main = (function()
 
 		updateState()
 
-		local ySize = service.TextService:GetTextSize(data.Name,14,Enum.Font.SourceSans,Vector2.new(62,999999)).Y
-		app.Main.Size = UDim2.new(1,0,0,math.clamp(46+ySize,60,74))
+		local ySize = service.TextService:GetTextSize(data.Name,13,Enum.Font.SourceSans,Vector2.new(80,999999)).Y
+		app.Main.Size = UDim2.new(1,0,0,math.clamp(48+ySize,64,78))
 		app.Main.AppName.Text = data.Name
 
 		app.Main.InputBegan:Connect(function(input)
@@ -17219,7 +17458,7 @@ Main = (function()
 
 		app.Visible = true
 		app.Parent = Main.AppsContainer
-		Main.AppsFrame.CanvasSize = UDim2.new(0,0,0,Main.AppsContainerGrid.AbsoluteCellCount.Y*82 + 8)
+		Main.AppsFrame.CanvasSize = UDim2.new(0,0,0,Main.AppsContainerGrid.AbsoluteCellCount.Y*86 + 12)
 
 		control.Enable = enable
 		control.Disable = disable
@@ -17232,7 +17471,7 @@ Main = (function()
 
 		Main.MainGui.OpenButton.Text = val and "Close" or "Dex++"
 		if val then Main.MainGui.OpenButton.MainFrame.Visible = true end
-		Main.MainGui.OpenButton.MainFrame:TweenSize(val and UDim2.new(0,224,0,200) or UDim2.new(0,0,0,0),Enum.EasingDirection.Out,Enum.EasingStyle.Quad,0.2,true)
+		Main.MainGui.OpenButton.MainFrame:TweenSize(val and UDim2.new(0,292,0,258) or UDim2.new(0,0,0,0),Enum.EasingDirection.Out,Enum.EasingStyle.Quad,0.2,true)
 		--Main.MainGui.OpenButton.BackgroundTransparency = val and 0 or (Lib.CheckMouseInGui(Main.MainGui.OpenButton) and 0 or 0.2)
 		service.TweenService:Create(Main.MainGui.OpenButton,TweenInfo.new(0.2,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{BackgroundTransparency = val and 0 or (Lib.CheckMouseInGui(Main.MainGui.OpenButton) and 0 or 0.2)}):Play()
 
@@ -17258,26 +17497,26 @@ Main = (function()
 	Main.CreateMainGui = function()
 		local gui = create({
 			{1,"ScreenGui",{IgnoreGuiInset=true,Name="MainMenu",}},
-			{2,"TextButton",{AnchorPoint=Vector2.new(0.5,0),AutoButtonColor=false,BackgroundColor3=Color3.new(0.17647059261799,0.17647059261799,0.17647059261799),BorderSizePixel=0,Font=4,Name="OpenButton",Parent={1},Position=UDim2.new(0.5,0,0,2),Size=UDim2.new(0,55,0,32),Text="Dex++",TextColor3=Color3.new(1,1,1),TextSize=16,TextTransparency=0.20000000298023,}},
+			{2,"TextButton",{AnchorPoint=Vector2.new(0.5,0),AutoButtonColor=false,BackgroundColor3=Color3.fromRGB(28,32,38),BorderSizePixel=0,Font=4,Name="OpenButton",Parent={1},Position=UDim2.new(0.5,0,0,2),Size=UDim2.new(0,68,0,34),Text="Dex++",TextColor3=Color3.fromRGB(238,242,247),TextSize=16,TextTransparency=0.050000000745058,}},
 			{3,"UICorner",{CornerRadius=UDim.new(0,4),Parent={2},}},
-			{4,"Frame",{AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.new(0.17647059261799,0.17647059261799,0.17647059261799),ClipsDescendants=true,Name="MainFrame",Parent={2},Position=UDim2.new(0.5,0,1,-4),Size=UDim2.new(0,224,0,200),}},
+			{4,"Frame",{AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.fromRGB(28,32,38),ClipsDescendants=true,Name="MainFrame",Parent={2},Position=UDim2.new(0.5,0,1,-4),Size=UDim2.new(0,292,0,258),}},
 			{5,"UICorner",{CornerRadius=UDim.new(0,4),Parent={4},}},
-			{6,"Frame",{BackgroundColor3=Color3.new(0.20392157137394,0.20392157137394,0.20392157137394),Name="BottomFrame",Parent={4},Position=UDim2.new(0,0,1,-24),Size=UDim2.new(1,0,0,24),}},
+			{6,"Frame",{BackgroundColor3=Color3.fromRGB(35,39,46),Name="BottomFrame",Parent={4},Position=UDim2.new(0,0,1,-28),Size=UDim2.new(1,0,0,28),}},
 			{7,"UICorner",{CornerRadius=UDim.new(0,4),Parent={6},}},
-			{8,"Frame",{BackgroundColor3=Color3.new(0.20392157137394,0.20392157137394,0.20392157137394),BorderSizePixel=0,Name="CoverFrame",Parent={6},Size=UDim2.new(1,0,0,4),}},
-			{9,"Frame",{BackgroundColor3=Color3.new(0.1294117718935,0.1294117718935,0.1294117718935),BorderSizePixel=0,Name="Line",Parent={8},Position=UDim2.new(0,0,0,-1),Size=UDim2.new(1,0,0,1),}},
+			{8,"Frame",{BackgroundColor3=Color3.fromRGB(35,39,46),BorderSizePixel=0,Name="CoverFrame",Parent={6},Size=UDim2.new(1,0,0,4),}},
+			{9,"Frame",{BackgroundColor3=Color3.fromRGB(18,21,26),BorderSizePixel=0,Name="Line",Parent={8},Position=UDim2.new(0,0,0,-1),Size=UDim2.new(1,0,0,1),}},
 			{10,"TextButton",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Font=3,Name="Settings",Parent={6},Position=UDim2.new(1,-48,0,0),Size=UDim2.new(0,24,1,0),Text="",TextColor3=Color3.new(1,1,1),TextSize=14,}},
-			{11,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://6578871732",ImageTransparency=0.20000000298023,Name="Icon",Parent={10},Position=UDim2.new(0,4,0,4),Size=UDim2.new(0,16,0,16),}},
+			{11,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://6578871732",ImageColor3=Color3.fromRGB(238,242,247),ImageTransparency=0.10000000149012,Name="Icon",Parent={10},Position=UDim2.new(0,4,0,6),Size=UDim2.new(0,16,0,16),}},
 			{12,"TextButton",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Font=3,Name="Information",Parent={6},Position=UDim2.new(1,-24,0,0),Size=UDim2.new(0,24,1,0),Text="",TextColor3=Color3.new(1,1,1),TextSize=14,}},
-			{13,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://6578933307",ImageTransparency=0.20000000298023,Name="Icon",Parent={12},Position=UDim2.new(0,4,0,4),Size=UDim2.new(0,16,0,16),}},
-			{14,"ScrollingFrame",{Active=true,AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderColor3=Color3.new(0.1294117718935,0.1294117718935,0.1294117718935),BorderSizePixel=0,Name="AppsFrame",Parent={4},Position=UDim2.new(0.5,0,0,0),ScrollBarImageColor3=Color3.new(0,0,0),ScrollBarThickness=4,Size=UDim2.new(0,222,1,-25),}},
-			{15,"Frame",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Name="Container",Parent={14},Position=UDim2.new(0,7,0,8),Size=UDim2.new(1,-14,0,2),}},
-			{16,"UIGridLayout",{CellSize=UDim2.new(0,66,0,74),Parent={15},SortOrder=2,}},
+			{13,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://6578933307",ImageColor3=Color3.fromRGB(238,242,247),ImageTransparency=0.10000000149012,Name="Icon",Parent={12},Position=UDim2.new(0,4,0,6),Size=UDim2.new(0,16,0,16),}},
+			{14,"ScrollingFrame",{Active=true,AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderColor3=Color3.fromRGB(18,21,26),BorderSizePixel=0,Name="AppsFrame",Parent={4},Position=UDim2.new(0.5,0,0,0),ScrollBarImageColor3=Color3.fromRGB(70,82,98),ScrollBarThickness=4,Size=UDim2.new(0,290,1,-29),}},
+			{15,"Frame",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Name="Container",Parent={14},Position=UDim2.new(0,8,0,10),Size=UDim2.new(1,-16,0,2),}},
+			{16,"UIGridLayout",{CellPadding=UDim2.new(0,2,0,4),CellSize=UDim2.new(0,88,0,78),Parent={15},SortOrder=2,}},
 			{17,"Frame",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Name="App",Parent={1},Size=UDim2.new(0,100,0,100),Visible=false,}},
-			{18,"TextButton",{AutoButtonColor=false,BackgroundColor3=Color3.new(0.2352941185236,0.2352941185236,0.2352941185236),BorderSizePixel=0,Font=3,Name="Main",Parent={17},Size=UDim2.new(1,0,0,60),Text="",TextColor3=Color3.new(0,0,0),TextSize=14,}},
-			{19,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://129589545519436",ImageRectSize=Vector2.new(32,32),Name="Icon",Parent={18},Position=UDim2.new(0.5,-16,0,4),ScaleType=4,Size=UDim2.new(0,32,0,32),}},
-			{20,"TextLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderSizePixel=0,Font=3,Name="AppName",Parent={18},Position=UDim2.new(0,2,0,38),Size=UDim2.new(1,-4,1,-40),Text="Explorer",TextColor3=Color3.new(1,1,1),TextSize=14,TextTransparency=0.10000000149012,TextTruncate=1,TextWrapped=true,TextYAlignment=0,}},
-			{21,"Frame",{BackgroundColor3=Color3.new(0,0.66666668653488,1),BorderSizePixel=0,Name="Highlight",Parent={18},Position=UDim2.new(0,0,1,-2),Size=UDim2.new(1,0,0,2),}},
+			{18,"TextButton",{AutoButtonColor=false,BackgroundColor3=Color3.fromRGB(43,49,58),BorderSizePixel=0,Font=3,Name="Main",Parent={17},Size=UDim2.new(1,0,0,64),Text="",TextColor3=Color3.new(0,0,0),TextSize=14,}},
+			{19,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://129589545519436",ImageColor3=Color3.fromRGB(238,242,247),ImageRectSize=Vector2.new(32,32),Name="Icon",Parent={18},Position=UDim2.new(0.5,-16,0,6),ScaleType=4,Size=UDim2.new(0,32,0,32),}},
+			{20,"TextLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderSizePixel=0,Font=3,Name="AppName",Parent={18},Position=UDim2.new(0,4,0,42),Size=UDim2.new(1,-8,1,-44),Text="Explorer",TextColor3=Color3.fromRGB(238,242,247),TextSize=13,TextTransparency=0.050000000745058,TextTruncate=1,TextWrapped=true,TextYAlignment=0,}},
+			{21,"Frame",{BackgroundColor3=Color3.fromRGB(42,126,214),BorderSizePixel=0,Name="Highlight",Parent={18},Position=UDim2.new(0,0,1,-2),Size=UDim2.new(1,0,0,2),}},
 		})
 		Main.MainGui = gui
 		Main.AppsFrame = gui.OpenButton.MainFrame.AppsFrame
@@ -17572,6 +17811,7 @@ Main = (function()
 		Main.CreateMainGui()
 		Explorer.Window:Show({Align = "right", Pos = 1, Size = 0.5, Silent = true})
 		Properties.Window:Show({Align = "right", Pos = 2, Size = 0.5, Silent = true})
+		Main.CheckForUpdatesAsync()
 		
 		Lib.DeferFunc(function() Lib.Window.ToggleSide("right") end)
 	end
@@ -17675,10 +17915,15 @@ local function main()
  
 	local logs        = {}
 	local log_frames  = {}
+	local tree_frames = {}
+	local remote_stats = {}
+	local expanded_paths = { game = true }
 	local filter_text = ""
+	local selected_path = ""
 	local paused      = false
 	local log_limit   = 400
 	local active      = false
+	local last_tree_rebuild = 0
  
 	local namecall_orig = nil
 	local hook_cons   = {}
@@ -17713,7 +17958,8 @@ local function main()
 		BindableEvent         = "Event",
 	}
  
-	local window, list_frame, scroll_v, status_label
+	local window, list_frame, tree_frame, scroll_v, status_label, detail_label, empty_label
+	local rebuild_list
  
 	local function color_for(dir, class_name)
 		local is_bind = class_name == "BindableEvent" or class_name == "BindableFunction"
@@ -17725,15 +17971,206 @@ local function main()
 	end
  
 	local function matches(entry)
+		if selected_path ~= "" then
+			if entry.path ~= selected_path and entry.path:sub(1, #selected_path + 1) ~= selected_path .. "." then
+				return false
+			end
+		end
 		if filter_text == "" then return true end
 		local low = filter_text:lower()
 		return entry.path:lower():find(low, 1, true)
 			or entry.method:lower():find(low, 1, true)
 			or entry.args:lower():find(low, 1, true)
 	end
+
+	local function is_remote_class(class_name)
+		return remote_classes[class_name] == true
+	end
+
+	local function note_remote(inst, entry)
+		local path = entry and entry.path or inst_path(inst)
+		local stat = remote_stats[path]
+		local created = false
+		if not stat then
+			created = true
+			stat = {
+				path = path,
+				name = inst and inst.Name or path:match("[^%.]+$") or path,
+				class = entry and entry.class or (inst and inst.ClassName or "Remote"),
+				count = 0,
+				last = "",
+				inst = inst,
+			}
+			remote_stats[path] = stat
+		end
+		if entry then
+			stat.count = stat.count + 1
+			stat.last = entry.time .. " " .. entry.method
+			stat.class = entry.class
+			stat.inst = inst
+		end
+		return stat, created
+	end
+
+	local function update_detail()
+		if not detail_label then return end
+		if selected_path == "" then
+			detail_label.Text = "All remotes"
+		else
+			local stat = remote_stats[selected_path]
+			if stat then
+				detail_label.Text = stat.class .. "  |  " .. stat.count .. " calls  |  " .. selected_path
+			else
+				detail_label.Text = selected_path
+			end
+		end
+	end
+
+	local function split_path(path)
+		local parts = {}
+		for part in string.gmatch(path, "[^%.]+") do
+			parts[#parts + 1] = part
+		end
+		return parts
+	end
+
+	local function add_tree_path(root, stat)
+		local cur = root
+		local cur_path = ""
+		local parts = split_path(stat.path)
+		for i, part in ipairs(parts) do
+			cur_path = cur_path == "" and part or (cur_path .. "." .. part)
+			local child = cur.children[part]
+			if not child then
+				child = {
+					name = part,
+					path = cur_path,
+					children = {},
+					order = {},
+					count = 0,
+					remote = nil,
+				}
+				cur.children[part] = child
+				cur.order[#cur.order + 1] = child
+			end
+			child.count = child.count + stat.count
+			cur = child
+			if i == #parts then
+				cur.remote = stat
+			end
+		end
+	end
+
+	local function rebuild_tree()
+		if not tree_frame then return end
+		for _, f in ipairs(tree_frames) do f:Destroy() end
+		tree_frames = {}
+
+		local root = { children = {}, order = {} }
+		for _, stat in pairs(remote_stats) do
+			add_tree_path(root, stat)
+		end
+
+		local function sort_children(node)
+			table.sort(node.order, function(a, b)
+				if (a.remote ~= nil) ~= (b.remote ~= nil) then
+					return a.remote == nil
+				end
+				return a.name:lower() < b.name:lower()
+			end)
+			for _, child in ipairs(node.order) do sort_children(child) end
+		end
+		sort_children(root)
+
+		local row_count = 0
+		local function add_row(node, depth)
+			row_count = row_count + 1
+			local has_children = #node.order > 0
+			local is_selected = selected_path == node.path
+			local is_leaf = node.remote ~= nil and not has_children
+
+			local row = Instance.new("TextButton")
+			row.AutoButtonColor = false
+			row.BackgroundColor3 = is_selected and Color3.fromRGB(42, 78, 124) or Color3.fromRGB(26, 30, 36)
+			row.BackgroundTransparency = is_selected and 0 or 1
+			row.BorderSizePixel = 0
+			row.Size = UDim2.new(1, -4, 0, 24)
+			row.Text = ""
+			row.LayoutOrder = row_count
+			row.Parent = tree_frame
+
+			local mark = Instance.new("TextLabel", row)
+			mark.BackgroundTransparency = 1
+			mark.Position = UDim2.new(0, 4 + depth * 12, 0, 0)
+			mark.Size = UDim2.new(0, 14, 1, 0)
+			mark.Font = Enum.Font.Code
+			mark.TextSize = 12
+			mark.TextColor3 = has_children and Color3.fromRGB(170, 180, 192) or color_for("out", node.remote and node.remote.class or "RemoteEvent")
+			mark.Text = has_children and (expanded_paths[node.path] and "v" or ">") or "-"
+
+			local name = Instance.new("TextLabel", row)
+			name.BackgroundTransparency = 1
+			name.Position = UDim2.new(0, 20 + depth * 12, 0, 0)
+			name.Size = UDim2.new(1, -74 - depth * 12, 1, 0)
+			name.Font = is_leaf and Enum.Font.SourceSansBold or Enum.Font.SourceSans
+			name.TextSize = 13
+			name.TextColor3 = node.remote and Color3.fromRGB(232, 236, 242) or Color3.fromRGB(180, 188, 200)
+			name.TextXAlignment = Enum.TextXAlignment.Left
+			name.TextTruncate = Enum.TextTruncate.AtEnd
+			name.Text = node.name
+
+			local count = Instance.new("TextLabel", row)
+			count.BackgroundTransparency = 1
+			count.Position = UDim2.new(1, -50, 0, 0)
+			count.Size = UDim2.new(0, 46, 1, 0)
+			count.Font = Enum.Font.Code
+			count.TextSize = 11
+			count.TextColor3 = Color3.fromRGB(130, 142, 158)
+			count.TextXAlignment = Enum.TextXAlignment.Right
+			count.Text = node.count > 0 and tostring(node.count) or ""
+
+			row.MouseEnter:Connect(function()
+				if selected_path ~= node.path then
+					row.BackgroundTransparency = 0
+					row.BackgroundColor3 = Color3.fromRGB(38, 44, 52)
+				end
+			end)
+			row.MouseLeave:Connect(function()
+				if selected_path ~= node.path then
+					row.BackgroundTransparency = 1
+				end
+			end)
+			row.MouseButton1Click:Connect(function()
+				if has_children then
+					expanded_paths[node.path] = not expanded_paths[node.path]
+				end
+				selected_path = node.path
+				update_detail()
+				rebuild_tree()
+				rebuild_list()
+			end)
+
+			tree_frames[#tree_frames + 1] = row
+
+			if has_children and expanded_paths[node.path] then
+				for _, child in ipairs(node.order) do
+					add_row(child, depth + 1)
+				end
+			end
+		end
+
+		for _, child in ipairs(root.order) do
+			add_row(child, 0)
+		end
+		tree_frame.Size = UDim2.new(1, -4, 0, math.max(24, row_count * 24))
+		if tree_frame.Parent then
+			tree_frame.Parent.CanvasSize = UDim2.new(0, 0, 0, math.max(24, row_count * 24))
+		end
+	end
  
 	local function push_row(entry)
 		if not list_frame then return end
+		if empty_label then empty_label.Visible = false end
 		local col = color_for(entry.dir, entry.class)
  
 		local row = Instance.new("Frame")
@@ -17819,7 +18256,7 @@ local function main()
  
 	local function add_log(dir, inst, method, raw_args)
 		if not active or paused then return end
- 
+
 		local entry = {
 			time   = os.date("%H:%M:%S"),
 			dir    = dir,
@@ -17828,6 +18265,7 @@ local function main()
 			method = method,
 			args   = args_str(raw_args),
 		}
+		local _, created_remote = note_remote(inst, entry)
  
 		logs[#logs + 1] = entry
 		if #logs > log_limit then
@@ -17845,13 +18283,38 @@ local function main()
 		if status_label then
 			status_label.Text = #logs .. " logs"
 		end
+		local now = tick()
+		if created_remote or now - last_tree_rebuild > 0.25 then
+			last_tree_rebuild = now
+			rebuild_tree()
+		end
+		update_detail()
 	end
  
-	local function rebuild_list()
+	rebuild_list = function()
 		for _, f in ipairs(log_frames) do f:Destroy() end
 		log_frames = {}
+		local visible_count = 0
 		for _, e in ipairs(logs) do
-			if matches(e) then push_row(e) end
+			if matches(e) then
+				visible_count = visible_count + 1
+				push_row(e)
+			end
+		end
+		if empty_label then
+			empty_label.Visible = visible_count == 0
+			if selected_path ~= "" then
+				empty_label.Text = "No calls for selected node"
+			elseif filter_text ~= "" then
+				empty_label.Text = "No calls match filter"
+			else
+				empty_label.Text = "Start spy to capture calls"
+			end
+		end
+		if scroll_v then
+			scroll_v.TotalSpace = #log_frames
+			scroll_v.Index = 0
+			scroll_v:Update()
 		end
 	end
  
@@ -17860,6 +18323,7 @@ local function main()
 		local sig = in_signals[inst.ClassName]
 		if not sig then return end
 		seen[inst] = true
+		note_remote(inst)
  
 		local ok, con = pcall(function()
 			return inst[sig]:Connect(function(...)
@@ -17893,6 +18357,9 @@ local function main()
 		local ok, descs = pcall(game.GetDescendants, game)
 		if ok then
 			for _, inst in ipairs(descs) do
+				if typeof(inst) == "Instance" and is_remote_class(inst.ClassName) then
+					note_remote(inst)
+				end
 				hook_instance(inst)
 			end
 		end
@@ -17901,13 +18368,24 @@ local function main()
 			local ok2, nil_insts = pcall(getnilinstances)
 			if ok2 then
 				for _, inst in ipairs(nil_insts) do
+					if typeof(inst) == "Instance" and is_remote_class(inst.ClassName) then
+						note_remote(inst)
+					end
 					hook_instance(inst)
 				end
 			end
 		end
+		rebuild_tree()
+		update_detail()
  
 		local da_con = game.DescendantAdded:Connect(function(inst)
-			if active then hook_instance(inst) end
+			if active then
+				if typeof(inst) == "Instance" and is_remote_class(inst.ClassName) then
+					note_remote(inst)
+					rebuild_tree()
+				end
+				hook_instance(inst)
+			end
 		end)
 		hook_cons[#hook_cons + 1] = da_con
 	end
@@ -17927,32 +18405,32 @@ local function main()
  
 	local function make_btn(parent, text, x, w)
 		local btn = Instance.new("TextButton")
-		btn.BackgroundColor3 = Color3.fromRGB(55, 55, 55)
+		btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58)
 		btn.BorderSizePixel  = 0
 		btn.Font             = Enum.Font.SourceSans
 		btn.TextSize         = 13
-		btn.TextColor3       = Color3.new(1, 1, 1)
+		btn.TextColor3       = Color3.fromRGB(238, 242, 247)
 		btn.Text             = text
 		btn.AutoButtonColor  = false
 		btn.Size             = UDim2.new(0, w, 0, 18)
 		btn.Position         = UDim2.new(0, x, 0, 2)
 		btn.Parent           = parent
 		Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 3)
-		btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(68, 68, 68) end)
-		btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(55, 55, 55) end)
+		btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(55, 63, 75) end)
+		btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58) end)
 		return btn
 	end
  
 	spy.Init = function()
 		window = lib_ref.Window.new()
 		window:SetTitle("Remote Spy")
-		window:Resize(600, 400)
+		window:Resize(760, 460)
 		spy.Window = window
  
 		local toolbar = Instance.new("Frame")
-		toolbar.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+		toolbar.BackgroundColor3 = Color3.fromRGB(28, 32, 38)
 		toolbar.BorderSizePixel  = 0
-		toolbar.Size             = UDim2.new(1, 0, 0, 22)
+		toolbar.Size             = UDim2.new(1, 0, 0, 26)
 		toolbar.Parent           = window.GuiElems.Content
  
 		local start_btn = make_btn(toolbar, "▶ start",  2,  58)
@@ -17960,49 +18438,133 @@ local function main()
 		local clear_btn = make_btn(toolbar, "clear",   118, 42)
 		local pause_btn = make_btn(toolbar, "pause",   164, 42)
 		local copy_btn  = make_btn(toolbar, "copy all",210, 58)
+		start_btn.Text = "Start"
+		start_btn.Position = UDim2.new(0, 4, 0, 4)
+		stop_btn.Text = "Stop"
+		stop_btn.Position = UDim2.new(0, 66, 0, 4)
+		clear_btn.Text = "Clear"
+		clear_btn.Size = UDim2.new(0, 48, 0, 18)
+		clear_btn.Position = UDim2.new(0, 122, 0, 4)
+		pause_btn.Text = "Pause"
+		pause_btn.Size = UDim2.new(0, 50, 0, 18)
+		pause_btn.Position = UDim2.new(0, 174, 0, 4)
+		copy_btn.Text = "Copy"
+		copy_btn.Size = UDim2.new(0, 48, 0, 18)
+		copy_btn.Position = UDim2.new(0, 228, 0, 4)
+		local all_btn = make_btn(toolbar, "All", 280, 42)
+		all_btn.Position = UDim2.new(0, 280, 0, 4)
  
 		status_label = Instance.new("TextLabel")
 		status_label.BackgroundTransparency = 1
 		status_label.Font       = Enum.Font.SourceSans
 		status_label.TextSize   = 12
-		status_label.TextColor3 = Color3.fromRGB(110, 110, 110)
+		status_label.TextColor3 = Color3.fromRGB(142, 151, 164)
 		status_label.TextXAlignment = Enum.TextXAlignment.Right
-		status_label.Size       = UDim2.new(1, -274, 1, 0)
-		status_label.Position   = UDim2.new(0, 272, 0, 0)
+		status_label.Size       = UDim2.new(1, -330, 1, 0)
+		status_label.Position   = UDim2.new(0, 326, 0, 0)
 		status_label.Text       = "0 logs"
 		status_label.Parent     = toolbar
  
 		local search_bar = Instance.new("Frame")
-		search_bar.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+		search_bar.BackgroundColor3 = Color3.fromRGB(20, 23, 29)
 		search_bar.BorderSizePixel  = 0
-		search_bar.Size             = UDim2.new(1, 0, 0, 20)
-		search_bar.Position         = UDim2.new(0, 0, 0, 22)
+		search_bar.Size             = UDim2.new(1, 0, 0, 26)
+		search_bar.Position         = UDim2.new(0, 0, 0, 26)
 		search_bar.Parent           = window.GuiElems.Content
  
 		local search_box = Instance.new("TextBox", search_bar)
 		search_box.BackgroundTransparency = 1
 		search_box.PlaceholderText  = "filter…"
-		search_box.PlaceholderColor3 = Color3.fromRGB(80, 80, 80)
+		search_box.PlaceholderColor3 = Color3.fromRGB(142, 151, 164)
 		search_box.Text             = ""
 		search_box.Font             = Enum.Font.Code
 		search_box.TextSize         = 13
-		search_box.TextColor3       = Color3.new(1, 1, 1)
+		search_box.TextColor3       = Color3.fromRGB(238, 242, 247)
 		search_box.TextXAlignment   = Enum.TextXAlignment.Left
 		search_box.ClearTextOnFocus = false
-		search_box.Size             = UDim2.new(1, -8, 1, 0)
-		search_box.Position         = UDim2.new(0, 4, 0, 0)
+		search_box.Size             = UDim2.new(1, -14, 1, 0)
+		search_box.Position         = UDim2.new(0, 8, 0, 0)
+		search_box.PlaceholderText  = "filter path, method, or args"
 		search_box:GetPropertyChangedSignal("Text"):Connect(function()
 			filter_text = search_box.Text
 			rebuild_list()
 		end)
+
+		local body = Instance.new("Frame")
+		body.BackgroundColor3 = Color3.fromRGB(23, 27, 33)
+		body.BorderSizePixel = 0
+		body.Position = UDim2.new(0, 0, 0, 52)
+		body.Size = UDim2.new(1, 0, 1, -52)
+		body.Parent = window.GuiElems.Content
+
+		local tree_panel = Instance.new("Frame")
+		tree_panel.BackgroundColor3 = Color3.fromRGB(20, 23, 29)
+		tree_panel.BorderSizePixel = 0
+		tree_panel.Size = UDim2.new(0, 218, 1, 0)
+		tree_panel.Parent = body
+
+		local tree_title = Instance.new("TextLabel", tree_panel)
+		tree_title.BackgroundTransparency = 1
+		tree_title.Position = UDim2.new(0, 8, 0, 0)
+		tree_title.Size = UDim2.new(1, -16, 0, 28)
+		tree_title.Font = Enum.Font.SourceSansBold
+		tree_title.TextSize = 14
+		tree_title.TextColor3 = Color3.fromRGB(238, 242, 247)
+		tree_title.TextXAlignment = Enum.TextXAlignment.Left
+		tree_title.Text = "Remote tree"
+
+		local tree_scroll = Instance.new("ScrollingFrame")
+		tree_scroll.Active = true
+		tree_scroll.BackgroundTransparency = 1
+		tree_scroll.BorderSizePixel = 0
+		tree_scroll.Position = UDim2.new(0, 4, 0, 30)
+		tree_scroll.Size = UDim2.new(1, -4, 1, -34)
+		tree_scroll.ScrollBarImageColor3 = Color3.fromRGB(70, 82, 98)
+		tree_scroll.ScrollBarThickness = 4
+		tree_scroll.CanvasSize = UDim2.new(0, 0, 0, 24)
+		tree_scroll.Parent = tree_panel
+
+		tree_frame = Instance.new("Frame")
+		tree_frame.BackgroundTransparency = 1
+		tree_frame.Size = UDim2.new(1, -4, 0, 24)
+		tree_frame.Parent = tree_scroll
+
+		local tree_layout = Instance.new("UIListLayout", tree_frame)
+		tree_layout.SortOrder = Enum.SortOrder.LayoutOrder
+		tree_layout.Padding = UDim.new(0, 1)
+
+		local split_line = Instance.new("Frame", body)
+		split_line.BackgroundColor3 = Color3.fromRGB(18, 21, 26)
+		split_line.BorderSizePixel = 0
+		split_line.Position = UDim2.new(0, 218, 0, 0)
+		split_line.Size = UDim2.new(0, 1, 1, 0)
+
+		local right_panel = Instance.new("Frame")
+		right_panel.BackgroundColor3 = Color3.fromRGB(23, 27, 33)
+		right_panel.BorderSizePixel = 0
+		right_panel.Position = UDim2.new(0, 219, 0, 0)
+		right_panel.Size = UDim2.new(1, -219, 1, 0)
+		right_panel.Parent = body
+
+		detail_label = Instance.new("TextLabel", right_panel)
+		detail_label.BackgroundColor3 = Color3.fromRGB(28, 32, 38)
+		detail_label.BorderSizePixel = 0
+		detail_label.Position = UDim2.new(0, 0, 0, 0)
+		detail_label.Size = UDim2.new(1, 0, 0, 28)
+		detail_label.Font = Enum.Font.Code
+		detail_label.TextSize = 12
+		detail_label.TextColor3 = Color3.fromRGB(180, 188, 200)
+		detail_label.TextXAlignment = Enum.TextXAlignment.Left
+		detail_label.TextTruncate = Enum.TextTruncate.AtEnd
+		detail_label.Text = "All remotes"
  
 		local list_container = Instance.new("Frame")
-		list_container.BackgroundColor3 = Color3.fromRGB(28, 28, 28)
+		list_container.BackgroundColor3 = Color3.fromRGB(23, 27, 33)
 		list_container.BorderSizePixel  = 0
-		list_container.Size             = UDim2.new(1, -16, 1, -42)
-		list_container.Position         = UDim2.new(0, 0, 0, 42)
+		list_container.Size             = UDim2.new(1, -16, 1, -28)
+		list_container.Position         = UDim2.new(0, 0, 0, 28)
 		list_container.ClipsDescendants = true
-		list_container.Parent           = window.GuiElems.Content
+		list_container.Parent           = right_panel
  
 		list_frame = Instance.new("Frame")
 		list_frame.BackgroundTransparency = 1
@@ -18013,12 +18575,22 @@ local function main()
 		local layout = Instance.new("UIListLayout", list_frame)
 		layout.SortOrder = Enum.SortOrder.LayoutOrder
 		layout.Padding   = UDim.new(0, 1)
+
+		empty_label = Instance.new("TextLabel", list_container)
+		empty_label.BackgroundTransparency = 1
+		empty_label.Size = UDim2.new(1, 0, 0, 48)
+		empty_label.Position = UDim2.new(0, 0, 0.5, -24)
+		empty_label.Font = Enum.Font.SourceSans
+		empty_label.TextSize = 14
+		empty_label.TextColor3 = Color3.fromRGB(142, 151, 164)
+		empty_label.Text = "Start spy to capture calls"
+		empty_label.Visible = true
  
 		scroll_v = lib_ref.ScrollBar.new()
 		scroll_v.WheelIncrement  = 3
-		scroll_v.Gui.Position    = UDim2.new(1, -16, 0, 42)
-		scroll_v.Gui.Size        = UDim2.new(0, 16, 1, -42)
-		scroll_v.Gui.Parent      = window.GuiElems.Content
+		scroll_v.Gui.Position    = UDim2.new(1, -16, 0, 28)
+		scroll_v.Gui.Size        = UDim2.new(0, 16, 1, -28)
+		scroll_v.Gui.Parent      = right_panel
 		scroll_v:SetScrollFrame(list_container)
 		scroll_v.Scrolled:Connect(function()
 			list_frame.Position = UDim2.new(0, 0, 0, -scroll_v.Index * 37)
@@ -18054,6 +18626,44 @@ local function main()
 				and Color3.fromRGB(95, 75, 20)
 				or  Color3.fromRGB(55, 55, 55)
 		end)
+
+		start_btn.MouseButton1Click:Connect(function()
+			start_btn.Text = "Active"
+			stop_btn.Text = "Stop"
+			stop_btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58)
+			rebuild_tree()
+			rebuild_list()
+		end)
+
+		stop_btn.MouseButton1Click:Connect(function()
+			start_btn.Text = "Start"
+			start_btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58)
+			stop_btn.Text = "Stopped"
+		end)
+
+		clear_btn.MouseButton1Click:Connect(function()
+			for _, stat in pairs(remote_stats) do
+				stat.count = 0
+				stat.last = ""
+			end
+			rebuild_tree()
+			rebuild_list()
+			update_detail()
+		end)
+
+		pause_btn.MouseButton1Click:Connect(function()
+			pause_btn.Text = paused and "Resume" or "Pause"
+			if not paused then
+				pause_btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58)
+			end
+		end)
+
+		all_btn.MouseButton1Click:Connect(function()
+			selected_path = ""
+			update_detail()
+			rebuild_tree()
+			rebuild_list()
+		end)
  
 		copy_btn.MouseButton1Click:Connect(function()
 			if not setclipboard then return end
@@ -18064,6 +18674,10 @@ local function main()
 			end
 			setclipboard(table.concat(lines, "\n"))
 		end)
+
+		rebuild_tree()
+		update_detail()
+		rebuild_list()
  
 		window.OnActivate:Connect(function()
 			if scroll_v then

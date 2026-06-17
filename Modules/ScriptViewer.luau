@@ -52,6 +52,9 @@ end
 local function main()
 	local ScriptViewer = {}
 	local window, codeFrame
+	local searchBox, searchStatus
+	local searchMatches = {}
+	local searchIndex = 0
 	
 	local execute, clear, dumpbtn
 	
@@ -144,6 +147,65 @@ local function main()
 		window:Show()
 	end
 
+	local function setSearchStatus(text, color)
+		if not searchStatus then return end
+		searchStatus.Text = text
+		searchStatus.TextColor3 = color or Settings.Theme.PlaceholderText
+	end
+
+	local function rebuildSearch()
+		searchMatches = {}
+		searchIndex = 0
+
+		if not searchBox or not codeFrame then return end
+		local keyword = searchBox.Text
+		if keyword == "" then
+			codeFrame:ResetSelection()
+			setSearchStatus("0")
+			return
+		end
+
+		local loweredKeyword = keyword:lower()
+		for lineIndex, line in ipairs(codeFrame.Lines) do
+			local loweredLine = line:lower()
+			local startAt = 1
+			while true do
+				local first, last = loweredLine:find(loweredKeyword, startAt, true)
+				if not first then break end
+				searchMatches[#searchMatches + 1] = {
+					line = lineIndex - 1,
+					first = first - 1,
+					last = last,
+				}
+				startAt = math.max(last + 1, first + 1)
+			end
+		end
+
+		if #searchMatches == 0 then
+			codeFrame:ResetSelection()
+			setSearchStatus("0", Settings.Theme.Important)
+		else
+			searchIndex = 1
+			setSearchStatus("1/" .. #searchMatches)
+		end
+	end
+
+	local function jumpSearch(delta)
+		if not codeFrame then return end
+		if #searchMatches == 0 then
+			rebuildSearch()
+		end
+		if #searchMatches == 0 then return end
+
+		searchIndex = ((searchIndex - 1 + delta) % #searchMatches) + 1
+		local match = searchMatches[searchIndex]
+		codeFrame.SelectionRange = {{match.first, match.line}, {match.last, match.line}}
+		codeFrame:MoveCursor(match.first, match.line)
+		codeFrame:SetCopyableSelection()
+		codeFrame:Refresh()
+		setSearchStatus(searchIndex .. "/" .. #searchMatches)
+	end
+
 	ScriptViewer.Init = function()
 		window = Lib.Window.new()
 		window:SetTitle("Notepad")
@@ -151,8 +213,8 @@ local function main()
 		ScriptViewer.Window = window
 
 		codeFrame = Lib.CodeFrame.new()
-		codeFrame.Frame.Position = UDim2.new(0,0,0,20)
-		codeFrame.Frame.Size = UDim2.new(1,0,1,-40)
+		codeFrame.Frame.Position = UDim2.new(0,0,0,44)
+		codeFrame.Frame.Size = UDim2.new(1,0,1,-64)
 		codeFrame.Frame.Parent = window.GuiElems.Content
 		
 		local copy = Instance.new("TextButton",window.GuiElems.Content)
@@ -217,6 +279,80 @@ local function main()
 				pcall(ScriptViewer.DumpFunctions, PreviousScr)
 			end
 		end)
+
+		local searchBar = Instance.new("Frame", window.GuiElems.Content)
+		searchBar.BackgroundColor3 = Settings.Theme.TextBox
+		searchBar.BorderSizePixel = 0
+		searchBar.Position = UDim2.new(0, 0, 0, 21)
+		searchBar.Size = UDim2.new(1, 0, 0, 22)
+
+		searchBox = Instance.new("TextBox", searchBar)
+		searchBox.BackgroundTransparency = 1
+		searchBox.ClearTextOnFocus = false
+		searchBox.Font = Enum.Font.Code
+		searchBox.PlaceholderColor3 = Settings.Theme.PlaceholderText
+		searchBox.PlaceholderText = "Search keywords..."
+		searchBox.Position = UDim2.new(0, 8, 0, 0)
+		searchBox.Size = UDim2.new(1, -138, 1, 0)
+		searchBox.Text = ""
+		searchBox.TextColor3 = Settings.Theme.Text
+		searchBox.TextSize = 13
+		searchBox.TextXAlignment = Enum.TextXAlignment.Left
+
+		local prevBtn = Instance.new("TextButton", searchBar)
+		prevBtn.AutoButtonColor = false
+		prevBtn.BackgroundColor3 = Settings.Theme.Button
+		prevBtn.BorderSizePixel = 0
+		prevBtn.Font = Enum.Font.SourceSansBold
+		prevBtn.Position = UDim2.new(1, -128, 0, 2)
+		prevBtn.Size = UDim2.new(0, 28, 0, 18)
+		prevBtn.Text = "<"
+		prevBtn.TextColor3 = Settings.Theme.Text
+		prevBtn.TextSize = 14
+
+		local nextBtn = Instance.new("TextButton", searchBar)
+		nextBtn.AutoButtonColor = false
+		nextBtn.BackgroundColor3 = Settings.Theme.Button
+		nextBtn.BorderSizePixel = 0
+		nextBtn.Font = Enum.Font.SourceSansBold
+		nextBtn.Position = UDim2.new(1, -96, 0, 2)
+		nextBtn.Size = UDim2.new(0, 28, 0, 18)
+		nextBtn.Text = ">"
+		nextBtn.TextColor3 = Settings.Theme.Text
+		nextBtn.TextSize = 14
+
+		searchStatus = Instance.new("TextLabel", searchBar)
+		searchStatus.BackgroundTransparency = 1
+		searchStatus.Font = Enum.Font.Code
+		searchStatus.Position = UDim2.new(1, -64, 0, 0)
+		searchStatus.Size = UDim2.new(0, 58, 1, 0)
+		searchStatus.Text = "0"
+		searchStatus.TextColor3 = Settings.Theme.PlaceholderText
+		searchStatus.TextSize = 12
+		searchStatus.TextXAlignment = Enum.TextXAlignment.Right
+
+		local function hoverButton(btn)
+			btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Settings.Theme.ButtonHover end)
+			btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Settings.Theme.Button end)
+		end
+		hoverButton(prevBtn)
+		hoverButton(nextBtn)
+
+		searchBox:GetPropertyChangedSignal("Text"):Connect(function()
+			rebuildSearch()
+			if #searchMatches > 0 then
+				jumpSearch(0)
+			end
+		end)
+		searchBox.FocusLost:Connect(function(enterPressed)
+			if enterPressed then jumpSearch(1) end
+		end)
+		prevBtn.MouseButton1Click:Connect(function()
+			jumpSearch(-1)
+		end)
+		nextBtn.MouseButton1Click:Connect(function()
+			jumpSearch(1)
+		end)
 		
 		-- Buttons below the editor
 		
@@ -250,6 +386,7 @@ local function main()
 
 		clear.MouseButton1Click:Connect(function()
 			codeFrame:SetText("")
+			rebuildSearch()
 		end)
 	end
 	
@@ -293,6 +430,7 @@ local function main()
 		end
 
 		codeFrame:SetText(source)
+		rebuildSearch()
 		window:Show()
 	end
 

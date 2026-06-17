@@ -120,21 +120,21 @@ DefaultSettings = (function()
 		},
 		Theme = {
 			_Recurse = true,
-			Main1 = rgb(52,52,52),
-			Main2 = rgb(45,45,45),
-			Outline1 = rgb(33,33,33), -- Mainly frames
-			Outline2 = rgb(55,55,55), -- Mainly button
-			Outline3 = rgb(30,30,30), -- Mainly textbox
-			TextBox = rgb(38,38,38),
-			Menu = rgb(32,32,32),
-			ListSelection = rgb(11,90,175),
-			Button = rgb(60,60,60),
-			ButtonHover = rgb(68,68,68),
-			ButtonPress = rgb(40,40,40),
-			Highlight = rgb(75,75,75),
-			Text = rgb(255,255,255),
-			PlaceholderText = rgb(100,100,100),
-			Important = rgb(255,0,0),
+			Main1 = rgb(35,39,46),
+			Main2 = rgb(28,32,38),
+			Outline1 = rgb(18,21,26), -- Mainly frames
+			Outline2 = rgb(58,66,78), -- Mainly button
+			Outline3 = rgb(14,17,22), -- Mainly textbox
+			TextBox = rgb(23,27,33),
+			Menu = rgb(20,23,29),
+			ListSelection = rgb(42,126,214),
+			Button = rgb(43,49,58),
+			ButtonHover = rgb(55,63,75),
+			ButtonPress = rgb(30,35,42),
+			Highlight = rgb(70,82,98),
+			Text = rgb(238,242,247),
+			PlaceholderText = rgb(142,151,164),
+			Important = rgb(255,82,82),
 			ExplorerIconMap = "",
 			MiscIconMap = "",
 			Syntax = {
@@ -168,7 +168,7 @@ DefaultSettings = (function()
 		},
 		Window = {
 			TitleOnMiddle = false,
-			Transparency = .2
+			Transparency = .12
 		},
 		Decompiler = {
 			DecompilerFallback = "Konstant", --Konstant, Shiny, AdvancedDecompiler
@@ -238,6 +238,9 @@ Main = (function()
 	Main.GitName = "AZYsGithub"
 	Main.RepoName = "DexPlusPlus"
 	Main.GitRepoName = Main.GitName.."/"..Main.RepoName
+	Main.UpdateScriptURL = "https://raw.githubusercontent.com/Ahlstarr-Mayjishan/DarkDEX----edited-version-by-me-/main/DEX%2B%2B_compiled.luau"
+	Main.UpdateCheckStarted = false
+	Main.LatestUpdateSource = nil
 
 	Main.DisplayOrders = {
 		SideWindow = 8,
@@ -1811,6 +1814,104 @@ Main = (function()
 		return {SetProgress = setProgress, Close = close, Object = gui}
 	end
 
+	Main.CompareVersions = function(current, latest)
+		local function nums(version)
+			local out = {}
+			for n in tostring(version or ""):gmatch("%d+") do
+				out[#out + 1] = tonumber(n) or 0
+			end
+			return out
+		end
+
+		local a, b = nums(current), nums(latest)
+		for i = 1, math.max(#a, #b) do
+			local av, bv = a[i] or 0, b[i] or 0
+			if bv > av then return 1 end
+			if bv < av then return -1 end
+		end
+		return 0
+	end
+
+	Main.GetRemoteScriptVersion = function(source)
+		if type(source) ~= "string" then return nil end
+		return source:match('Main%.Version%s*=%s*"([^"]+)"')
+			or source:match("Main%.Version%s*=%s*'([^']+)'")
+			or source:match("Version%s+([%d%.]+)")
+	end
+
+	Main.RestartFromLatest = function()
+		local source = Main.LatestUpdateSource
+		if not source or source == "" then
+			local ok, result = pcall(oldgame.HttpGet, game, Main.UpdateScriptURL, true)
+			if ok then source = result end
+		end
+		if type(source) ~= "string" or source == "" then return false end
+
+		local loader = env and env.loadstring or loadstring
+		if not loader then return false end
+
+		Main.Uninit()
+		task.wait()
+		local ok, fn = pcall(loader, source, "DEX++ Latest")
+		if ok and type(fn) == "function" then
+			coroutine.wrap(fn)()
+			return true
+		end
+		return false
+	end
+
+	Main.ShowUpdatePrompt = function(latestVersion)
+		local gui = create({
+			{1,"ScreenGui",{IgnoreGuiInset=true,Name="UpdatePrompt",ResetOnSpawn=false,}},
+			{2,"Frame",{BackgroundColor3=Color3.fromRGB(0,0,0),BackgroundTransparency=0.35,BorderSizePixel=0,Name="Dim",Parent={1},Size=UDim2.new(1,0,1,0),}},
+			{3,"Frame",{AnchorPoint=Vector2.new(0.5,0.5),BackgroundColor3=Settings.Theme.Main2,BorderSizePixel=0,Name="Card",Parent={2},Position=UDim2.new(0.5,0,0.5,0),Size=UDim2.new(0,360,0,156),}},
+			{4,"UICorner",{CornerRadius=UDim.new(0,6),Parent={3},}},
+			{5,"Frame",{BackgroundColor3=Settings.Theme.ListSelection,BorderSizePixel=0,Name="Accent",Parent={3},Size=UDim2.new(1,0,0,3),}},
+			{6,"TextLabel",{BackgroundTransparency=1,Font=4,Name="Title",Parent={3},Position=UDim2.new(0,18,0,16),Size=UDim2.new(1,-36,0,24),Text="New DEX++ version detected",TextColor3=Settings.Theme.Text,TextSize=18,TextXAlignment=0,}},
+			{7,"TextLabel",{BackgroundTransparency=1,Font=3,Name="Body",Parent={3},Position=UDim2.new(0,18,0,46),Size=UDim2.new(1,-36,0,44),Text="Current: "..tostring(Main.Version).."  |  Latest: "..tostring(latestVersion).."\nRestart now to load the latest script?",TextColor3=Settings.Theme.PlaceholderText,TextSize=14,TextWrapped=true,TextXAlignment=0,TextYAlignment=0,}},
+			{8,"TextButton",{AutoButtonColor=false,BackgroundColor3=Settings.Theme.ListSelection,BorderSizePixel=0,Font=4,Name="Restart",Parent={3},Position=UDim2.new(1,-174,1,-46),Size=UDim2.new(0,78,0,28),Text="Restart",TextColor3=Settings.Theme.Text,TextSize=14,}},
+			{9,"UICorner",{CornerRadius=UDim.new(0,4),Parent={8},}},
+			{10,"TextButton",{AutoButtonColor=false,BackgroundColor3=Settings.Theme.Button,BorderSizePixel=0,Font=4,Name="Later",Parent={3},Position=UDim2.new(1,-88,1,-46),Size=UDim2.new(0,70,0,28),Text="Later",TextColor3=Settings.Theme.Text,TextSize=14,}},
+			{11,"UICorner",{CornerRadius=UDim.new(0,4),Parent={10},}},
+		})
+
+		Main.SecureGui(gui)
+
+		local card = gui.Dim.Card
+		card.Restart.MouseEnter:Connect(function() card.Restart.BackgroundColor3 = Settings.Theme.ButtonHover end)
+		card.Restart.MouseLeave:Connect(function() card.Restart.BackgroundColor3 = Settings.Theme.ListSelection end)
+		card.Later.MouseEnter:Connect(function() card.Later.BackgroundColor3 = Settings.Theme.ButtonHover end)
+		card.Later.MouseLeave:Connect(function() card.Later.BackgroundColor3 = Settings.Theme.Button end)
+		card.Later.MouseButton1Click:Connect(function()
+			gui:Destroy()
+		end)
+		card.Restart.MouseButton1Click:Connect(function()
+			card.Restart.Text = "Loading"
+			card.Restart.Active = false
+			card.Later.Active = false
+			if not Main.RestartFromLatest() then
+				card.Restart.Text = "Failed"
+				task.wait(1.5)
+				if gui.Parent then gui:Destroy() end
+			end
+		end)
+	end
+
+	Main.CheckForUpdatesAsync = function()
+		if Main.UpdateCheckStarted then return end
+		Main.UpdateCheckStarted = true
+		coroutine.wrap(function()
+			task.wait(1)
+			local ok, source = pcall(oldgame.HttpGet, game, Main.UpdateScriptURL, true)
+			if not ok or type(source) ~= "string" or source == "" then return end
+			local latestVersion = Main.GetRemoteScriptVersion(source)
+			if not latestVersion then return end
+			if Main.CompareVersions(Main.Version, latestVersion) <= 0 then return end
+			Main.LatestUpdateSource = source
+			Main.ShowUpdatePrompt(latestVersion)
+		end)()
+	end
+
 	Main.CreateApp = function(data)
 		if Main.MenuApps[data.Name] then return end -- TODO: Handle conflict
 		local control = {}
@@ -1857,8 +1958,8 @@ Main = (function()
 
 		updateState()
 
-		local ySize = service.TextService:GetTextSize(data.Name,14,Enum.Font.SourceSans,Vector2.new(62,999999)).Y
-		app.Main.Size = UDim2.new(1,0,0,math.clamp(46+ySize,60,74))
+		local ySize = service.TextService:GetTextSize(data.Name,13,Enum.Font.SourceSans,Vector2.new(80,999999)).Y
+		app.Main.Size = UDim2.new(1,0,0,math.clamp(48+ySize,64,78))
 		app.Main.AppName.Text = data.Name
 
 		app.Main.InputBegan:Connect(function(input)
@@ -1888,7 +1989,7 @@ Main = (function()
 
 		app.Visible = true
 		app.Parent = Main.AppsContainer
-		Main.AppsFrame.CanvasSize = UDim2.new(0,0,0,Main.AppsContainerGrid.AbsoluteCellCount.Y*82 + 8)
+		Main.AppsFrame.CanvasSize = UDim2.new(0,0,0,Main.AppsContainerGrid.AbsoluteCellCount.Y*86 + 12)
 
 		control.Enable = enable
 		control.Disable = disable
@@ -1901,7 +2002,7 @@ Main = (function()
 
 		Main.MainGui.OpenButton.Text = val and "Close" or "Dex++"
 		if val then Main.MainGui.OpenButton.MainFrame.Visible = true end
-		Main.MainGui.OpenButton.MainFrame:TweenSize(val and UDim2.new(0,224,0,200) or UDim2.new(0,0,0,0),Enum.EasingDirection.Out,Enum.EasingStyle.Quad,0.2,true)
+		Main.MainGui.OpenButton.MainFrame:TweenSize(val and UDim2.new(0,292,0,258) or UDim2.new(0,0,0,0),Enum.EasingDirection.Out,Enum.EasingStyle.Quad,0.2,true)
 		--Main.MainGui.OpenButton.BackgroundTransparency = val and 0 or (Lib.CheckMouseInGui(Main.MainGui.OpenButton) and 0 or 0.2)
 		service.TweenService:Create(Main.MainGui.OpenButton,TweenInfo.new(0.2,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{BackgroundTransparency = val and 0 or (Lib.CheckMouseInGui(Main.MainGui.OpenButton) and 0 or 0.2)}):Play()
 
@@ -1927,26 +2028,26 @@ Main = (function()
 	Main.CreateMainGui = function()
 		local gui = create({
 			{1,"ScreenGui",{IgnoreGuiInset=true,Name="MainMenu",}},
-			{2,"TextButton",{AnchorPoint=Vector2.new(0.5,0),AutoButtonColor=false,BackgroundColor3=Color3.new(0.17647059261799,0.17647059261799,0.17647059261799),BorderSizePixel=0,Font=4,Name="OpenButton",Parent={1},Position=UDim2.new(0.5,0,0,2),Size=UDim2.new(0,55,0,32),Text="Dex++",TextColor3=Color3.new(1,1,1),TextSize=16,TextTransparency=0.20000000298023,}},
+			{2,"TextButton",{AnchorPoint=Vector2.new(0.5,0),AutoButtonColor=false,BackgroundColor3=Color3.fromRGB(28,32,38),BorderSizePixel=0,Font=4,Name="OpenButton",Parent={1},Position=UDim2.new(0.5,0,0,2),Size=UDim2.new(0,68,0,34),Text="Dex++",TextColor3=Color3.fromRGB(238,242,247),TextSize=16,TextTransparency=0.050000000745058,}},
 			{3,"UICorner",{CornerRadius=UDim.new(0,4),Parent={2},}},
-			{4,"Frame",{AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.new(0.17647059261799,0.17647059261799,0.17647059261799),ClipsDescendants=true,Name="MainFrame",Parent={2},Position=UDim2.new(0.5,0,1,-4),Size=UDim2.new(0,224,0,200),}},
+			{4,"Frame",{AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.fromRGB(28,32,38),ClipsDescendants=true,Name="MainFrame",Parent={2},Position=UDim2.new(0.5,0,1,-4),Size=UDim2.new(0,292,0,258),}},
 			{5,"UICorner",{CornerRadius=UDim.new(0,4),Parent={4},}},
-			{6,"Frame",{BackgroundColor3=Color3.new(0.20392157137394,0.20392157137394,0.20392157137394),Name="BottomFrame",Parent={4},Position=UDim2.new(0,0,1,-24),Size=UDim2.new(1,0,0,24),}},
+			{6,"Frame",{BackgroundColor3=Color3.fromRGB(35,39,46),Name="BottomFrame",Parent={4},Position=UDim2.new(0,0,1,-28),Size=UDim2.new(1,0,0,28),}},
 			{7,"UICorner",{CornerRadius=UDim.new(0,4),Parent={6},}},
-			{8,"Frame",{BackgroundColor3=Color3.new(0.20392157137394,0.20392157137394,0.20392157137394),BorderSizePixel=0,Name="CoverFrame",Parent={6},Size=UDim2.new(1,0,0,4),}},
-			{9,"Frame",{BackgroundColor3=Color3.new(0.1294117718935,0.1294117718935,0.1294117718935),BorderSizePixel=0,Name="Line",Parent={8},Position=UDim2.new(0,0,0,-1),Size=UDim2.new(1,0,0,1),}},
+			{8,"Frame",{BackgroundColor3=Color3.fromRGB(35,39,46),BorderSizePixel=0,Name="CoverFrame",Parent={6},Size=UDim2.new(1,0,0,4),}},
+			{9,"Frame",{BackgroundColor3=Color3.fromRGB(18,21,26),BorderSizePixel=0,Name="Line",Parent={8},Position=UDim2.new(0,0,0,-1),Size=UDim2.new(1,0,0,1),}},
 			{10,"TextButton",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Font=3,Name="Settings",Parent={6},Position=UDim2.new(1,-48,0,0),Size=UDim2.new(0,24,1,0),Text="",TextColor3=Color3.new(1,1,1),TextSize=14,}},
-			{11,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://6578871732",ImageTransparency=0.20000000298023,Name="Icon",Parent={10},Position=UDim2.new(0,4,0,4),Size=UDim2.new(0,16,0,16),}},
+			{11,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://6578871732",ImageColor3=Color3.fromRGB(238,242,247),ImageTransparency=0.10000000149012,Name="Icon",Parent={10},Position=UDim2.new(0,4,0,6),Size=UDim2.new(0,16,0,16),}},
 			{12,"TextButton",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Font=3,Name="Information",Parent={6},Position=UDim2.new(1,-24,0,0),Size=UDim2.new(0,24,1,0),Text="",TextColor3=Color3.new(1,1,1),TextSize=14,}},
-			{13,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://6578933307",ImageTransparency=0.20000000298023,Name="Icon",Parent={12},Position=UDim2.new(0,4,0,4),Size=UDim2.new(0,16,0,16),}},
-			{14,"ScrollingFrame",{Active=true,AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderColor3=Color3.new(0.1294117718935,0.1294117718935,0.1294117718935),BorderSizePixel=0,Name="AppsFrame",Parent={4},Position=UDim2.new(0.5,0,0,0),ScrollBarImageColor3=Color3.new(0,0,0),ScrollBarThickness=4,Size=UDim2.new(0,222,1,-25),}},
-			{15,"Frame",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Name="Container",Parent={14},Position=UDim2.new(0,7,0,8),Size=UDim2.new(1,-14,0,2),}},
-			{16,"UIGridLayout",{CellSize=UDim2.new(0,66,0,74),Parent={15},SortOrder=2,}},
+			{13,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://6578933307",ImageColor3=Color3.fromRGB(238,242,247),ImageTransparency=0.10000000149012,Name="Icon",Parent={12},Position=UDim2.new(0,4,0,6),Size=UDim2.new(0,16,0,16),}},
+			{14,"ScrollingFrame",{Active=true,AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderColor3=Color3.fromRGB(18,21,26),BorderSizePixel=0,Name="AppsFrame",Parent={4},Position=UDim2.new(0.5,0,0,0),ScrollBarImageColor3=Color3.fromRGB(70,82,98),ScrollBarThickness=4,Size=UDim2.new(0,290,1,-29),}},
+			{15,"Frame",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Name="Container",Parent={14},Position=UDim2.new(0,8,0,10),Size=UDim2.new(1,-16,0,2),}},
+			{16,"UIGridLayout",{CellPadding=UDim2.new(0,2,0,4),CellSize=UDim2.new(0,88,0,78),Parent={15},SortOrder=2,}},
 			{17,"Frame",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Name="App",Parent={1},Size=UDim2.new(0,100,0,100),Visible=false,}},
-			{18,"TextButton",{AutoButtonColor=false,BackgroundColor3=Color3.new(0.2352941185236,0.2352941185236,0.2352941185236),BorderSizePixel=0,Font=3,Name="Main",Parent={17},Size=UDim2.new(1,0,0,60),Text="",TextColor3=Color3.new(0,0,0),TextSize=14,}},
-			{19,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://129589545519436",ImageRectSize=Vector2.new(32,32),Name="Icon",Parent={18},Position=UDim2.new(0.5,-16,0,4),ScaleType=4,Size=UDim2.new(0,32,0,32),}},
-			{20,"TextLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderSizePixel=0,Font=3,Name="AppName",Parent={18},Position=UDim2.new(0,2,0,38),Size=UDim2.new(1,-4,1,-40),Text="Explorer",TextColor3=Color3.new(1,1,1),TextSize=14,TextTransparency=0.10000000149012,TextTruncate=1,TextWrapped=true,TextYAlignment=0,}},
-			{21,"Frame",{BackgroundColor3=Color3.new(0,0.66666668653488,1),BorderSizePixel=0,Name="Highlight",Parent={18},Position=UDim2.new(0,0,1,-2),Size=UDim2.new(1,0,0,2),}},
+			{18,"TextButton",{AutoButtonColor=false,BackgroundColor3=Color3.fromRGB(43,49,58),BorderSizePixel=0,Font=3,Name="Main",Parent={17},Size=UDim2.new(1,0,0,64),Text="",TextColor3=Color3.new(0,0,0),TextSize=14,}},
+			{19,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://129589545519436",ImageColor3=Color3.fromRGB(238,242,247),ImageRectSize=Vector2.new(32,32),Name="Icon",Parent={18},Position=UDim2.new(0.5,-16,0,6),ScaleType=4,Size=UDim2.new(0,32,0,32),}},
+			{20,"TextLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderSizePixel=0,Font=3,Name="AppName",Parent={18},Position=UDim2.new(0,4,0,42),Size=UDim2.new(1,-8,1,-44),Text="Explorer",TextColor3=Color3.fromRGB(238,242,247),TextSize=13,TextTransparency=0.050000000745058,TextTruncate=1,TextWrapped=true,TextYAlignment=0,}},
+			{21,"Frame",{BackgroundColor3=Color3.fromRGB(42,126,214),BorderSizePixel=0,Name="Highlight",Parent={18},Position=UDim2.new(0,0,1,-2),Size=UDim2.new(1,0,0,2),}},
 		})
 		Main.MainGui = gui
 		Main.AppsFrame = gui.OpenButton.MainFrame.AppsFrame
@@ -2241,6 +2342,7 @@ Main = (function()
 		Main.CreateMainGui()
 		Explorer.Window:Show({Align = "right", Pos = 1, Size = 0.5, Silent = true})
 		Properties.Window:Show({Align = "right", Pos = 2, Size = 0.5, Silent = true})
+		Main.CheckForUpdatesAsync()
 		
 		Lib.DeferFunc(function() Lib.Window.ToggleSide("right") end)
 	end
