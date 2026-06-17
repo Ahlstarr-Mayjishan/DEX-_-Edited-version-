@@ -915,9 +915,8 @@ local function main()
 		context:AddRegistered("VIEW_IMAGE_ASSETS", #sList ~= 1 or not ImageViewer)
 		context:AddRegistered("INSERT_OBJECT")
 		context:AddRegistered("SAVE_INST")
-		-- context:AddRegistered("CALL_FUNCTION")
-		-- context:AddRegistered("VIEW_CONNECTIONS")
-		-- context:AddRegistered("GET_REFERENCES")
+		context:AddRegistered("TRACK_PROPERTIES", #sList ~= 1)
+		context:AddRegistered("SERIALIZE_INSTANCE", #sList ~= 1)
 		context:AddRegistered("COPY_API_PAGE")
 
 		context:QueueDivider()
@@ -956,6 +955,10 @@ local function main()
 
 		if presentClasses["RemoteEvent"] or presentClasses["RemoteFunction"] or presentClasses["UnreliableRemoteEvent"] or presentClasses["BindableEvent"] or presentClasses["BindableFunction"] then
 			context:AddRegistered("VIEW_REMOTE_USAGE", #sList ~= 1 or not RemoteUsageMap)
+		end
+		
+		if presentClasses["RemoteEvent"] or presentClasses["RemoteFunction"] or presentClasses["UnreliableRemoteEvent"] then
+			context:AddRegistered("FUZZ_REMOTE", #sList ~= 1)
 		end
 		
 		
@@ -1507,6 +1510,18 @@ local function main()
 		context:Register("DUMP_FUNCTIONS",{Name = "Dump Functions", IconMap = Explorer.MiscIcons, Icon = "SelectChildren", DisabledIcon = "Empty", OnClick = function()
 			local scr = selection.List[1] and selection.List[1].Obj
 			if scr then ScriptViewer.DumpFunctions(scr) end
+		end})
+		context:Register("FUZZ_REMOTE",{Name = "Fuzz Remote", IconMap = Explorer.MiscIcons, Icon = "CallRemote", DisabledIcon = "Empty", OnClick = function()
+			local remote = selection.List[1] and selection.List[1].Obj
+			if remote and Apps.RemoteFuzzer then Apps.RemoteFuzzer.Generate(remote) end
+		end})
+		context:Register("TRACK_PROPERTIES",{Name = "Track Properties", IconMap = Explorer.MiscIcons, Icon = "CallFunction", DisabledIcon = "Empty", OnClick = function()
+			local obj = selection.List[1] and selection.List[1].Obj
+			if obj and Apps.PropertyTracker then Apps.PropertyTracker.TrackInstance(obj) end
+		end})
+		context:Register("SERIALIZE_INSTANCE",{Name = "Serialize Instance", IconMap = Explorer.MiscIcons, Icon = "Reference", DisabledIcon = "Empty", OnClick = function()
+			local obj = selection.List[1] and selection.List[1].Obj
+			if obj and Apps.InstanceSerializer then Apps.InstanceSerializer.Serialize(obj) end
 		end})
 
 		context:Register("FIRE_TOUCHTRANSMITTER",{Name = "Fire TouchTransmitter", OnClick = function()

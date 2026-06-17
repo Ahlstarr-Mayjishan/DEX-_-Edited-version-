@@ -1,0 +1,171 @@
+--!strict
+--[[
+	Client Index Module
+	Shared cached index for developer/debug tools. Keeps expensive scans and cache reads off hot UI paths.
+]]
+local Main,Lib,Apps,Settings
+local Explorer, ClientIndex
+local API,RMD,env,service,plr,create,createSimple
+
+local function initDeps(data)
+	Main, Lib, Apps, Settings = data.Main, data.Lib, data.Apps, data.Settings
+	API, RMD, env, service, plr = data.API, data.RMD, data.env, data.service, data.plr
+	create, createSimple = data.create, data.createSimple
+end
+
+local function initAfterMain()
+	Explorer = Apps.Explorer
+	ClientIndex = Apps.ClientIndex
+	env.ClientIndex = ClientIndex
+end
+
+local function main()
+	local ClientIndex = {}
+	local remoteClasses = {RemoteEvent=true, RemoteFunction=true, UnreliableRemoteEvent=true, BindableEvent=true, BindableFunction=true}
+	local surfaceTtl = 4
+	local surfaceStamp = 0
+	local surface = {AllInstances={}, AllScripts={}, ViableScripts={}, Remotes={}}
+	local scriptByKey = {}
+
+	local function getPath(obj)
+		local ok, path = pcall(function()
+			if Explorer and Explorer.GetInstancePath then return Explorer.GetInstancePath(obj) end
+			return obj:GetFullName()
+		end)
+		return ok and tostring(path) or tostring(obj)
+	end
+	local function addUnique(list, seen, obj)
+		if typeof(obj) == "Instance" and not seen[obj] then
+			seen[obj] = true
+			list[#list + 1] = obj
+		end
+	end
+	local function collectAllInstances()
+		local list, seen = {}, {}
+		for _, obj in ipairs(game:GetDescendants()) do addUnique(list, seen, obj) end
+		if env.getnilinstances then
+			local ok, nils = pcall(env.getnilinstances)
+			if ok and type(nils) == "table" then
+				for _, obj in pairs(nils) do addUnique(list, seen, obj) end
+			end
+		end
+		return list
+	end
+	local function rebuildScriptLookup()
+		table.clear(scriptByKey)
+		if not env.DecompileCache or not env.DecompileCache.GetScriptKey then return scriptByKey end
+		for _, obj in ipairs(surface.AllScripts) do
+			local ok, key = pcall(env.DecompileCache.GetScriptKey, obj)
+			if ok and key then scriptByKey[key] = obj end
+		end
+		return scriptByKey
+	end
+	function ClientIndex.RefreshSurface(force)
+		local now = os.clock()
+		if not force and now - surfaceStamp < surfaceTtl then return surface end
+		surfaceStamp = now
+		local all = collectAllInstances()
+		local allScripts, viableScripts, remotes = {}, {}, {}
+		for _, obj in ipairs(all) do
+			if obj:IsA("LuaSourceContainer") then
+				allScripts[#allScripts + 1] = obj
+				if not env.isViableDecompileScript or env.isViableDecompileScript(obj) then viableScripts[#viableScripts + 1] = obj end
+			elseif remoteClasses[obj.ClassName] then
+				remotes[#remotes + 1] = obj
+			end
+		end
+		if env.getloadedmodules then
+			local ok, loaded = pcall(env.getloadedmodules)
+			if ok and type(loaded) == "table" then
+				local seen = {}
+				for _, obj in ipairs(allScripts) do seen[obj] = true end
+				for _, obj in pairs(loaded) do
+					if typeof(obj) == "Instance" and obj:IsA("ModuleScript") and not seen[obj] then
+						allScripts[#allScripts + 1] = obj
+						viableScripts[#viableScripts + 1] = obj
+					end
+				end
+			end
+		end
+		surface = {AllInstances=all, AllScripts=allScripts, ViableScripts=viableScripts, Remotes=remotes}
+		rebuildScriptLookup()
+		return surface
+	end
+	function ClientIndex.GetScriptLookup()
+		ClientIndex.RefreshSurface(false)
+		return scriptByKey
+	end
+	function ClientIndex.GetCacheEntries()
+		if not env.DecompileCache or not env.DecompileCache.GetEntries or not env.isfile then return {}, nil end
+		local entries, cacheDir = env.DecompileCache.GetEntries()
+		return entries or {}, cacheDir
+	end
+	function ClientIndex.SearchCached(query, keepGoing, limit)
+		local rows, lowerQuery = {}, tostring(query or ""):lower()
+		if lowerQuery == "" then return rows end
+		local entries, cacheDir = ClientIndex.GetCacheEntries()
+		local count = 0
+		for key, entry in pairs(entries) do
+			if keepGoing and not keepGoing() then return rows end
+			if entry.File then
+				local path = cacheDir .. "/" .. tostring(entry.File)
+				if env.isfile(path) then
+					local ok, source = pcall(env.readfile, path)
+					if ok and type(source) == "string" then
+						local lowerPath, lowerSource = tostring(entry.Path or ""):lower(), source:lower()
+						local hitAt = lowerSource:find(lowerQuery, 1, true)
+						if hitAt or lowerPath:find(lowerQuery, 1, true) then
+							rows[#rows + 1] = {Key=key, Entry=entry, Snippet=source:sub(math.max(1, (hitAt or 1) - 45), math.min(#source, (hitAt or 1) + 120)):gsub("\r"," "):gsub("\n"," ")}
+							if limit and #rows >= limit then return rows end
+						end
+					end
+				end
+			end
+			count += 1
+			if count % 20 == 0 then task.wait() end
+		end
+		return rows
+	end
+	function ClientIndex.FindCachedReferences(tokens, keepGoing, limit)
+		local rows, entries, cacheDir = {}, ClientIndex.GetCacheEntries()
+		local count = 0
+		for key, entry in pairs(entries) do
+			if keepGoing and not keepGoing() then return rows end
+			if entry.File then
+				local path = cacheDir .. "/" .. tostring(entry.File)
+				if env.isfile(path) then
+					local ok, source = pcall(env.readfile, path)
+					if ok and type(source) == "string" then
+						local lower = source:lower()
+						for _, token in ipairs(tokens) do
+							local needle = tostring(token):lower()
+							local pos = #needle >= 2 and lower:find(needle, 1, true)
+							if pos then
+								rows[#rows + 1] = {Key=key, Entry=entry, Token=token, Snippet=source:sub(math.max(1,pos-50), math.min(#source,pos+120)):gsub("\r"," "):gsub("\n"," ")}
+								break
+							end
+						end
+						if limit and #rows >= limit then return rows end
+					end
+				end
+			end
+			count += 1
+			if count % 20 == 0 then task.wait() end
+		end
+		return rows
+	end
+	function ClientIndex.Path(obj) return getPath(obj) end
+	function ClientIndex.Init()
+		task.spawn(function()
+			task.wait(0.2)
+			ClientIndex.RefreshSurface(false)
+		end)
+	end
+	return ClientIndex
+end
+
+if gethsfuncs then
+	_G.moduleData = {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
+else
+	return {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
+end

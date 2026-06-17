@@ -86,7 +86,7 @@ end
 local isFsSupported = readfile and writefile and isfile and isfolder and listfiles and delfile and delfolder
 
 -- Main vars
-local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, RuntimeInspector, ClientIntelligence, Theme, SmartDecompiler, SecurityAuditor--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
+local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, ClientIndex, ActivityMap, DependencyGraph, SmartSearch, RuntimeInspector, ClientIntelligence, Theme, SmartDecompiler, SecurityAuditor, RemoteFuzzer, PropertyTracker, InstanceSerializer, ThreadManager--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
 local API, RMD
 
 -- Default Settings
@@ -243,7 +243,7 @@ end
 Main = (function()
 	local Main = {}
 
-	Main.ModuleList = {"Theme","SmartDecompiler","Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap","ObjectLinks","ImageViewer","RuntimeInspector","ClientIntelligence","SecurityAuditor"}
+	Main.ModuleList = {"Theme","SmartDecompiler","Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap","ObjectLinks","ImageViewer","ClientIndex","ActivityMap","DependencyGraph","SmartSearch","RuntimeInspector","ClientIntelligence","SecurityAuditor","RemoteFuzzer","PropertyTracker","InstanceSerializer","ThreadManager"}
 	Main.Elevated = false
 	Main.AllowDraggableOnMobile = true
 	Main.MissingEnv = {}
@@ -521,11 +521,19 @@ Main = (function()
 		RemoteUsageMap = Apps.RemoteUsageMap
 		ObjectLinks = Apps.ObjectLinks
 		ImageViewer = Apps.ImageViewer
+		ClientIndex = Apps.ClientIndex
+		ActivityMap = Apps.ActivityMap
+		DependencyGraph = Apps.DependencyGraph
+		SmartSearch = Apps.SmartSearch
 		RuntimeInspector = Apps.RuntimeInspector
 		ClientIntelligence = Apps.ClientIntelligence
 		Theme = Apps.Theme
 		SmartDecompiler = Apps.SmartDecompiler
 		SecurityAuditor = Apps.SecurityAuditor
+		RemoteFuzzer = Apps.RemoteFuzzer
+		PropertyTracker = Apps.PropertyTracker
+		InstanceSerializer = Apps.InstanceSerializer
+		ThreadManager = Apps.ThreadManager
 		
 		
 		--SecretServicePanel = Apps.SecretServicePanel
@@ -545,13 +553,18 @@ Main = (function()
 			RemoteUsageMap = RemoteUsageMap,
 			ObjectLinks = ObjectLinks,
 			ImageViewer = ImageViewer,
+			ClientIndex = ClientIndex,
+			ActivityMap = ActivityMap,
+			DependencyGraph = DependencyGraph,
+			SmartSearch = SmartSearch,
 			RuntimeInspector = RuntimeInspector,
 			ClientIntelligence = ClientIntelligence,
-			SecurityAuditor = SecurityAuditor
-			--SecretServicePanel = SecretServicePanel,
+			SecurityAuditor = SecurityAuditor,
+			RemoteFuzzer = RemoteFuzzer,
+			PropertyTracker = PropertyTracker,
+			InstanceSerializer = InstanceSerializer,
+			ThreadManager = ThreadManager
 		}
-		
-		
 
 		Main.AppControls.Lib.InitAfterMain(appTable)
 		for i,v in pairs(Main.ModuleList) do
@@ -2205,14 +2218,27 @@ Main = (function()
 
 		Main.CreateApp({Name = "Image Viewer", IconMap = Main.LargeIcons, Icon = "Object", Window = ImageViewer.Window})
 
+		Main.CreateApp({Name = "Activity Map", IconMap = Main.LargeIcons, Icon = "Watcher", Window = ActivityMap.Window})
+
+		Main.CreateApp({Name = "Dependency Graph", IconMap = Main.LargeIcons, Icon = "ScriptEdit", Window = DependencyGraph.Window})
+
+		Main.CreateApp({Name = "Smart Search", IconMap = Main.LargeIcons, Icon = "ScriptEdit", Window = SmartSearch.Window})
+
 		Main.CreateApp({Name = "Runtime Inspector", IconMap = Main.LargeIcons, Icon = "Watcher", Window = RuntimeInspector.Window})
 
 		Main.CreateApp({Name = "Client Intelligence", IconMap = Main.LargeIcons, Icon = "Output", Window = ClientIntelligence.Window})
 
 		Main.CreateApp({Name = "Security Auditor", IconMap = Main.LargeIcons, Icon = "Watcher", Window = SecurityAuditor.Window})
-
-
-		--Main.CreateApp({Name = "Secret Service Panel", IconMap = Main.LargeIcons, Icon = "Output", Window = SecretServicePanel.Window})
+		Main.CreateApp({Name = "Property Tracker", IconMap = Main.LargeIcons, Icon = "Watcher", Window = PropertyTracker.Window})
+		Main.CreateApp({Name = "Thread Manager", IconMap = Main.LargeIcons, Icon = "ScriptEdit", Window = ThreadManager.Window})
+		Main.CreateApp({Name = "Serialize Inst", IconMap = Main.LargeIcons, Icon = "Object", OnClick = function(callback)
+			if callback then
+				if InstanceSerializer then InstanceSerializer.Init() end
+				if Main.MenuApps["Serialize Inst"] then
+					Main.MenuApps["Serialize Inst"].Disable(true)
+				end
+			end
+		end})
 		
 		for _, loadedplugin in pairs(Main.Plugins) do
 			Main.CreateApp({Name = loadedplugin.PluginData.FriendlyName, IconMap = Explorer.ClassIcons, Icon = "Attachment", Window = loadedplugin.Window})
@@ -2353,6 +2379,10 @@ Main = (function()
 		RemoteUsageMap.Init()
 		ObjectLinks.Init()
 		ImageViewer.Init()
+		ClientIndex.Init()
+		ActivityMap.Init()
+		DependencyGraph.Init()
+		SmartSearch.Init()
 		RuntimeInspector.Init()
 		ClientIntelligence.Init()
 		SecurityAuditor.Init()

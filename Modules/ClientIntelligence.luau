@@ -61,18 +61,21 @@ local function main()
 		if callback then row.MouseButton1Click:Connect(callback) end
 	end
 	local function collectScripts()
+		if env.ClientIndex and env.ClientIndex.RefreshSurface then return env.ClientIndex.RefreshSurface(false).AllScripts end
 		if env.GetClientScripts then return env.GetClientScripts(true) end
 		local out = {}
 		for _, obj in pairs(game:GetDescendants()) do if obj:IsA("LuaSourceContainer") then table.insert(out, obj) end end
 		return out
 	end
 	local function collectRemotes()
+		if env.ClientIndex and env.ClientIndex.RefreshSurface then return env.ClientIndex.RefreshSurface(false).Remotes end
 		if env.GetClientRemotes then return env.GetClientRemotes() end
 		local out = {}
 		for _, obj in pairs(game:GetDescendants()) do if remoteClasses[obj.ClassName] then table.insert(out, obj) end end
 		return out
 	end
 	local function scriptByCacheKey()
+		if env.ClientIndex and env.ClientIndex.GetScriptLookup then return env.ClientIndex.GetScriptLookup() end
 		local map = {}
 		if not env.DecompileCache or not env.DecompileCache.GetScriptKey then return map end
 		for _, scr in pairs(collectScripts()) do

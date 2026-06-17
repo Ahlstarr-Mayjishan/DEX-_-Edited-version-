@@ -51,6 +51,9 @@ local function main()
 		return success and tostring(path) or tostring(obj)
 	end
 	local function collectScripts()
+		if env.ClientIndex and env.ClientIndex.RefreshSurface then
+			return env.ClientIndex.RefreshSurface(false).AllScripts
+		end
 		if env.GetClientScripts then
 			return env.GetClientScripts(true)
 		end
@@ -144,6 +147,9 @@ local function main()
 		if siblingCount == 0 then addRow(1, "no sibling scripts", nil, true) end
 	end
 	local function buildScriptLookup()
+		if env.ClientIndex and env.ClientIndex.GetScriptLookup then
+			return env.ClientIndex.GetScriptLookup()
+		end
 		local byKey = {}
 		if not env.DecompileCache or not env.DecompileCache.GetScriptKey then return byKey end
 		for _, scr in pairs(collectScripts()) do

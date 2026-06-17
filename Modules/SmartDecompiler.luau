@@ -1,3 +1,4 @@
+--!nocheck
 --[[
 	Smart Decompiler Module
 	
@@ -97,6 +98,23 @@ local function main()
 
 	-- 3. Variable Normalizer: Maps obfuscated variables to var_1, var_2, etc.
 	function SmartDecompiler.NormalizeVariables(source)
+		local req = env.request or (syn and syn.request) or (http and http.request) or http_request or request
+		if req then
+			local success, result = pcall(function()
+				return req({
+					Url = "http://localhost:8080/deobfuscate",
+					Method = "POST",
+					Headers = {
+						["Content-Type"] = "text/plain"
+					},
+					Body = source
+				})
+			end)
+			if success and result and result.StatusCode == 200 then
+				return result.Body
+			end
+		end
+
 		local varMap = {}
 		local varCounter = 0
 		

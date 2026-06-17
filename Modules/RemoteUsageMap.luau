@@ -112,6 +112,9 @@ local function main()
 		return row
 	end
 	local function collectScriptsByKey()
+		if env.ClientIndex and env.ClientIndex.GetScriptLookup then
+			return env.ClientIndex.GetScriptLookup()
+		end
 		local map = {}
 		if not env.DecompileCache or not env.DecompileCache.GetScriptKey then return map end
 		local scripts = env.GetClientScripts and env.GetClientScripts(true) or game:GetDescendants()
@@ -177,7 +180,8 @@ local function main()
 		if #nameToken < 2 then return end
 		local hits = 0
 		addDivider("Runtime Constants Hits")
-		for _, scriptObj in pairs(env.GetClientScripts(true)) do
+		local scripts = env.ClientIndex and env.ClientIndex.RefreshSurface and env.ClientIndex.RefreshSurface(false).AllScripts or env.GetClientScripts(true)
+		for _, scriptObj in pairs(scripts) do
 			if token ~= scanToken then return end
 			local constants = env.GetScriptConstants(scriptObj)
 			for _, constant in pairs(constants) do

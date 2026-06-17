@@ -55,6 +55,9 @@ local function main()
 	end
 
 	local function collectScripts()
+		if env.ClientIndex and env.ClientIndex.RefreshSurface then
+			return env.ClientIndex.RefreshSurface(false).ViableScripts
+		end
 		if env.GetClientScripts then
 			return env.GetClientScripts(false)
 		end
@@ -82,6 +85,12 @@ local function main()
 
 	local function rebuildScriptLookup()
 		table.clear(currentScriptsByKey)
+		if env.ClientIndex and env.ClientIndex.GetScriptLookup then
+			for key, scriptInstance in pairs(env.ClientIndex.GetScriptLookup()) do
+				currentScriptsByKey[key] = scriptInstance
+			end
+			return
+		end
 		if not env.DecompileCache or not env.DecompileCache.GetScriptKey then return end
 
 		for _, scriptInstance in pairs(collectScripts()) do

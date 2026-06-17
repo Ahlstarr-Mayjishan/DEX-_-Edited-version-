@@ -132,6 +132,9 @@ local function main()
 	end
 
 	local function collectScriptsByKey()
+		if env.ClientIndex and env.ClientIndex.GetScriptLookup then
+			return env.ClientIndex.GetScriptLookup()
+		end
 		local map = {}
 		if not env.DecompileCache or not env.DecompileCache.GetScriptKey then return map end
 		local scripts = env.GetClientScripts and env.GetClientScripts(true) or game:GetDescendants()
@@ -203,6 +206,17 @@ local function main()
 		end
 		divider("Cached Script References")
 		local tokens = makeTokens(obj)
+		if env.ClientIndex and env.ClientIndex.FindCachedReferences and env.ClientIndex.GetScriptLookup then
+			local scriptsByKey = env.ClientIndex.GetScriptLookup()
+			local rows = env.ClientIndex.FindCachedReferences(tokens, function() return token == scanToken end, 120)
+			for _, hit in ipairs(rows) do
+				local scriptObj = scriptsByKey[hit.Key]
+				scriptHitRow(scriptObj, tostring(hit.Entry.Path or (scriptObj and getPath(scriptObj)) or hit.Entry.Name), "mentions " .. tostring(hit.Token) .. " | " .. tostring(hit.Snippet))
+			end
+			if #rows == 0 then textRow("No cached scripts mention this object yet.", true) end
+			setStatus(("Link scan complete: %d cached hit(s)."):format(#rows))
+			return
+		end
 		local entries, cacheDir = env.DecompileCache.GetEntries()
 		local scriptsByKey = collectScriptsByKey()
 		local found, scanned = 0, 0

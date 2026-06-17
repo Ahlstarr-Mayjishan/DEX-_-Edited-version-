@@ -469,6 +469,19 @@ local function main()
 		rebuildSearch()
 		window:Show()
 	end
+
+	ScriptViewer.ViewRawCode = function(code, title)
+		PreviousScr = nil
+		rawSourceCache = ""
+		dumpbtn.TextColor3 = Color3.fromRGB(127,127,127)
+
+		local header = "-- Generated Code: " .. (title or "Source") .. "\n"
+		header = header .. "-- Time: " .. os.date("%Y-%m-%d %H:%M:%S") .. "\n\n"
+
+		codeFrame:SetText(header .. code)
+		rebuildSearch()
+		window:Show()
+	end
 end
 
 -- TODO: Remove when open source

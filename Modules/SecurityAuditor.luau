@@ -1,3 +1,4 @@
+--!nocheck
 --[[
 	Auto Security Auditor Module
 	
@@ -104,7 +105,7 @@ local function main()
 		Theme.ApplyRounding(sevTag, 3)
 
 		-- Finding Title
-		local title = createSimple("TextLabel", {
+		local _title = createSimple("TextLabel", {
 			BackgroundTransparency = 1,
 			Font = Enum.Font.SourceSansBold,
 			Position = UDim2.new(0, 68, 0, 6),
@@ -118,7 +119,7 @@ local function main()
 		})
 
 		-- Description / Path
-		local desc = createSimple("TextLabel", {
+		local _desc = createSimple("TextLabel", {
 			BackgroundTransparency = 1,
 			Font = Enum.Font.SourceSans,
 			Position = UDim2.new(0, 8, 0, 26),
@@ -419,7 +420,7 @@ local function main()
 		Theme.StyleButton(scanBtn, true)
 
 		-- Deep Scan Checkbox Label
-		local deepLabel = createSimple("TextLabel", {
+		local _deepLabel = createSimple("TextLabel", {
 			BackgroundTransparency = 1,
 			Font = Enum.Font.SourceSans,
 			Position = UDim2.new(0, 98, 0, 6),
