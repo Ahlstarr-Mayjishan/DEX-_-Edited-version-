@@ -86,7 +86,7 @@ end
 local isFsSupported = readfile and writefile and isfile and isfolder and listfiles and delfile and delfolder
 
 -- Main vars
-local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, RuntimeInspector, Theme--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
+local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, RuntimeInspector, ClientIntelligence, Theme, SmartDecompiler, SecurityAuditor--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
 local API, RMD
 
 -- Default Settings
@@ -243,7 +243,7 @@ end
 Main = (function()
 	local Main = {}
 
-	Main.ModuleList = {"Theme","Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap","ObjectLinks","RuntimeInspector"}
+	Main.ModuleList = {"Theme","SmartDecompiler","Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap","ObjectLinks","ImageViewer","RuntimeInspector","ClientIntelligence","SecurityAuditor"}
 	Main.Elevated = false
 	Main.AllowDraggableOnMobile = true
 	Main.MissingEnv = {}
@@ -520,13 +520,18 @@ Main = (function()
 		ScriptRelations = Apps.ScriptRelations
 		RemoteUsageMap = Apps.RemoteUsageMap
 		ObjectLinks = Apps.ObjectLinks
+		ImageViewer = Apps.ImageViewer
 		RuntimeInspector = Apps.RuntimeInspector
+		ClientIntelligence = Apps.ClientIntelligence
 		Theme = Apps.Theme
+		SmartDecompiler = Apps.SmartDecompiler
+		SecurityAuditor = Apps.SecurityAuditor
 		
 		
 		--SecretServicePanel = Apps.SecretServicePanel
 		local appTable = {
 			Theme = Theme,
+			SmartDecompiler = SmartDecompiler,
 			Explorer = Explorer,
 			Properties = Properties,
 			ScriptViewer = ScriptViewer,
@@ -539,7 +544,10 @@ Main = (function()
 			ScriptRelations = ScriptRelations,
 			RemoteUsageMap = RemoteUsageMap,
 			ObjectLinks = ObjectLinks,
-			RuntimeInspector = RuntimeInspector
+			ImageViewer = ImageViewer,
+			RuntimeInspector = RuntimeInspector,
+			ClientIntelligence = ClientIntelligence,
+			SecurityAuditor = SecurityAuditor
 			--SecretServicePanel = SecretServicePanel,
 		}
 		
@@ -2195,7 +2203,14 @@ Main = (function()
 
 		Main.CreateApp({Name = "Object Links", IconMap = Main.LargeIcons, Icon = "Watcher", Window = ObjectLinks.Window})
 
+		Main.CreateApp({Name = "Image Viewer", IconMap = Main.LargeIcons, Icon = "Object", Window = ImageViewer.Window})
+
 		Main.CreateApp({Name = "Runtime Inspector", IconMap = Main.LargeIcons, Icon = "Watcher", Window = RuntimeInspector.Window})
+
+		Main.CreateApp({Name = "Client Intelligence", IconMap = Main.LargeIcons, Icon = "Output", Window = ClientIntelligence.Window})
+
+		Main.CreateApp({Name = "Security Auditor", IconMap = Main.LargeIcons, Icon = "Watcher", Window = SecurityAuditor.Window})
+
 
 		--Main.CreateApp({Name = "Secret Service Panel", IconMap = Main.LargeIcons, Icon = "Output", Window = SecretServicePanel.Window})
 		
@@ -2337,7 +2352,10 @@ Main = (function()
 		ScriptRelations.Init()
 		RemoteUsageMap.Init()
 		ObjectLinks.Init()
+		ImageViewer.Init()
 		RuntimeInspector.Init()
+		ClientIntelligence.Init()
+		SecurityAuditor.Init()
 		--SecretServicePanel.Init()
 		
 		

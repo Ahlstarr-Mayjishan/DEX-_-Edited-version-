@@ -182,6 +182,227 @@ local EmbeddedModules = {
     
     return {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
 end,
+["SmartDecompiler"] = function()
+    --[[
+    	Smart Decompiler Module
+    	
+    	Enhances script readability by remapping obfuscated variable names,
+    	decoding string.char arrays, and highlighting dangerous API usage.
+    ]]
+    
+    -- Common Locals
+    local Main, Lib, Apps, Settings -- Main Containers
+    local Explorer, Properties, ScriptViewer, Notebook -- Major Apps
+    local API, RMD, env, service, plr, create, createSimple -- Main Locals
+    
+    local function initDeps(data)
+    	Main = data.Main
+    	Lib = data.Lib
+    	Apps = data.Apps
+    	Settings = data.Settings
+    
+    	API = data.API
+    	RMD = data.RMD
+    	env = data.env
+    	service = data.service
+    	plr = data.plr
+    	create = data.create
+    	createSimple = data.createSimple
+    end
+    
+    local function initAfterMain(t)
+    	Explorer = t.Explorer
+    	Properties = t.Properties
+    	ScriptViewer = t.ScriptViewer
+    	Notebook = t.Notebook
+    end
+    
+    local function main()
+    	local SmartDecompiler = {}
+    
+    	-- Helper: Escapes a string to be safely represented inside Luau string literals
+    	local function escapeString(str)
+    		return str:gsub("\\", "\\\\")
+    		          :gsub("\"", "\\\"")
+    		          :gsub("\n", "\\n")
+    		          :gsub("\t", "\\t")
+    		          :gsub("\r", "\\r")
+    	end
+    
+    	-- 1. Decode string.char(104, 101, 108, 108, 111) -> "hello"
+    	function SmartDecompiler.DecodeStringChar(source)
+    		-- Match string.char(...) with any amount of digits, spaces, and commas
+    		local pattern = "string%.char%s*%(([%d%s*,%s*]+)%)"
+    		
+    		local decoded = source:gsub(pattern, function(argList)
+    			local chars = {}
+    			for numStr in argList:gmatch("%d+") do
+    				local code = tonumber(numStr)
+    				if code then
+    					table.insert(chars, string.char(code))
+    				end
+    			end
+    			local combined = table.concat(chars)
+    			-- Check if printable, otherwise don't replace or use hex escape
+    			local isPrintable = true
+    			for i = 1, #combined do
+    				local b = combined:byte(i)
+    				if (b < 32 or b > 126) and b ~= 10 and b ~= 9 and b ~= 13 then
+    					isPrintable = false
+    					break
+    				end
+    			end
+    			
+    			if isPrintable then
+    				return "\"" .. escapeString(combined) .. "\""
+    			else
+    				return nil -- Keep original if contains weird binary bytes
+    			end
+    		end)
+    		
+    		return decoded
+    	end
+    
+    	-- 2. Decode slash decimal escape sequences in strings like "\104\101\108" -> "hel"
+    	function SmartDecompiler.DecodeEscapeSequences(source)
+    		-- Decodes decimal escape sequences: \ddd
+    		local decoded = source:gsub("(\\[0-9][0-9][0-9])", function(esc)
+    			local val = tonumber(esc:sub(2))
+    			if val and val >= 32 and val <= 126 then
+    				local ch = string.char(val)
+    				if ch == "\"" or ch == "\\" or ch == "'" then
+    					return "\\" .. ch
+    				end
+    				return ch
+    			end
+    			return esc
+    		end)
+    		return decoded
+    	end
+    
+    	-- 3. Variable Normalizer: Maps obfuscated variables to var_1, var_2, etc.
+    	function SmartDecompiler.NormalizeVariables(source)
+    		local varMap = {}
+    		local varCounter = 0
+    		
+    		-- Match obfuscation variable formats:
+    		-- - l__u__123 (classic decompiler output)
+    		-- - _0xABC123 (hex obfuscation)
+    		-- - IllIIllII (bar code obfuscation)
+    		local patterns = {
+    			"([%a_][%w_]*)", -- we will filter this in the loop
+    		}
+    		
+    		-- Helper to identify if a word is a variable matching obfuscation criteria
+    		local function isObfuscatedName(name)
+    			-- Skip Lua/Roblox keywords and globals
+    			local reserved = {
+    				["and"]=true, ["break"]=true, ["do"]=true, ["else"]=true, ["elseif"]=true,
+    				["end"]=true, ["false"]=true, ["for"]=true, ["function"]=true, ["if"]=true,
+    				["in"]=true, ["local"]=true, ["nil"]=true, ["not"]=true, ["or"]=true,
+    				["repeat"]=true, ["return"]=true, ["then"]=true, ["true"]=true, ["until"]=true,
+    				["while"]=true, ["self"]=true, ["game"]=true, ["workspace"]=true, ["script"]=true
+    			}
+    			if reserved[name] then return false end
+    			
+    			-- 1. Match l__u__123 or v1_1 or u_2
+    			if name:match("^l__u__%d+") or name:match("^u_%d+") then
+    				return true
+    			end
+    			
+    			-- 2. Match hex style _0x123abc
+    			if name:match("^_[0xX]%x+$") or name:match("^0x%x+$") then
+    				return true
+    			end
+    			
+    			-- 3. Match bar code style IllIIlI
+    			if #name >= 4 and name:match("^[Il1]+$") then
+    				return true
+    			end
+    			
+    			return false
+    		end
+    		
+    		-- Extract all variables and map them
+    		for word in source:gmatch("([%a_][%w_]*)") do
+    			if isObfuscatedName(word) and not varMap[word] then
+    				varCounter = varCounter + 1
+    				varMap[word] = "var_" .. tostring(varCounter)
+    			end
+    		end
+    		
+    		-- Replace all occurrences cleanly using word boundaries
+    		-- To avoid replacing substrings, we check characters before/after each match
+    		local normalized = source:gsub("([%a_][%w_]*)", function(word)
+    			return varMap[word] or word
+    		end)
+    		
+    		return normalized
+    	end
+    
+    	-- 4. Audit Heuristics: Flag dangerous APIs and generate a warning header
+    	function SmartDecompiler.AuditCode(source)
+    		local warnings = {}
+    		local lines = string.split(source, "\n")
+    		
+    		local dangerousAPIs = {
+    			{Keyword = "loadstring", Label = "Dynamic Code Execution (loadstring)"},
+    			{Keyword = "HttpGet", Label = "Outbound Web Request (HttpGet)"},
+    			{Keyword = "HttpPost", Label = "Outbound Web Request (HttpPost)"},
+    			{Keyword = "require", Label = "External Module Require (require)"},
+    			{Keyword = "getgenv", Label = "Global Environment Access (getgenv)"},
+    			{Keyword = "hookfunction", Label = "Function Hooking (hookfunction)"},
+    			{Keyword = "hookmetamethod", Label = "Metatable Hooking (hookmetamethod)"},
+    			{Keyword = "setclipboard", Label = "Clipboard Writing (setclipboard)"},
+    			{Keyword = "getgc", Label = "Garbage Collection Access (getgc)"},
+    			{Keyword = "getreg", Label = "Registry Access (getreg)"},
+    		}
+    		
+    		for lineIndex, line in ipairs(lines) do
+    			for _, api in ipairs(dangerousAPIs) do
+    				-- Match keyword as a separate token
+    				if line:match("[^%w_]" .. api.Keyword .. "[^%w_]") or line:match("^" .. api.Keyword .. "[^%w_]") or line:match("[^%w_]" .. api.Keyword .. "$") or line == api.Keyword then
+    					table.insert(warnings, {
+    						Line = lineIndex,
+    						Label = api.Label,
+    						Snippet = line:gsub("^%s*", "") -- Trim leading spaces
+    					})
+    				end
+    			end
+    		end
+    		
+    		if #warnings == 0 then
+    			return source
+    		end
+    		
+    		-- Generate audit header
+    		local header = {}
+    		table.insert(header, "-- [[ DARKDEX++ SMART DECOMPILER AUDIT REPORT ]]")
+    		table.insert(header, "-- Heuristic static analysis found the following potential security concerns:")
+    		for _, warnItem in ipairs(warnings) do
+    			table.insert(header, string.format("--  ⚠️ [Line %d]: %s", warnItem.Line, warnItem.Label))
+    			table.insert(header, string.format("--      Code: %s", warnItem.Snippet))
+    		end
+    		table.insert(header, "-- [[ ========================================== ]]\n")
+    		
+    		return table.concat(header, "\n") .. source
+    	end
+    
+    	-- Main normalization pipeline
+    	function SmartDecompiler.Process(source)
+    		local processed = source
+    		processed = SmartDecompiler.DecodeStringChar(processed)
+    		processed = SmartDecompiler.DecodeEscapeSequences(processed)
+    		processed = SmartDecompiler.NormalizeVariables(processed)
+    		processed = SmartDecompiler.AuditCode(processed)
+    		return processed
+    	end
+    
+    	return SmartDecompiler
+    end
+    
+    return {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
+end,
 ["Console"] = function()
     --[[
         Regional AssetID Bypasser , not fully implemented
@@ -1024,7 +1245,7 @@ end,
     
     -- Common Locals
     local Main,Lib,Apps,Settings -- Main Containers
-    local Explorer, Properties, ScriptViewer, ModelViewer, ScriptRelations, RemoteUsageMap, ObjectLinks, Notebook -- Major Apps
+    local Explorer, Properties, ScriptViewer, ModelViewer, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, Notebook -- Major Apps
     local API,RMD,env,service,plr,create,createSimple -- Main Locals
     
     local function initDeps(data)
@@ -1050,6 +1271,7 @@ end,
     	ScriptRelations = Apps.ScriptRelations
     	RemoteUsageMap = Apps.RemoteUsageMap
     	ObjectLinks = Apps.ObjectLinks
+    	ImageViewer = Apps.ImageViewer
     	Notebook = Apps.Notebook
     end
     
@@ -1928,6 +2150,7 @@ end,
     		if expanded == Explorer.SearchExpanded then context:AddRegistered("CLEAR_SEARCH_AND_JUMP_TO") end
     		if env.setclipboard then context:AddRegistered("COPY_PATH") end
     		context:AddRegistered("FIND_OBJECT_LINKS", #sList ~= 1 or not ObjectLinks)
+    		context:AddRegistered("VIEW_IMAGE_ASSETS", #sList ~= 1 or not ImageViewer)
     		context:AddRegistered("INSERT_OBJECT")
     		context:AddRegistered("SAVE_INST")
     		-- context:AddRegistered("CALL_FUNCTION")
@@ -2467,6 +2690,11 @@ end,
     		context:Register("FIND_OBJECT_LINKS",{Name = "Find Links / References", IconMap = Explorer.MiscIcons, Icon = "ExploreData", DisabledIcon = "Empty", OnClick = function()
     			local obj = selection.List[1] and selection.List[1].Obj
     			if obj and ObjectLinks then ObjectLinks.ShowForObject(obj) end
+    		end})
+    
+    		context:Register("VIEW_IMAGE_ASSETS",{Name = "View Images", IconMap = Explorer.MiscIcons, Icon = "ViewScript", DisabledIcon = "Empty", OnClick = function()
+    			local obj = selection.List[1] and selection.List[1].Obj
+    			if obj and ImageViewer then ImageViewer.ShowForObject(obj) end
     		end})
     
     		context:Register("COPY_API_PAGE",{Name = "Copy Roblox API Page URL", IconMap = Explorer.MiscIcons, Icon = "Reference", OnClick = function()
@@ -13558,7 +13786,7 @@ end,
     ]]
     -- Common Locals
     local Main,Lib,Apps,Settings -- Main Containers
-    local Explorer, Properties, ScriptViewer, Notebook -- Major Apps
+    local Explorer, Properties, ScriptViewer, Notebook, SmartDecompiler -- Major Apps
     local API,RMD,env,service,plr,create,createSimple -- Main Locals
     
     local function initDeps(data)
@@ -13576,11 +13804,12 @@ end,
     	createSimple = data.createSimple
     end
     
-    local function initAfterMain()
-    	Explorer = Apps.Explorer
-    	Properties = Apps.Properties
-    	ScriptViewer = Apps.ScriptViewer
-    	Notebook = Apps.Notebook
+    local function initAfterMain(t)
+    	Explorer = t.Explorer
+    	Properties = t.Properties
+    	ScriptViewer = t.ScriptViewer
+    	Notebook = t.Notebook
+    	SmartDecompiler = t.SmartDecompiler
     end
     
     local executorName = "Unknown"
@@ -13609,9 +13838,11 @@ end,
     	local searchMatches = {}
     	local searchIndex = 0
     	
-    	local execute, clear, dumpbtn
+    	local execute, clear, dumpbtn, smartViewBtn
     	
     	local PreviousScr = nil
+    	local rawSourceCache = ""
+    	local smartViewActive = false
     	
     	ScriptViewer.DumpFunctions = function(scr)
     		-- thanks King.Kevin#6025 you'll obviously be credited (no discord tag since that can easily be impersonated)
@@ -13772,7 +14003,7 @@ end,
     		
     		local copy = Instance.new("TextButton",window.GuiElems.Content)
     		copy.BackgroundTransparency = 1
-    		copy.Size = UDim2.new(0.33,0,0,20)
+    		copy.Size = UDim2.new(0.25,0,0,20)
     		copy.Position = UDim2.new(0,0,0,0)
     		copy.Text = "Copy to Clipboard"
     		
@@ -13791,8 +14022,8 @@ end,
     
     		local save = Instance.new("TextButton",window.GuiElems.Content)
     		save.BackgroundTransparency = 1
-    		save.Size = UDim2.new(0.33,0,0,20)
-    		save.Position = UDim2.new(0.33,0,0,0)
+    		save.Size = UDim2.new(0.25,0,0,20)
+    		save.Position = UDim2.new(0.25,0,0,0)
     		save.Text = "Save to File"
     		save.TextColor3 = Color3.new(1,1,1)
     		
@@ -13814,10 +14045,9 @@ end,
     		
     		dumpbtn = Instance.new("TextButton",window.GuiElems.Content)
     		dumpbtn.BackgroundTransparency = 1
-    		dumpbtn.Position = UDim2.new(0.7,0,0,0)
-    		dumpbtn.Size = UDim2.new(0.3,0,0,20)
+    		dumpbtn.Position = UDim2.new(0.5,0,0,0)
+    		dumpbtn.Size = UDim2.new(0.25,0,0,20)
     		dumpbtn.Text = "Dump Functions"
-    		dumpbtn.TextColor3 = Color3.new(0.5,0.5,0.5)
     		
     		if env.getgc then
     			dumpbtn.TextColor3 = Color3.new(1,1,1)
@@ -13830,6 +14060,27 @@ end,
     		dumpbtn.MouseButton1Click:Connect(function()
     			if PreviousScr ~= nil then
     				pcall(ScriptViewer.DumpFunctions, PreviousScr)
+    			end
+    		end)
+    
+    		smartViewBtn = Instance.new("TextButton",window.GuiElems.Content)
+    		smartViewBtn.BackgroundTransparency = 1
+    		smartViewBtn.Position = UDim2.new(0.75,0,0,0)
+    		smartViewBtn.Size = UDim2.new(0.25,0,0,20)
+    		smartViewBtn.Text = "Smart View: OFF"
+    		smartViewBtn.TextColor3 = Color3.new(0.5,0.5,0.5)
+    		
+    		smartViewBtn.MouseButton1Click:Connect(function()
+    			smartViewActive = not smartViewActive
+    			if smartViewActive then
+    				smartViewBtn.Text = "Smart View: ON"
+    				smartViewBtn.TextColor3 = Settings.Theme.ListSelection
+    			else
+    				smartViewBtn.Text = "Smart View: OFF"
+    				smartViewBtn.TextColor3 = Color3.new(0.5,0.5,0.5)
+    			end
+    			if PreviousScr ~= nil then
+    				ScriptViewer.ViewScript(PreviousScr)
     			end
     		end)
     
@@ -13944,11 +14195,25 @@ end,
     	end
     	
     	ScriptViewer.ViewScript = function(scr)
-    		local oldtick = tick()
-    		local s,source = pcall(env.decompile or function() end,scr)
+    		local s,source
+    		local cacheHit = (PreviousScr == scr and rawSourceCache ~= "")
+    		
+    		if cacheHit then
+    			s = true
+    			source = rawSourceCache
+    		else
+    			local oldtick = tick()
+    			s,source = pcall(env.decompile or function() end,scr)
+    			if s and type(source) == "string" then
+    				rawSourceCache = source
+    			else
+    				rawSourceCache = ""
+    			end
+    		end
     
-    		if not s or not source then
+    		if not s or not source or source == "" then
     			PreviousScr = nil
+    			rawSourceCache = ""
     			dumpbtn.TextColor3 = Color3.new(0.5,0.5,0.5)
     			source = "-- Unable to view source.\n"
     			
@@ -13968,26 +14233,23 @@ end,
     			dumpbtn.TextColor3 = Color3.new(1,1,1)
     
     			local decompiled = source
+    			if smartViewActive and SmartDecompiler then
+    				decompiled = SmartDecompiler.Process(decompiled)
+    			end
     
     			source = "-- Script Path: "..getPath(scr).."\n"
     			
-    			if Settings.ScriptViewer.ShowMoreInfo then
-    				source = source .. "-- Took "..tostring(math.floor( (tick() - oldtick) * 100) / 100).."s to decompile.\n"
+    			if Settings.ScriptViewer.ShowMoreInfo and not cacheHit then
     				source = source .. "-- Executor: "..executorName.." ("..executorVersion..")\n\n"
     			end
     			
     			source = source .. decompiled
-    
-    			oldtick = nil
-    			decompiled = nil
     		end
     
     		codeFrame:SetText(source)
     		rebuildSearch()
     		window:Show()
     	end
-    
-    	return ScriptViewer
     end
     
     -- TODO: Remove when open source
@@ -15682,6 +15944,208 @@ end,
     	return {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
     end
 end,
+["ImageViewer"] = function()
+    --!strict
+    --[[
+    	Image Viewer App Module
+    	Previews image-like asset properties from selected instances.
+    ]]
+    local Main,Lib,Apps,Settings
+    local Explorer, ImageViewer, Notebook
+    local API,RMD,env,service,plr,create,createSimple
+    
+    local function initDeps(data)
+    	Main, Lib, Apps, Settings = data.Main, data.Lib, data.Apps, data.Settings
+    	API, RMD, env, service, plr = data.API, data.RMD, data.env, data.service, data.plr
+    	create, createSimple = data.create, data.createSimple
+    end
+    
+    local function initAfterMain()
+    	Explorer = Apps.Explorer
+    	ImageViewer = Apps.ImageViewer
+    	Notebook = Apps.Notebook
+    end
+    
+    local function main()
+    	local ImageViewer = {}
+    	local window, preview, titleLabel, detailLabel, listFrame
+    	local currentItems = {}
+    	local selectedItem = nil
+    
+    	local imagePropsByClass = {
+    		Decal = {"Texture"},
+    		Texture = {"Texture"},
+    		ImageLabel = {"Image"},
+    		ImageButton = {"Image", "HoverImage", "PressedImage"},
+    		ImageHandleAdornment = {"Image"},
+    		ParticleEmitter = {"Texture"},
+    		Trail = {"Texture"},
+    		Beam = {"Texture"},
+    		MeshPart = {"TextureID"},
+    		SpecialMesh = {"TextureId"},
+    		SurfaceAppearance = {"ColorMap", "NormalMap", "MetalnessMap", "RoughnessMap"},
+    		Sky = {"SkyboxBk", "SkyboxDn", "SkyboxFt", "SkyboxLf", "SkyboxRt", "SkyboxUp"},
+    		Shirt = {"ShirtTemplate"},
+    		Pants = {"PantsTemplate"},
+    		ShirtGraphic = {"Graphic"},
+    	}
+    
+    	local function getPath(obj)
+    		local ok, path = pcall(function()
+    			if Explorer and Explorer.GetInstancePath then return Explorer.GetInstancePath(obj) end
+    			return obj:GetFullName()
+    		end)
+    		return ok and tostring(path) or tostring(obj)
+    	end
+    
+    	local function normalizeAsset(value)
+    		value = tostring(value or "")
+    		if value == "" then return "" end
+    		local id = value:match("rbxassetid://(%d+)") or value:match("[?&]id=(%d+)") or value:match("asset/%?id=(%d+)") or value:match("(%d+)")
+    		if id and value:find("rbxassetid://", 1, true) == nil then
+    			return "rbxassetid://" .. id
+    		end
+    		return value
+    	end
+    
+    	local function clearRows()
+    		if not listFrame then return end
+    		for _, child in pairs(listFrame:GetChildren()) do
+    			if child:IsA("GuiButton") or child:IsA("TextLabel") then child:Destroy() end
+    		end
+    	end
+    
+    	local function setPreview(item)
+    		selectedItem = item
+    		if not preview or not titleLabel or not detailLabel then return end
+    		if not item then
+    			preview.Image = ""
+    			titleLabel.Text = "No image selected"
+    			detailLabel.Text = "Right click an image object or a folder/model containing image assets."
+    			return
+    		end
+    		preview.Image = item.Asset
+    		titleLabel.Text = item.Object.Name .. "." .. item.Property
+    		detailLabel.Text = item.Asset .. " | " .. item.Path
+    	end
+    
+    	local function addRow(item)
+    		local row = createSimple("TextButton",{
+    			AutoButtonColor = false, BackgroundColor3 = Settings.Theme.Main2, BorderColor3 = Settings.Theme.Outline1,
+    			BorderSizePixel = 1, Font = Enum.Font.SourceSans, Size = UDim2.new(1,-8,0,42),
+    			Text = "", Parent = listFrame
+    		})
+    		createSimple("TextLabel",{
+    			BackgroundTransparency = 1, Font = Enum.Font.SourceSans, Position = UDim2.new(0,8,0,2),
+    			Size = UDim2.new(1,-16,0,18), Text = item.Object.Name .. " [" .. item.Object.ClassName .. "] ." .. item.Property,
+    			TextColor3 = Settings.Theme.Text, TextSize = 14, TextTruncate = Enum.TextTruncate.AtEnd,
+    			TextXAlignment = Enum.TextXAlignment.Left, Parent = row
+    		})
+    		createSimple("TextLabel",{
+    			BackgroundTransparency = 1, Font = Enum.Font.SourceSans, Position = UDim2.new(0,8,0,21),
+    			Size = UDim2.new(1,-16,0,18), Text = item.Asset,
+    			TextColor3 = Settings.Theme.PlaceholderText, TextSize = 13, TextTruncate = Enum.TextTruncate.AtEnd,
+    			TextXAlignment = Enum.TextXAlignment.Left, Parent = row
+    		})
+    		Lib.ButtonAnim(row,{Mode=2, StartColor=Settings.Theme.Main2, HoverColor=Settings.Theme.ButtonHover, PressColor=Settings.Theme.ButtonPress, OutlineColor=Settings.Theme.Outline1})
+    		row.MouseButton1Click:Connect(function()
+    			setPreview(item)
+    		end)
+    	end
+    
+    	local function collectFrom(obj, results, limit)
+    		local props = imagePropsByClass[obj.ClassName]
+    		if props then
+    			for _, prop in ipairs(props) do
+    				local ok, value = pcall(function() return obj[prop] end)
+    				local asset = ok and normalizeAsset(value) or ""
+    				if asset ~= "" then
+    					results[#results + 1] = {Object = obj, Property = prop, Asset = asset, Path = getPath(obj)}
+    					if #results >= limit then return end
+    				end
+    			end
+    		end
+    	end
+    
+    	local function collectImages(root)
+    		local results = {}
+    		local limit = 160
+    		collectFrom(root, results, limit)
+    		if #results >= limit then return results end
+    		for _, obj in pairs(root:GetDescendants()) do
+    			collectFrom(obj, results, limit)
+    			if #results >= limit then break end
+    			if #results % 40 == 0 then task.wait() end
+    		end
+    		return results
+    	end
+    
+    	ImageViewer.ShowForObject = function(obj)
+    		if typeof(obj) ~= "Instance" then return end
+    		currentItems = collectImages(obj)
+    		clearRows()
+    		window:SetTitle("Image Viewer - " .. obj.Name)
+    		for _, item in ipairs(currentItems) do addRow(item) end
+    		if #currentItems == 0 then
+    			local label = createSimple("TextLabel",{
+    				BackgroundTransparency = 1, Font = Enum.Font.SourceSans, Size = UDim2.new(1,-8,0,24),
+    				Text = "No image assets found in selected object.", TextColor3 = Settings.Theme.PlaceholderText,
+    				TextSize = 14, TextXAlignment = Enum.TextXAlignment.Left, Parent = listFrame
+    			})
+    			local pad = Instance.new("UIPadding")
+    			pad.PaddingLeft = UDim.new(0,6)
+    			pad.Parent = label
+    			setPreview(nil)
+    		else
+    			setPreview(currentItems[1])
+    		end
+    		window:Show()
+    	end
+    
+    	local function makeButton(parent, text, pos, size, callback)
+    		local button = createSimple("TextButton",{
+    			AutoButtonColor = false, BackgroundColor3 = Settings.Theme.Button, BorderColor3 = Settings.Theme.Outline2,
+    			Font = Enum.Font.SourceSans, Position = pos, Size = size, Text = text,
+    			TextColor3 = Settings.Theme.Text, TextSize = 14, Parent = parent
+    		})
+    		button.MouseButton1Click:Connect(callback)
+    		Lib.ButtonAnim(button,{Mode=2, StartColor=Settings.Theme.Button, HoverColor=Settings.Theme.ButtonHover, PressColor=Settings.Theme.ButtonPress, OutlineColor=Settings.Theme.Outline2})
+    	end
+    
+    	ImageViewer.Init = function()
+    		window = Lib.Window.new()
+    		window:SetTitle("Image Viewer")
+    		window:Resize(620,430)
+    		ImageViewer.Window = window
+    		local content = window.GuiElems.Content
+    		local previewPane = createSimple("Frame",{BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, Position=UDim2.new(0,0,0,0), Size=UDim2.new(0.48,0,1,0), Parent=content})
+    		preview = createSimple("ImageLabel",{BackgroundColor3=Settings.Theme.TextBox, BorderColor3=Settings.Theme.Outline1, Position=UDim2.new(0,8,0,8), Size=UDim2.new(1,-16,1,-88), ScaleType=Enum.ScaleType.Fit, Image="", Parent=previewPane})
+    		titleLabel = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Position=UDim2.new(0,8,1,-76), Size=UDim2.new(1,-16,0,22), Text="No image selected", TextColor3=Settings.Theme.Text, TextSize=14, TextTruncate=Enum.TextTruncate.AtEnd, TextXAlignment=Enum.TextXAlignment.Left, Parent=previewPane})
+    		detailLabel = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSans, Position=UDim2.new(0,8,1,-54), Size=UDim2.new(1,-16,0,22), Text="", TextColor3=Settings.Theme.PlaceholderText, TextSize=13, TextTruncate=Enum.TextTruncate.AtEnd, TextXAlignment=Enum.TextXAlignment.Left, Parent=previewPane})
+    		makeButton(previewPane, "Copy Asset", UDim2.new(0,8,1,-28), UDim2.new(0,96,0,22), function()
+    			if selectedItem and env.setclipboard then env.setclipboard(selectedItem.Asset) end
+    		end)
+    		makeButton(previewPane, "Copy Path", UDim2.new(0,110,1,-28), UDim2.new(0,86,0,22), function()
+    			if selectedItem and env.setclipboard then env.setclipboard(selectedItem.Path) end
+    		end)
+    		listFrame = createSimple("ScrollingFrame",{Active=true, AutomaticCanvasSize=Enum.AutomaticSize.Y, BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, BottomImage="", CanvasSize=UDim2.new(0,0,0,0), Position=UDim2.new(0.48,1,0,0), ScrollBarImageColor3=Color3.fromRGB(70,70,70), ScrollBarThickness=10, Size=UDim2.new(0.52,-1,1,0), TopImage="", Parent=content})
+    		local layout = Instance.new("UIListLayout")
+    		layout.Padding = UDim.new(0,4)
+    		layout.SortOrder = Enum.SortOrder.LayoutOrder
+    		layout.Parent = listFrame
+    		local pad = Instance.new("UIPadding")
+    		pad.PaddingBottom, pad.PaddingLeft, pad.PaddingRight, pad.PaddingTop = UDim.new(0,6), UDim.new(0,4), UDim.new(0,4), UDim.new(0,4)
+    		pad.Parent = listFrame
+    	end
+    	return ImageViewer
+    end
+    
+    if gethsfuncs then
+    	_G.moduleData = {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
+    else
+    	return {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
+    end
+end,
 ["RuntimeInspector"] = function()
     --!strict
     --[[
@@ -15991,6 +16455,788 @@ end,
     	return {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
     end
 end,
+["SecurityAuditor"] = function()
+    --[[
+    	Auto Security Auditor Module
+    	
+    	Scans the game structure and script contents for security vulnerabilities,
+    	exposed RemoteEvents, suspicious require loaders, and obfuscated code.
+    ]]
+    
+    -- Common Locals
+    local Main, Lib, Apps, Settings -- Main Containers
+    local Explorer, ScriptViewer, SecurityAuditor, Theme -- Major Apps
+    local API, RMD, env, service, plr, create, createSimple -- Main Locals
+    
+    local function initDeps(data)
+    	Main = data.Main
+    	Lib = data.Lib
+    	Apps = data.Apps
+    	Settings = data.Settings
+    
+    	API = data.API
+    	RMD = data.RMD
+    	env = data.env
+    	service = data.service
+    	plr = data.plr
+    	create = data.create
+    	createSimple = data.createSimple
+    end
+    
+    local function initAfterMain(t)
+    	Explorer = t.Explorer
+    	ScriptViewer = t.ScriptViewer
+    	SecurityAuditor = t.SecurityAuditor
+    	Theme = t.Theme
+    end
+    
+    local function main()
+    	local SecurityAuditor = {}
+    	local window, statusLabel, listFrame
+    	local scanToken = 0
+    	local isScanning = false
+    	local deepScanEnabled = false
+    
+    	local function setStatus(text)
+    		if statusLabel then
+    			statusLabel.Text = text
+    		end
+    	end
+    
+    	local function clearRows()
+    		if not listFrame then return end
+    		for _, child in pairs(listFrame:GetChildren()) do
+    			if child:IsA("GuiButton") or child:IsA("TextLabel") or child:IsA("Frame") then
+    				child:Destroy()
+    			end
+    		end
+    	end
+    
+    	local function getPath(obj)
+    		local ok, path = pcall(function()
+    			if Explorer and Explorer.GetInstancePath then
+    				return Explorer.GetInstancePath(obj)
+    			end
+    			return obj:GetFullName()
+    		end)
+    		return ok and tostring(path) or tostring(obj)
+    	end
+    
+    	local function pad(gui, left)
+    		local padding = Instance.new("UIPadding")
+    		padding.PaddingLeft = UDim.new(0, left or 8)
+    		padding.PaddingRight = UDim.new(0, 8)
+    		padding.Parent = gui
+    	end
+    
+    	-- Custom color palette for severities
+    	local colors = {
+    		High = Color3.fromRGB(244, 63, 94),   -- Red
+    		Medium = Color3.fromRGB(251, 146, 60), -- Orange
+    		Low = Color3.fromRGB(250, 204, 21),   -- Yellow
+    	}
+    
+    	-- Renders a finding row
+    	local function addFindingRow(finding)
+    		local row = createSimple("Frame", {
+    			BackgroundColor3 = Settings.Theme.Main2,
+    			BorderColor3 = Settings.Theme.Outline1,
+    			BorderSizePixel = 1,
+    			Size = UDim2.new(1, -8, 0, 48),
+    			Parent = listFrame
+    		})
+    		Theme.ApplyRounding(row, 4)
+    
+    		-- Severity Tag
+    		local sevTag = createSimple("TextLabel", {
+    			BackgroundColor3 = colors[finding.Severity] or Settings.Theme.Button,
+    			BorderSizePixel = 0,
+    			Font = Enum.Font.SourceSansBold,
+    			Position = UDim2.new(0, 8, 0, 8),
+    			Size = UDim2.new(0, 52, 0, 16),
+    			Text = string.upper(finding.Severity),
+    			TextColor3 = Color3.fromRGB(255, 255, 255),
+    			TextSize = 12,
+    			Parent = row
+    		})
+    		Theme.ApplyRounding(sevTag, 3)
+    
+    		-- Finding Title
+    		local title = createSimple("TextLabel", {
+    			BackgroundTransparency = 1,
+    			Font = Enum.Font.SourceSansBold,
+    			Position = UDim2.new(0, 68, 0, 6),
+    			Size = UDim2.new(1, -210, 0, 20),
+    			Text = finding.Title,
+    			TextColor3 = Settings.Theme.Text,
+    			TextSize = 14,
+    			TextTruncate = Enum.TextTruncate.AtEnd,
+    			TextXAlignment = Enum.TextXAlignment.Left,
+    			Parent = row
+    		})
+    
+    		-- Description / Path
+    		local desc = createSimple("TextLabel", {
+    			BackgroundTransparency = 1,
+    			Font = Enum.Font.SourceSans,
+    			Position = UDim2.new(0, 8, 0, 26),
+    			Size = UDim2.new(1, -150, 0, 18),
+    			Text = finding.Description,
+    			TextColor3 = Settings.Theme.PlaceholderText,
+    			TextSize = 13,
+    			TextTruncate = Enum.TextTruncate.AtEnd,
+    			TextXAlignment = Enum.TextXAlignment.Left,
+    			Parent = row
+    		})
+    
+    		-- Select button (focus in Explorer)
+    		local selectBtn = createSimple("TextButton", {
+    			BackgroundColor3 = Settings.Theme.Button,
+    			BorderSizePixel = 0,
+    			Font = Enum.Font.SourceSansBold,
+    			Position = UDim2.new(1, -132, 0, 12),
+    			Size = UDim2.new(0, 58, 0, 24),
+    			Text = "Select",
+    			TextColor3 = Settings.Theme.Text,
+    			TextSize = 13,
+    			Parent = row
+    		})
+    		Theme.StyleButton(selectBtn, false)
+    		
+    		selectBtn.MouseButton1Click:Connect(function()
+    			if Explorer and Explorer.Selection and Explorer.ClassIcons then
+    				local node = Explorer.Selection.Map and Explorer.Selection.Map[finding.Object]
+    				if not node then
+    					-- Search for the node in Explorer list
+    					for _, n in pairs(Explorer.Selection) do
+    						if n.Obj == finding.Object then
+    							node = n
+    							break
+    						end
+    					end
+    				end
+    				-- If node not cached directly, set Selection using Explorer logic
+    				pcall(function()
+    					Explorer.Selection:Set(finding.Object)
+    					Explorer.Refresh()
+    					setStatus("Focused " .. finding.Object.Name .. " in Explorer.")
+    				end)
+    			end
+    		end)
+    
+    		-- View Script button (if script)
+    		if finding.Object:IsA("LuaSourceContainer") then
+    			local viewBtn = createSimple("TextButton", {
+    				BackgroundColor3 = Settings.Theme.ListSelection,
+    				BorderSizePixel = 0,
+    				Font = Enum.Font.SourceSansBold,
+    				Position = UDim2.new(1, -66, 0, 12),
+    				Size = UDim2.new(0, 58, 0, 24),
+    				Text = "View",
+    				TextColor3 = Settings.Theme.Text,
+    				TextSize = 13,
+    				Parent = row
+    			})
+    			Theme.StyleButton(viewBtn, true)
+    
+    			viewBtn.MouseButton1Click:Connect(function()
+    				if ScriptViewer then
+    					ScriptViewer.ViewScript(finding.Object)
+    				end
+    			end)
+    		end
+    	end
+    
+    	-- Core scanning logic
+    	local function runScan(token)
+    		isScanning = true
+    		setStatus("Scanning services...")
+    		clearRows()
+    
+    		local targetServices = {
+    			workspace,
+    			service.ReplicatedStorage,
+    			service.ReplicatedFirst,
+    			service.Lighting,
+    			service.StarterPack,
+    			service.StarterGui,
+    			service.StarterPlayer,
+    			service.SoundService,
+    			service.Teams
+    		}
+    
+    		local findings = {}
+    		local totalScanned = 0
+    
+    		-- Insecure remote keywords
+    		local insecureKeywords = {
+    			"admin", "give", "buy", "cash", "money", "ban", "kick", "kill", "points", "rank", "gold", "purchase", "set", "save", "load", "fire"
+    		}
+    
+    		-- Suspicious script keywords
+    		local suspiciousScriptKeywords = {
+    			"backdoor", "vaccine", "lag", "anti", "loader", "virus", "weld", "fix", "free", "admin"
+    		}
+    
+    		for _, srv in ipairs(targetServices) do
+    			if token ~= scanToken then return end
+    			if not srv then continue end
+    
+    			local descendants = srv:GetDescendants()
+    			for _, obj in ipairs(descendants) do
+    				if token ~= scanToken then return end
+    				totalScanned = totalScanned + 1
+    
+    				if totalScanned % 100 == 0 then
+    					setStatus(string.format("Scanning: %d instances, found %d issues...", totalScanned, #findings))
+    					task.wait()
+    				end
+    
+    				-- 1. Exposed Remotes Auditing
+    				if obj:IsA("RemoteEvent") or obj:IsA("RemoteFunction") or obj:IsA("UnreliableRemoteEvent") then
+    					local lowerName = obj.Name:lower()
+    					local isGeneric = false
+    					for _, keyword in ipairs(insecureKeywords) do
+    						if lowerName:find(keyword, 1, true) then
+    							isGeneric = true
+    							break
+    						end
+    					end
+    
+    					if isGeneric then
+    						local severity = "Low"
+    						if lowerName:find("ban", 1, true) or lowerName:find("kick", 1, true) or lowerName:find("give", 1, true) or lowerName:find("kill", 1, true) or lowerName:find("admin", 1, true) then
+    							severity = "High"
+    						elseif obj:IsA("RemoteFunction") then
+    							severity = "Medium"
+    						end
+    
+    						table.insert(findings, {
+    							Severity = severity,
+    							Title = string.format("Exposed Remote: '%s' (%s)", obj.Name, obj.ClassName),
+    							Description = "Path: " .. getPath(obj),
+    							Object = obj
+    						})
+    					end
+    				end
+    
+    				-- 2. Heuristic Script Auditing (Static properties)
+    				if obj:IsA("LuaSourceContainer") then
+    					local lowerName = obj.Name:lower()
+    					local isSuspiciousName = false
+    					for _, keyword in ipairs(suspiciousScriptKeywords) do
+    						if lowerName:find(keyword, 1, true) then
+    							isSuspiciousName = true
+    							break
+    						end
+    					end
+    
+    					if isSuspiciousName then
+    						table.insert(findings, {
+    							Severity = "Medium",
+    							Title = string.format("Suspicious Script Name: '%s'", obj.Name),
+    							Description = "Static script name suggests backdoor loader. Path: " .. getPath(obj),
+    							Object = obj
+    						})
+    					end
+    				end
+    			end
+    		end
+    
+    		-- 3. Deep script content audit (requires decompile)
+    		if deepScanEnabled and env.decompile then
+    			local scripts = {}
+    			for _, srv in ipairs(targetServices) do
+    				if srv then
+    					for _, obj in ipairs(srv:GetDescendants()) do
+    						if obj:IsA("LuaSourceContainer") then
+    							table.insert(scripts, obj)
+    						end
+    					end
+    				end
+    			end
+    
+    			setStatus(string.format("Deep Scan: Auditing contents of %d scripts...", #scripts))
+    			task.wait()
+    
+    			for scriptIndex, scr in ipairs(scripts) do
+    				if token ~= scanToken then return end
+    				setStatus(string.format("Deep Scan: %d/%d scripts analyzed (%d issues)...", scriptIndex, #scripts, #findings))
+    				
+    				-- Run decompile safely
+    				local success, source = pcall(env.decompile, scr)
+    				if success and type(source) == "string" and #source > 0 then
+    					-- Check require(number) backdoors
+    					local backdoorRequire = source:match("require%s*%(%s*%d+%s*%)")
+    					if backdoorRequire then
+    						table.insert(findings, {
+    							Severity = "High",
+    							Title = string.format("Backdoor Loader in '%s'", scr.Name),
+    							Description = string.format("Flags require(AssetId): '%s'. Path: %s", backdoorRequire, getPath(scr)),
+    							Object = scr
+    						})
+    					end
+    
+    					-- Check loadstring
+    					if source:match("[^%w_]loadstring%s*%(") then
+    						table.insert(findings, {
+    							Severity = "Medium",
+    							Title = string.format("Dynamic Code (loadstring) in '%s'", scr.Name),
+    							Description = "Script uses loadstring which executes dynamic unverified code. Path: " .. getPath(scr),
+    							Object = scr
+    						})
+    					end
+    
+    					-- Check obfuscation (high density of decimal escapes)
+    					local _, escapeCount = source:gsub("\\[0-9][0-9][0-9]", "")
+    					if escapeCount > 15 then
+    						table.insert(findings, {
+    							Severity = "Medium",
+    							Title = string.format("Obfuscated Code in '%s'", scr.Name),
+    							Description = string.format("High count of decimal escape sequences (%d found). Path: %s", escapeCount, getPath(scr)),
+    							Object = scr
+    						})
+    					end
+    
+    					-- Check suspicious webhook urls
+    					if source:find("discord.com/api/webhooks", 1, true) or source:find("discordapp.com/api/webhooks", 1, true) then
+    						table.insert(findings, {
+    							Severity = "Medium",
+    							Title = string.format("Discord Webhook in '%s'", scr.Name),
+    							Description = "Script leaks communications or sends data to Discord. Path: " .. getPath(scr),
+    							Object = scr
+    						})
+    					end
+    				end
+    
+    				-- Yield every decompile run to avoid client lag
+    				task.wait()
+    			end
+    		end
+    
+    		-- Render findings
+    		if token ~= scanToken then return end
+    		
+    		-- Sort findings: High, Medium, Low
+    		table.sort(findings, function(a, b)
+    			local severityWeight = { High = 3, Medium = 2, Low = 1 }
+    			return (severityWeight[a.Severity] or 0) > (severityWeight[b.Severity] or 0)
+    		end)
+    
+    		for _, finding in ipairs(findings) do
+    			addFindingRow(finding)
+    		end
+    
+    		local highCount = 0
+    		local medCount = 0
+    		local lowCount = 0
+    		for _, f in ipairs(findings) do
+    			if f.Severity == "High" then highCount = highCount + 1
+    			elseif f.Severity == "Medium" then medCount = medCount + 1
+    			elseif f.Severity == "Low" then lowCount = lowCount + 1 end
+    		end
+    
+    		setStatus(string.format("Scan complete: %d High, %d Med, %d Low issues found.", highCount, medCount, lowCount))
+    		isScanning = false
+    	end
+    
+    	SecurityAuditor.Show = function()
+    		scanToken = scanToken + 1
+    		clearRows()
+    		setStatus("Ready to scan.")
+    		window:Show()
+    	end
+    
+    	SecurityAuditor.Init = function()
+    		window = Lib.Window.new()
+    		window:SetTitle("Security Auditor")
+    		window:Resize(520, 420)
+    		SecurityAuditor.Window = window
+    
+    		-- Controls Toolbar
+    		local toolbar = createSimple("Frame", {
+    			BackgroundColor3 = Settings.Theme.Main1,
+    			BorderSizePixel = 0,
+    			Position = UDim2.new(0, 0, 0, 0),
+    			Size = UDim2.new(1, 0, 0, 32),
+    			Parent = window.GuiElems.Content
+    		})
+    
+    		-- Scan Button
+    		local scanBtn = createSimple("TextButton", {
+    			BackgroundColor3 = Settings.Theme.ListSelection,
+    			BorderSizePixel = 0,
+    			Font = Enum.Font.SourceSansBold,
+    			Position = UDim2.new(0, 6, 0, 4),
+    			Size = UDim2.new(0, 84, 0, 24),
+    			Text = "Scan Game",
+    			TextColor3 = Settings.Theme.Text,
+    			TextSize = 13,
+    			Parent = toolbar
+    		})
+    		Theme.StyleButton(scanBtn, true)
+    
+    		-- Deep Scan Checkbox Label
+    		local deepLabel = createSimple("TextLabel", {
+    			BackgroundTransparency = 1,
+    			Font = Enum.Font.SourceSans,
+    			Position = UDim2.new(0, 98, 0, 6),
+    			Size = UDim2.new(0, 80, 0, 20),
+    			Text = "Deep Scan (Decompile)",
+    			TextColor3 = Settings.Theme.Text,
+    			TextSize = 13,
+    			TextXAlignment = Enum.TextXAlignment.Left,
+    			Parent = toolbar
+    		})
+    
+    		-- Deep Scan Checkbox Button
+    		local deepCheck = createSimple("TextButton", {
+    			BackgroundColor3 = Settings.Theme.Button,
+    			BorderSizePixel = 1,
+    			BorderColor3 = Settings.Theme.Outline2,
+    			Font = Enum.Font.SourceSansBold,
+    			Position = UDim2.new(0, 230, 0, 8),
+    			Size = UDim2.new(0, 16, 0, 16),
+    			Text = "",
+    			TextColor3 = Settings.Theme.Highlight,
+    			TextSize = 14,
+    			Parent = toolbar
+    		})
+    		Theme.ApplyRounding(deepCheck, 2)
+    
+    		deepCheck.MouseButton1Click:Connect(function()
+    			deepScanEnabled = not deepScanEnabled
+    			deepCheck.Text = deepScanEnabled and "✓" or ""
+    		end)
+    
+    		-- Status Text
+    		statusLabel = createSimple("TextLabel", {
+    			BackgroundTransparency = 1,
+    			Font = Enum.Font.SourceSans,
+    			Position = UDim2.new(0, 256, 0, 6),
+    			Size = UDim2.new(1, -262, 0, 20),
+    			Text = "Ready to scan.",
+    			TextColor3 = Settings.Theme.PlaceholderText,
+    			TextSize = 13,
+    			TextTruncate = Enum.TextTruncate.AtEnd,
+    			TextXAlignment = Enum.TextXAlignment.Left,
+    			Parent = toolbar
+    		})
+    
+    		-- Results Scroll Frame
+    		listFrame = createSimple("ScrollingFrame", {
+    			Active = true,
+    			AutomaticCanvasSize = Enum.AutomaticSize.Y,
+    			BackgroundColor3 = Settings.Theme.Main2,
+    			BorderSizePixel = 0,
+    			BottomImage = "",
+    			CanvasSize = UDim2.new(0, 0, 0, 0),
+    			Position = UDim2.new(0, 0, 0, 32),
+    			ScrollBarImageColor3 = Color3.fromRGB(70, 70, 70),
+    			ScrollBarThickness = 10,
+    			Size = UDim2.new(1, 0, 1, -32),
+    			TopImage = "",
+    			Parent = window.GuiElems.Content
+    		})
+    
+    		local layout = Instance.new("UIListLayout")
+    		layout.Padding = UDim.new(0, 4)
+    		layout.SortOrder = Enum.SortOrder.LayoutOrder
+    		layout.Parent = listFrame
+    
+    		local padding = Instance.new("UIPadding")
+    		padding.PaddingBottom = UDim.new(0, 6)
+    		padding.PaddingLeft = UDim.new(0, 4)
+    		padding.PaddingRight = UDim.new(0, 4)
+    		padding.PaddingTop = UDim.new(0, 4)
+    		padding.Parent = listFrame
+    
+    		scanBtn.MouseButton1Click:Connect(function()
+    			if isScanning then return end
+    			scanToken = scanToken + 1
+    			local token = scanToken
+    			task.spawn(function()
+    				runScan(token)
+    			end)
+    		end)
+    	end
+    
+    	return SecurityAuditor
+    end
+    
+    if gethsfuncs then
+    	_G.moduleData = {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
+    else
+    	return {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
+    end
+end,
+["ClientIntelligence"] = function()
+    --!strict
+    --[[
+    	Client Intelligence App Module
+    	Aggregates client-side snapshots, dependency hints, smart queries, timeline, and perf hints.
+    ]]
+    local Main,Lib,Apps,Settings
+    local Explorer, ScriptViewer, RuntimeInspector, ClientIntelligence
+    local API,RMD,env,service,plr,create,createSimple
+    
+    local function initDeps(data)
+    	Main, Lib, Apps, Settings = data.Main, data.Lib, data.Apps, data.Settings
+    	API, RMD, env, service, plr = data.API, data.RMD, data.env, data.service, data.plr
+    	create, createSimple = data.create, data.createSimple
+    end
+    
+    local function initAfterMain()
+    	Explorer = Apps.Explorer
+    	ScriptViewer = Apps.ScriptViewer
+    	RuntimeInspector = Apps.RuntimeInspector
+    	ClientIntelligence = Apps.ClientIntelligence
+    end
+    
+    local function main()
+    	local ClientIntelligence = {}
+    	local window, listFrame, statusLabel, queryBox
+    	local scanToken = 0
+    	local remoteClasses = {RemoteEvent=true, RemoteFunction=true, UnreliableRemoteEvent=true, BindableEvent=true, BindableFunction=true}
+    
+    	local function setStatus(text) if statusLabel then statusLabel.Text = text end end
+    	local function getPath(obj)
+    		local ok, path = pcall(function()
+    			if Explorer and Explorer.GetInstancePath then return Explorer.GetInstancePath(obj) end
+    			return obj:GetFullName()
+    		end)
+    		return ok and tostring(path) or tostring(obj)
+    	end
+    	local function clearRows()
+    		if not listFrame then return end
+    		for _, child in pairs(listFrame:GetChildren()) do
+    			if child:IsA("GuiButton") or child:IsA("TextLabel") then child:Destroy() end
+    		end
+    	end
+    	local function pad(gui)
+    		local p = Instance.new("UIPadding")
+    		p.PaddingLeft = UDim.new(0,6)
+    		p.Parent = gui
+    	end
+    	local function divider(text)
+    		local label = createSimple("TextLabel",{BackgroundColor3=Settings.Theme.Main1, BorderSizePixel=0, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,-8,0,22), Text=text, TextColor3=Settings.Theme.Text, TextSize=14, TextXAlignment=Enum.TextXAlignment.Left, Parent=listFrame})
+    		pad(label)
+    	end
+    	local function textRow(text, muted)
+    		local label = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSans, Size=UDim2.new(1,-8,0,22), Text=text, TextColor3=muted and Settings.Theme.PlaceholderText or Settings.Theme.Text, TextSize=14, TextTruncate=Enum.TextTruncate.AtEnd, TextXAlignment=Enum.TextXAlignment.Left, Parent=listFrame})
+    		pad(label)
+    	end
+    	local function actionRow(title, detail, callback)
+    		local row = createSimple("TextButton",{AutoButtonColor=false, BackgroundColor3=Settings.Theme.Main2, BorderColor3=Settings.Theme.Outline1, BorderSizePixel=1, Font=Enum.Font.SourceSans, Size=UDim2.new(1,-8,0,42), Text="", Parent=listFrame})
+    		createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSans, Position=UDim2.new(0,8,0,2), Size=UDim2.new(1,-16,0,18), Text=title, TextColor3=Settings.Theme.Text, TextSize=14, TextTruncate=Enum.TextTruncate.AtEnd, TextXAlignment=Enum.TextXAlignment.Left, Parent=row})
+    		createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSans, Position=UDim2.new(0,8,0,21), Size=UDim2.new(1,-16,0,18), Text=detail, TextColor3=Settings.Theme.PlaceholderText, TextSize=13, TextTruncate=Enum.TextTruncate.AtEnd, TextXAlignment=Enum.TextXAlignment.Left, Parent=row})
+    		Lib.ButtonAnim(row,{Mode=2, StartColor=Settings.Theme.Main2, HoverColor=Settings.Theme.ButtonHover, PressColor=Settings.Theme.ButtonPress, OutlineColor=Settings.Theme.Outline1})
+    		if callback then row.MouseButton1Click:Connect(callback) end
+    	end
+    	local function collectScripts()
+    		if env.GetClientScripts then return env.GetClientScripts(true) end
+    		local out = {}
+    		for _, obj in pairs(game:GetDescendants()) do if obj:IsA("LuaSourceContainer") then table.insert(out, obj) end end
+    		return out
+    	end
+    	local function collectRemotes()
+    		if env.GetClientRemotes then return env.GetClientRemotes() end
+    		local out = {}
+    		for _, obj in pairs(game:GetDescendants()) do if remoteClasses[obj.ClassName] then table.insert(out, obj) end end
+    		return out
+    	end
+    	local function scriptByCacheKey()
+    		local map = {}
+    		if not env.DecompileCache or not env.DecompileCache.GetScriptKey then return map end
+    		for _, scr in pairs(collectScripts()) do
+    			local ok, key = pcall(env.DecompileCache.GetScriptKey, scr)
+    			if ok and key then map[key] = scr end
+    		end
+    		return map
+    	end
+    	local function showSnapshot()
+    		scanToken += 1
+    		clearRows()
+    		window:SetTitle("Client Intelligence - Snapshot")
+    		local scripts, remotes = collectScripts(), collectRemotes()
+    		local parts, guis, services = 0, 0, {}
+    		for _, obj in pairs(game:GetDescendants()) do
+    			if obj:IsA("BasePart") then parts += 1 end
+    			if obj:IsA("GuiObject") then guis += 1 end
+    			local root = obj
+    			while root.Parent and root.Parent ~= game do root = root.Parent end
+    			services[root.Name] = (services[root.Name] or 0) + 1
+    		end
+    		divider("Client Surface")
+    		textRow(("scripts: %d | remotes: %d | parts: %d | gui objects: %d"):format(#scripts,#remotes,parts,guis), false)
+    		divider("Largest Services")
+    		local rows = {}
+    		for name, count in pairs(services) do table.insert(rows, {Name=name, Count=count}) end
+    		table.sort(rows, function(a,b) return a.Count > b.Count end)
+    		for i = 1, math.min(10,#rows) do textRow(rows[i].Name .. " - " .. rows[i].Count .. " descendants", true) end
+    		if RuntimeInspector and RuntimeInspector.GetBuffers then
+    			local buffers = RuntimeInspector.GetBuffers()
+    			local counts = {}
+    			for _, call in ipairs(buffers.RemoteCall or {}) do counts[call.Path] = (counts[call.Path] or 0) + 1 end
+    			divider("Hot Runtime Remotes")
+    			local hot = {}
+    			for path, count in pairs(counts) do table.insert(hot, {Path=path, Count=count}) end
+    			table.sort(hot, function(a,b) return a.Count > b.Count end)
+    			for i = 1, math.min(12,#hot) do textRow(hot[i].Count .. " calls | " .. hot[i].Path, false) end
+    			if #hot == 0 then textRow("No runtime remote calls captured yet.", true) end
+    		end
+    		setStatus("Snapshot ready.")
+    		window:Show()
+    	end
+    	local function showDependencies()
+    		scanToken += 1
+    		local token = scanToken
+    		clearRows()
+    		window:SetTitle("Client Intelligence - Dependencies")
+    		divider("Dependency Graph Hints")
+    		setStatus("Scanning cached scripts...")
+    		window:Show()
+    		task.spawn(function()
+    			if not env.DecompileCache or not env.DecompileCache.GetEntries or not env.isfile then textRow("Cache unavailable. Run Code Search > Index Scripts first.", true); return end
+    			local entries, cacheDir = env.DecompileCache.GetEntries()
+    			local byKey, remotes = scriptByCacheKey(), collectRemotes()
+    			local scanned, shown = 0, 0
+    			for key, entry in pairs(entries) do
+    				if token ~= scanToken then return end
+    				if entry.File and env.isfile(cacheDir .. "/" .. tostring(entry.File)) then
+    					local ok, source = pcall(env.readfile, cacheDir .. "/" .. tostring(entry.File))
+    					if ok and type(source) == "string" then
+    						scanned += 1
+    						local lower = source:lower()
+    						for block in source:gmatch("require%s*%b()") do
+    							shown += 1
+    							actionRow("require link | " .. tostring(entry.Path or entry.Name), block:gsub("\n"," "), function() local scr = byKey[key]; if scr and ScriptViewer then ScriptViewer.ViewScript(scr) end end)
+    							if shown >= 60 then break end
+    						end
+    						for _, remote in ipairs(remotes) do
+    							if #remote.Name >= 2 and lower:find(remote.Name:lower(), 1, true) then
+    								shown += 1
+    								actionRow("remote mention | " .. remote.Name, tostring(entry.Path or entry.Name), function() local scr = byKey[key]; if scr and ScriptViewer then ScriptViewer.ViewScript(scr) end end)
+    								break
+    							end
+    						end
+    					end
+    				end
+    				if shown >= 80 then textRow("More results omitted.", true); break end
+    				if scanned % 20 == 0 then setStatus(("Scanned %d cached scripts..."):format(scanned)); task.wait() end
+    			end
+    			if shown == 0 then textRow("No cached dependency hints found yet.", true) end
+    			setStatus(("Dependency scan complete: %d cached scripts."):format(scanned))
+    		end)
+    	end
+    	local function showSmartQuery()
+    		scanToken += 1
+    		local token = scanToken
+    		clearRows()
+    		local query = tostring(queryBox and queryBox.Text or ""):lower()
+    		window:SetTitle("Client Intelligence - Smart Query")
+    		if query == "" then textRow("Enter a keyword/path/class/remote name first.", true); window:Show(); return end
+    		setStatus("Querying client surface and cache...")
+    		window:Show()
+    		task.spawn(function()
+    			local found = 0
+    			divider("Live Instance Hits")
+    			for _, obj in pairs(game:GetDescendants()) do
+    				if token ~= scanToken then return end
+    				if obj.Name:lower():find(query,1,true) or obj.ClassName:lower():find(query,1,true) then
+    					found += 1
+    					actionRow(obj.Name .. " [" .. obj.ClassName .. "]", getPath(obj), function() if env.setclipboard then env.setclipboard(getPath(obj)) end end)
+    					if found >= 40 then break end
+    				end
+    			end
+    			if env.DecompileCache and env.DecompileCache.GetEntries and env.isfile then
+    				divider("Cached Code Hits")
+    				local entries, cacheDir = env.DecompileCache.GetEntries()
+    				local byKey = scriptByCacheKey()
+    				for key, entry in pairs(entries) do
+    					if token ~= scanToken then return end
+    					if entry.File and env.isfile(cacheDir .. "/" .. tostring(entry.File)) then
+    						local ok, source = pcall(env.readfile, cacheDir .. "/" .. tostring(entry.File))
+    						if ok and type(source) == "string" and (source:lower():find(query,1,true) or tostring(entry.Path or ""):lower():find(query,1,true)) then
+    							found += 1
+    							actionRow(tostring(entry.Path or entry.Name), "cached source hit", function() local scr = byKey[key]; if scr and ScriptViewer then ScriptViewer.ViewScript(scr) end end)
+    							if found >= 80 then break end
+    						end
+    					end
+    					task.wait()
+    				end
+    			end
+    			setStatus(("Smart query complete: %d result(s)."):format(found))
+    		end)
+    	end
+    	local function showTimeline()
+    		clearRows()
+    		window:SetTitle("Client Intelligence - Timeline")
+    		if not RuntimeInspector or not RuntimeInspector.GetBuffers then textRow("Runtime Inspector data unavailable.", true); return end
+    		local buffers = RuntimeInspector.GetBuffers()
+    		divider("Recent Remote Calls")
+    		for i, call in ipairs(buffers.RemoteCall or {}) do if i > 40 then break end; textRow(call.Method .. " | " .. call.Path, false) end
+    		divider("Recent Correlations")
+    		for i, item in ipairs(buffers.Correlation or {}) do if i > 40 then break end; textRow(("%s -> packet %s | %.3fs"):format(item.Method, tostring(item.PacketId), item.Delta or 0), true) end
+    		setStatus("Timeline uses Runtime Inspector buffers.")
+    		window:Show()
+    	end
+    	local function showPerf()
+    		clearRows()
+    		window:SetTitle("Client Intelligence - Performance")
+    		divider("Performance Hints")
+    		local guiCount = 0
+    		pcall(function() for _, _ in pairs(Main.GetSecureContainer():GetDescendants()) do guiCount += 1 end end)
+    		textRow("DEX++ UI descendants: " .. guiCount, guiCount > 2500)
+    		if env.DecompileCache and env.DecompileCache.GetEntries then
+    			local entries = env.DecompileCache.GetEntries()
+    			local count = 0
+    			for _ in pairs(entries) do count += 1 end
+    			textRow("Cached decompiled scripts: " .. count, false)
+    		end
+    		textRow("RemoteSpy and Runtime Inspector now rate-limit UI updates; keep raw packet samples off unless needed.", true)
+    		setStatus("Performance summary ready.")
+    		window:Show()
+    	end
+    	local function makeButton(parent, text, x, w, callback)
+    		local b = createSimple("TextButton",{AutoButtonColor=false, BackgroundColor3=Settings.Theme.Button, BorderColor3=Settings.Theme.Outline2, Font=Enum.Font.SourceSans, Position=UDim2.new(0,x,0,4), Size=UDim2.new(0,w,0,22), Text=text, TextColor3=Settings.Theme.Text, TextSize=14, Parent=parent})
+    		b.MouseButton1Click:Connect(callback)
+    		Lib.ButtonAnim(b,{Mode=2, StartColor=Settings.Theme.Button, HoverColor=Settings.Theme.ButtonHover, PressColor=Settings.Theme.ButtonPress, OutlineColor=Settings.Theme.Outline2})
+    	end
+    	ClientIntelligence.Init = function()
+    		window = Lib.Window.new()
+    		window:SetTitle("Client Intelligence")
+    		window:Resize(660,430)
+    		ClientIntelligence.Window = window
+    		local content = window.GuiElems.Content
+    		local toolbar = createSimple("Frame",{BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, Size=UDim2.new(1,0,0,60), Parent=content})
+    		queryBox = createSimple("TextBox",{BackgroundColor3=Settings.Theme.TextBox, BorderColor3=Settings.Theme.Outline3, ClearTextOnFocus=false, Font=Enum.Font.SourceSans, PlaceholderColor3=Settings.Theme.PlaceholderText, PlaceholderText="keyword / remote / class / path", Position=UDim2.new(0,6,0,32), Size=UDim2.new(1,-12,0,22), Text="", TextColor3=Settings.Theme.Text, TextSize=14, TextXAlignment=Enum.TextXAlignment.Left, Parent=toolbar})
+    		makeButton(toolbar,"Snapshot",6,72,showSnapshot)
+    		makeButton(toolbar,"Deps",84,54,showDependencies)
+    		makeButton(toolbar,"Query",144,54,showSmartQuery)
+    		makeButton(toolbar,"Timeline",204,72,showTimeline)
+    		makeButton(toolbar,"Perf",282,50,showPerf)
+    		statusLabel = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSans, Position=UDim2.new(0,340,0,4), Size=UDim2.new(1,-346,0,22), Text="Client-side intelligence dashboard.", TextColor3=Settings.Theme.PlaceholderText, TextSize=14, TextTruncate=Enum.TextTruncate.AtEnd, TextXAlignment=Enum.TextXAlignment.Left, Parent=toolbar})
+    		listFrame = createSimple("ScrollingFrame",{Active=true, AutomaticCanvasSize=Enum.AutomaticSize.Y, BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, BottomImage="", CanvasSize=UDim2.new(0,0,0,0), Position=UDim2.new(0,0,0,60), ScrollBarImageColor3=Color3.fromRGB(70,70,70), ScrollBarThickness=10, Size=UDim2.new(1,0,1,-60), TopImage="", Parent=content})
+    		local layout = Instance.new("UIListLayout")
+    		layout.Padding = UDim.new(0,4)
+    		layout.SortOrder = Enum.SortOrder.LayoutOrder
+    		layout.Parent = listFrame
+    		local p = Instance.new("UIPadding")
+    		p.PaddingBottom, p.PaddingLeft, p.PaddingRight, p.PaddingTop = UDim.new(0,6), UDim.new(0,4), UDim.new(0,4), UDim.new(0,4)
+    		p.Parent = listFrame
+    		queryBox.FocusLost:Connect(function(enterPressed) if enterPressed then showSmartQuery() end end)
+    	end
+    	ClientIntelligence.ShowSnapshot = showSnapshot
+    	return ClientIntelligence
+    end
+    
+    if gethsfuncs then
+    	_G.moduleData = {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
+    else
+    	return {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
+    end
+end,
 }
 local oldgame = oldgame or game
 cloneref = cloneref or function(ref)
@@ -16029,7 +17275,7 @@ end
 local isFsSupported = readfile and writefile and isfile and isfolder and listfiles and delfile and delfolder
 
 -- Main vars
-local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, RuntimeInspector, Theme--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
+local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, RuntimeInspector, ClientIntelligence, Theme, SmartDecompiler, SecurityAuditor--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
 local API, RMD
 
 -- Default Settings
@@ -16186,7 +17432,7 @@ end
 Main = (function()
 	local Main = {}
 
-	Main.ModuleList = {"Theme","Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap","ObjectLinks","RuntimeInspector"}
+	Main.ModuleList = {"Theme","SmartDecompiler","Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap","ObjectLinks","ImageViewer","RuntimeInspector","ClientIntelligence","SecurityAuditor"}
 	Main.Elevated = false
 	Main.AllowDraggableOnMobile = true
 	Main.MissingEnv = {}
@@ -16463,13 +17709,18 @@ Main = (function()
 		ScriptRelations = Apps.ScriptRelations
 		RemoteUsageMap = Apps.RemoteUsageMap
 		ObjectLinks = Apps.ObjectLinks
+		ImageViewer = Apps.ImageViewer
 		RuntimeInspector = Apps.RuntimeInspector
+		ClientIntelligence = Apps.ClientIntelligence
 		Theme = Apps.Theme
+		SmartDecompiler = Apps.SmartDecompiler
+		SecurityAuditor = Apps.SecurityAuditor
 		
 		
 		--SecretServicePanel = Apps.SecretServicePanel
 		local appTable = {
 			Theme = Theme,
+			SmartDecompiler = SmartDecompiler,
 			Explorer = Explorer,
 			Properties = Properties,
 			ScriptViewer = ScriptViewer,
@@ -16482,7 +17733,10 @@ Main = (function()
 			ScriptRelations = ScriptRelations,
 			RemoteUsageMap = RemoteUsageMap,
 			ObjectLinks = ObjectLinks,
-			RuntimeInspector = RuntimeInspector
+			ImageViewer = ImageViewer,
+			RuntimeInspector = RuntimeInspector,
+			ClientIntelligence = ClientIntelligence,
+			SecurityAuditor = SecurityAuditor
 			--SecretServicePanel = SecretServicePanel,
 		}
 		
@@ -18138,7 +19392,14 @@ Main = (function()
 
 		Main.CreateApp({Name = "Object Links", IconMap = Main.LargeIcons, Icon = "Watcher", Window = ObjectLinks.Window})
 
+		Main.CreateApp({Name = "Image Viewer", IconMap = Main.LargeIcons, Icon = "Object", Window = ImageViewer.Window})
+
 		Main.CreateApp({Name = "Runtime Inspector", IconMap = Main.LargeIcons, Icon = "Watcher", Window = RuntimeInspector.Window})
+
+		Main.CreateApp({Name = "Client Intelligence", IconMap = Main.LargeIcons, Icon = "Output", Window = ClientIntelligence.Window})
+
+		Main.CreateApp({Name = "Security Auditor", IconMap = Main.LargeIcons, Icon = "Watcher", Window = SecurityAuditor.Window})
+
 
 		--Main.CreateApp({Name = "Secret Service Panel", IconMap = Main.LargeIcons, Icon = "Output", Window = SecretServicePanel.Window})
 		
@@ -18280,7 +19541,10 @@ Main = (function()
 		ScriptRelations.Init()
 		RemoteUsageMap.Init()
 		ObjectLinks.Init()
+		ImageViewer.Init()
 		RuntimeInspector.Init()
+		ClientIntelligence.Init()
+		SecurityAuditor.Init()
 		--SecretServicePanel.Init()
 		
 		

@@ -5,7 +5,7 @@
 ]]
 -- Common Locals
 local Main,Lib,Apps,Settings -- Main Containers
-local Explorer, Properties, ScriptViewer, Notebook -- Major Apps
+local Explorer, Properties, ScriptViewer, Notebook, SmartDecompiler -- Major Apps
 local API,RMD,env,service,plr,create,createSimple -- Main Locals
 
 local function initDeps(data)
@@ -23,11 +23,12 @@ local function initDeps(data)
 	createSimple = data.createSimple
 end
 
-local function initAfterMain()
-	Explorer = Apps.Explorer
-	Properties = Apps.Properties
-	ScriptViewer = Apps.ScriptViewer
-	Notebook = Apps.Notebook
+local function initAfterMain(t)
+	Explorer = t.Explorer
+	Properties = t.Properties
+	ScriptViewer = t.ScriptViewer
+	Notebook = t.Notebook
+	SmartDecompiler = t.SmartDecompiler
 end
 
 local executorName = "Unknown"
@@ -56,9 +57,11 @@ local function main()
 	local searchMatches = {}
 	local searchIndex = 0
 	
-	local execute, clear, dumpbtn
+	local execute, clear, dumpbtn, smartViewBtn
 	
 	local PreviousScr = nil
+	local rawSourceCache = ""
+	local smartViewActive = false
 	
 	ScriptViewer.DumpFunctions = function(scr)
 		-- thanks King.Kevin#6025 you'll obviously be credited (no discord tag since that can easily be impersonated)
@@ -219,7 +222,7 @@ local function main()
 		
 		local copy = Instance.new("TextButton",window.GuiElems.Content)
 		copy.BackgroundTransparency = 1
-		copy.Size = UDim2.new(0.33,0,0,20)
+		copy.Size = UDim2.new(0.25,0,0,20)
 		copy.Position = UDim2.new(0,0,0,0)
 		copy.Text = "Copy to Clipboard"
 		
@@ -238,8 +241,8 @@ local function main()
 
 		local save = Instance.new("TextButton",window.GuiElems.Content)
 		save.BackgroundTransparency = 1
-		save.Size = UDim2.new(0.33,0,0,20)
-		save.Position = UDim2.new(0.33,0,0,0)
+		save.Size = UDim2.new(0.25,0,0,20)
+		save.Position = UDim2.new(0.25,0,0,0)
 		save.Text = "Save to File"
 		save.TextColor3 = Color3.new(1,1,1)
 		
@@ -261,10 +264,9 @@ local function main()
 		
 		dumpbtn = Instance.new("TextButton",window.GuiElems.Content)
 		dumpbtn.BackgroundTransparency = 1
-		dumpbtn.Position = UDim2.new(0.7,0,0,0)
-		dumpbtn.Size = UDim2.new(0.3,0,0,20)
+		dumpbtn.Position = UDim2.new(0.5,0,0,0)
+		dumpbtn.Size = UDim2.new(0.25,0,0,20)
 		dumpbtn.Text = "Dump Functions"
-		dumpbtn.TextColor3 = Color3.new(0.5,0.5,0.5)
 		
 		if env.getgc then
 			dumpbtn.TextColor3 = Color3.new(1,1,1)
@@ -277,6 +279,27 @@ local function main()
 		dumpbtn.MouseButton1Click:Connect(function()
 			if PreviousScr ~= nil then
 				pcall(ScriptViewer.DumpFunctions, PreviousScr)
+			end
+		end)
+
+		smartViewBtn = Instance.new("TextButton",window.GuiElems.Content)
+		smartViewBtn.BackgroundTransparency = 1
+		smartViewBtn.Position = UDim2.new(0.75,0,0,0)
+		smartViewBtn.Size = UDim2.new(0.25,0,0,20)
+		smartViewBtn.Text = "Smart View: OFF"
+		smartViewBtn.TextColor3 = Color3.new(0.5,0.5,0.5)
+		
+		smartViewBtn.MouseButton1Click:Connect(function()
+			smartViewActive = not smartViewActive
+			if smartViewActive then
+				smartViewBtn.Text = "Smart View: ON"
+				smartViewBtn.TextColor3 = Settings.Theme.ListSelection
+			else
+				smartViewBtn.Text = "Smart View: OFF"
+				smartViewBtn.TextColor3 = Color3.new(0.5,0.5,0.5)
+			end
+			if PreviousScr ~= nil then
+				ScriptViewer.ViewScript(PreviousScr)
 			end
 		end)
 
@@ -391,11 +414,25 @@ local function main()
 	end
 	
 	ScriptViewer.ViewScript = function(scr)
-		local oldtick = tick()
-		local s,source = pcall(env.decompile or function() end,scr)
+		local s,source
+		local cacheHit = (PreviousScr == scr and rawSourceCache ~= "")
+		
+		if cacheHit then
+			s = true
+			source = rawSourceCache
+		else
+			local oldtick = tick()
+			s,source = pcall(env.decompile or function() end,scr)
+			if s and type(source) == "string" then
+				rawSourceCache = source
+			else
+				rawSourceCache = ""
+			end
+		end
 
-		if not s or not source then
+		if not s or not source or source == "" then
 			PreviousScr = nil
+			rawSourceCache = ""
 			dumpbtn.TextColor3 = Color3.new(0.5,0.5,0.5)
 			source = "-- Unable to view source.\n"
 			
@@ -415,26 +452,23 @@ local function main()
 			dumpbtn.TextColor3 = Color3.new(1,1,1)
 
 			local decompiled = source
+			if smartViewActive and SmartDecompiler then
+				decompiled = SmartDecompiler.Process(decompiled)
+			end
 
 			source = "-- Script Path: "..getPath(scr).."\n"
 			
-			if Settings.ScriptViewer.ShowMoreInfo then
-				source = source .. "-- Took "..tostring(math.floor( (tick() - oldtick) * 100) / 100).."s to decompile.\n"
+			if Settings.ScriptViewer.ShowMoreInfo and not cacheHit then
 				source = source .. "-- Executor: "..executorName.." ("..executorVersion..")\n\n"
 			end
 			
 			source = source .. decompiled
-
-			oldtick = nil
-			decompiled = nil
 		end
 
 		codeFrame:SetText(source)
 		rebuildSearch()
 		window:Show()
 	end
-
-	return ScriptViewer
 end
 
 -- TODO: Remove when open source
