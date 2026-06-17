@@ -236,6 +236,19 @@ int main() {
                 send_response(ClientSocket, 204, "No Content", "");
             } else if (path == "/status" && method == "GET") {
                 send_response(ClientSocket, 200, "OK", "DEX++ C++ Helper Server Active");
+            } else if (path == "/script" && method == "GET") {
+                std::ifstream script_file("DEX++_compiled.luau");
+                if (!script_file.is_open()) {
+                    script_file.open("../DEX++_compiled.luau");
+                }
+                if (script_file.is_open()) {
+                    std::stringstream buffer;
+                    buffer << script_file.rdbuf();
+                    script_file.close();
+                    send_response(ClientSocket, 200, "OK", buffer.str());
+                } else {
+                    send_response(ClientSocket, 404, "Not Found", "-- Error: DEX++_compiled.luau not found on server.");
+                }
             } else if (path == "/log" && method == "POST") {
                 std::ofstream log_file("dex_server_logs.txt", std::ios::app);
                 if (log_file.is_open()) {

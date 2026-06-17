@@ -15,9 +15,19 @@ Bản nâng cấp DarkDEX++ tích hợp 4 công cụ phân tích cao cấp và *
    *Lưu ý: Bạn phải chạy thủ công file này vì các Roblox Executor bị giới hạn sandbox bảo mật, không thể tự khởi động file chạy của Windows.*
 
 ### Bước 2: Thực thi script trong Game
-1. Mở file [DEX++_compiled.luau](file:///d:/Scripting/Rework%20DarkDEX++/DEX++_compiled.luau) và sao chép toàn bộ code bên trong.
-2. Dán vào Roblox Executor của bạn và nhấn **Execute**.
-3. Khi bạn sử dụng tính năng **Decompiler** hoặc **Property Tracker**, script sẽ tự động giao tiếp với C++ Helper Server để xử lý mượt mà nhất.
+Bạn có thể chạy script theo hai cách:
+
+* **Cách 1 (Khuyên dùng - Dùng Loadstring):** Nếu bạn đã khởi động `DEX_Helper.exe`, bạn chỉ cần chạy một dòng code sau trong Executor của mình:
+  ```lua
+  loadstring(game:HttpGet("http://localhost:8080/script"))()
+  ```
+  *Cách này sẽ tự động tải phiên bản DarkDEX++ đã biên dịch mới nhất từ server cục bộ và chạy ngay lập tức.*
+
+* **Cách 2 (Sao chép trực tiếp):** 
+  1. Mở file [DEX++_compiled.luau](file:///d:/Scripting/Rework%20DarkDEX++/DEX++_compiled.luau) và sao chép toàn bộ code bên trong.
+  2. Dán vào Roblox Executor của bạn và nhấn **Execute**.
+
+Khi bạn sử dụng tính năng **Decompiler** hoặc **Property Tracker**, script sẽ tự động kết nối và giao tiếp với C++ Helper Server để xử lý mượt mà nhất.
 
 > [!TIP]
 > **Chế độ tự động Fallback (Fail-Safe):** Nếu bạn không mở `DEX_Helper.exe`, script vẫn chạy bình thường! DarkDEX++ sẽ tự động chuyển sang chế độ xử lý bằng Luau nguyên bản mà không bị lỗi hay crash.
