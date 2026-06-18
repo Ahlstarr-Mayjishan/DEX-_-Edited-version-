@@ -141,6 +141,9 @@ DefaultSettings = (function()
 			PreferDecompilerFallback = false,
 			ShinyDecompilerPort = 3000,
 			HelperServerPort = 8080,
+			UseLocalHelper = false,
+			HelperLogChanges = false,
+			HelperRequestTimeout = 2,
 		},
 		AutoCheckUpdate = true,
 		AutoUpdateRef = "v3.1",
@@ -853,6 +856,8 @@ Main = (function()
 			local helper = {
 				LastStatus = "unknown",
 				LastChecked = 0,
+				FailCount = 0,
+				DisabledUntil = 0,
 			}
 
 			local function getBaseUrl()
@@ -860,7 +865,18 @@ Main = (function()
 				return "http://localhost:" .. tostring(port)
 			end
 
+			local function helperEnabled()
+				return Settings
+					and Settings.Decompiler
+					and Settings.Decompiler.UseLocalHelper == true
+			end
+
 			function helper.Request(path, method, body, contentType)
+				if not helperEnabled() then return nil, "local helper disabled" end
+				local now = os.clock()
+				if helper.DisabledUntil > now then
+					return nil, "local helper temporarily disabled"
+				end
 				local req = env.request or (syn and syn.request) or (http and http.request) or http_request or request
 				if not req then return nil, "request API unavailable" end
 
@@ -870,13 +886,26 @@ Main = (function()
 					Headers = {
 						["Content-Type"] = contentType or "text/plain"
 					},
-					Body = body
+					Body = body,
+					Timeout = Settings.Decompiler.HelperRequestTimeout or 2,
 				})
-				if not ok then return nil, tostring(result) end
+				if not ok or not result then
+					helper.FailCount += 1
+					if helper.FailCount >= 3 then
+						helper.DisabledUntil = os.clock() + 10
+						helper.LastStatus = "offline"
+					end
+					return nil, tostring(result)
+				end
+				helper.FailCount = 0
 				return result, nil
 			end
 
 			function helper.IsActive(force)
+				if not helperEnabled() then
+					helper.LastStatus = "disabled"
+					return false
+				end
 				if not force and os.clock() - helper.LastChecked < 5 then
 					return helper.LastStatus == "active"
 				end

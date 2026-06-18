@@ -384,6 +384,14 @@ local function main()
 		AddText("If executor does not support decompile, it will use the fallback option.")
 		AddText("'getbytecode' is mandatory to use fallback decompilers.")
 		AddText("Local C++ Helper handles /script, /normalize-source, /log and persistent source search; it does not decompile bytecode.")
+		local useLocalHelper = AddCheckbox("Use Local Helper", Settings.Decompiler.UseLocalHelper == true)
+		useLocalHelper.OnInput:Connect(function()
+			Settings.Decompiler.UseLocalHelper = useLocalHelper.Toggled == true
+		end)
+		local helperLogChanges = AddCheckbox("Log Property Changes To Helper", Settings.Decompiler.HelperLogChanges == true)
+		helperLogChanges.OnInput:Connect(function()
+			Settings.Decompiler.HelperLogChanges = helperLogChanges.Toggled == true
+		end)
 		local decompilerOption = {"Executor (Native)", "Konstant", "AdvancedDecompiler", "Shiny"}
 		local initialSelected = "Executor (Native)"
 		if Settings.Decompiler.PreferDecompilerFallback then

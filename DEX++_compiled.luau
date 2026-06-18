@@ -1319,10 +1319,68 @@ end,
     	local nilMap,nilCons = {},{}
     	local connectSignal = game.DescendantAdded.Connect
     	local addObject,removeObject,moveObject = nil,nil,nil
+    	local pendingTreeUpdate,pendingTreeRefresh,treePaintScheduled = false,false,false
+    	local lastExplorerCallbackWarn = 0
     
     	local iconData
     	local remote_blocklist = {} -- list of remotes beng blocked, k = the remote instance, v = their old function :3
     	nodes = nodes or {}
+    
+    	local function withExplorerAccess(fn,...)
+    		local oldIdentity
+    		local canSetIdentity = type(setthreadidentity) == "function"
+    		if canSetIdentity and type(getthreadidentity) == "function" then
+    			pcall(function()
+    				oldIdentity = getthreadidentity()
+    			end)
+    		end
+    		if canSetIdentity then
+    			pcall(setthreadidentity, 7)
+    		end
+    
+    		local ok,result = pcall(fn,...)
+    		if canSetIdentity and oldIdentity ~= nil then
+    			pcall(setthreadidentity, oldIdentity)
+    		end
+    		if not ok and os.clock() - lastExplorerCallbackWarn > 1 then
+    			lastExplorerCallbackWarn = os.clock()
+    			warn("DEX++ Explorer callback skipped: " .. tostring(result))
+    		end
+    		return ok,result
+    	end
+    
+    	local function safeCallback(fn)
+    		return function(...)
+    			return withExplorerAccess(fn,...)
+    		end
+    	end
+    
+    	local function scheduleExplorerPaint(needsUpdate)
+    		if needsUpdate then
+    			pendingTreeUpdate = true
+    		else
+    			pendingTreeRefresh = true
+    		end
+    		if treePaintScheduled then return end
+    		treePaintScheduled = true
+    		task.delay(0.08, function()
+    			local doUpdate = pendingTreeUpdate
+    			local doRefresh = pendingTreeRefresh
+    			pendingTreeUpdate = false
+    			pendingTreeRefresh = false
+    			treePaintScheduled = false
+    
+    			withExplorerAccess(function()
+    				if not Explorer.Window or not Explorer.Window:IsVisible() then return end
+    				if doUpdate then
+    					Explorer.Update()
+    					Explorer.Refresh()
+    				elseif doRefresh and not updateDebounce then
+    					Explorer.Refresh()
+    				end
+    			end)
+    		end)
+    	end
     
     	addObject = function(root)
     		if nodes[root] then return end
@@ -1335,8 +1393,8 @@ end,
     		if not par then
     			if nilMap[root] then
     				nilCons[root] = nilCons[root] or {
-    					connectSignal(root.ChildAdded,addObject),
-    					connectSignal(root.AncestryChanged,moveObject),
+    					connectSignal(root.ChildAdded,safeCallback(addObject)),
+    					connectSignal(root.AncestryChanged,safeCallback(moveObject)),
     				}
     				par = nilNode
     				isNil = true
@@ -1346,8 +1404,8 @@ end,
     		elseif nilMap[rootParObj] or par == nilNode then
     			nilMap[root] = true
     			nilCons[root] = nilCons[root] or {
-    				connectSignal(root.ChildAdded,addObject),
-    				connectSignal(root.AncestryChanged,moveObject),
+    				connectSignal(root.ChildAdded,safeCallback(addObject)),
+    				connectSignal(root.AncestryChanged,safeCallback(moveObject)),
     			}
     			isNil = true
     		end
@@ -1403,8 +1461,8 @@ end,
     			if isNil then
     				nilMap[obj] = true
     				nilCons[obj] = nilCons[obj] or {
-    					connectSignal(obj.ChildAdded,addObject),
-    					connectSignal(obj.AncestryChanged,moveObject),
+    					connectSignal(obj.ChildAdded,safeCallback(addObject)),
+    					connectSignal(obj.AncestryChanged,safeCallback(moveObject)),
     				}
     			end
     		end
@@ -1415,9 +1473,9 @@ end,
     
     		if not updateDebounce and Explorer.IsNodeVisible(par) then
     			if expanded[par] then
-    				Explorer.PerformUpdate()
+    				scheduleExplorerPaint(true)
     			elseif not refreshDebounce then
-    				Explorer.PerformRefresh()
+    				scheduleExplorerPaint(false)
     			end
     		end
     	end
@@ -1452,9 +1510,9 @@ end,
     
     		if par and not updateDebounce and Explorer.IsNodeVisible(par) then
     			if expanded[par] then
-    				Explorer.PerformUpdate()
+    				scheduleExplorerPaint(true)
     			elseif not refreshDebounce then
-    				Explorer.PerformRefresh()
+    				scheduleExplorerPaint(false)
     			end
     		end
     	end
@@ -1477,8 +1535,8 @@ end,
     		elseif nilMap[newPar.Obj] or newPar == nilNode then
     			nilMap[obj] = true
     			nilCons[obj] = nilCons[obj] or {
-    				connectSignal(obj.ChildAdded,addObject),
-    				connectSignal(obj.AncestryChanged,moveObject),
+    				connectSignal(obj.ChildAdded,safeCallback(addObject)),
+    				connectSignal(obj.AncestryChanged,safeCallback(moveObject)),
     			}
     		end
     
@@ -1533,9 +1591,9 @@ end,
     
     		if not updateDebounce and (Explorer.IsNodeVisible(newPar) or Explorer.IsNodeVisible(oldPar)) then
     			if expanded[newPar] or expanded[oldPar] then
-    				Explorer.PerformUpdate()
+    				scheduleExplorerPaint(true)
     			elseif not refreshDebounce then
-    				Explorer.PerformRefresh()
+    				scheduleExplorerPaint(false)
     			end
     		end
     	end
@@ -2133,28 +2191,23 @@ end,
     		if descendantRemovingCon then descendantRemovingCon:Disconnect() end
     		if itemChangedCon then itemChangedCon:Disconnect() end
     
-    		if Main.Elevated then
-    			descendantAddedCon = game.DescendantAdded:Connect(addObject)
-    			descendantRemovingCon = game.DescendantRemoving:Connect(removeObject)
-    		else
-    			descendantAddedCon = game.DescendantAdded:Connect(function(obj) pcall(addObject,obj) end)
-    			descendantRemovingCon = game.DescendantRemoving:Connect(function(obj) pcall(removeObject,obj) end)
-    		end
+    		descendantAddedCon = game.DescendantAdded:Connect(safeCallback(addObject))
+    		descendantRemovingCon = game.DescendantRemoving:Connect(safeCallback(removeObject))
     
     		if Settings.Explorer.UseNameWidth then
-    			itemChangedCon = game.ItemChanged:Connect(function(obj,prop)
+    			itemChangedCon = game.ItemChanged:Connect(safeCallback(function(obj,prop)
     				if prop == "Parent" and nodes[obj] then
     					moveObject(obj)
     				elseif prop == "Name" and nodes[obj] then
     					nodes[obj].NameWidth = nil
     				end
-    			end)
+    			end))
     		else
-    			itemChangedCon = game.ItemChanged:Connect(function(obj,prop)
+    			itemChangedCon = game.ItemChanged:Connect(safeCallback(function(obj,prop)
     				if prop == "Parent" and nodes[obj] then
     					moveObject(obj)
     				end
-    			end)
+    			end))
     		end
     	end
     
@@ -3906,7 +3959,7 @@ end,
     						fw()
     					end
     				end
-    				if processed and not refreshDebounce then Explorer.PerformRefresh() end
+    				if processed and not refreshDebounce then scheduleExplorerPaint(false) end
     				fw(0.5)
     			end
     		end)()
@@ -15033,6 +15086,14 @@ end,
     		AddText("If executor does not support decompile, it will use the fallback option.")
     		AddText("'getbytecode' is mandatory to use fallback decompilers.")
     		AddText("Local C++ Helper handles /script, /normalize-source, /log and persistent source search; it does not decompile bytecode.")
+    		local useLocalHelper = AddCheckbox("Use Local Helper", Settings.Decompiler.UseLocalHelper == true)
+    		useLocalHelper.OnInput:Connect(function()
+    			Settings.Decompiler.UseLocalHelper = useLocalHelper.Toggled == true
+    		end)
+    		local helperLogChanges = AddCheckbox("Log Property Changes To Helper", Settings.Decompiler.HelperLogChanges == true)
+    		helperLogChanges.OnInput:Connect(function()
+    			Settings.Decompiler.HelperLogChanges = helperLogChanges.Toggled == true
+    		end)
     		local decompilerOption = {"Executor (Native)", "Konstant", "AdvancedDecompiler", "Shiny"}
     		local initialSelected = "Executor (Native)"
     		if Settings.Decompiler.PreferDecompilerFallback then
@@ -15582,6 +15643,9 @@ end,
     			end
     
     			indexing = false
+    			if helperIndexed > 0 and env.HelperServer and env.HelperServer.SaveSourceIndex then
+    				pcall(env.HelperServer.SaveSourceIndex)
+    			end
     			rebuildScriptLookup()
     			if env.GetClientSurfaceCoverage then
     				local coverage = env.GetClientSurfaceCoverage()
@@ -19558,6 +19622,8 @@ end,
     	local selectedInstance: Instance? = nil
     	local searchText = ""
     	local logs = {}
+    	local helperLogWindow = 0
+    	local helperLogCount = 0
     	
     	local trackedInstances = {}
     	-- Struct:
@@ -19617,7 +19683,21 @@ end,
     		
     		PropertyTracker.RenderLogs()
     
-    		-- Forward change logs asynchronously to local helper server if active
+    		-- Forward change logs only when explicitly enabled; high-frequency property
+    		-- changes can otherwise spam local HTTP and make the client stutter.
+    		if not Settings.Decompiler or Settings.Decompiler.HelperLogChanges ~= true then
+    			return
+    		end
+    		local now = os.clock()
+    		if now - helperLogWindow >= 1 then
+    			helperLogWindow = now
+    			helperLogCount = 0
+    		end
+    		helperLogCount += 1
+    		if helperLogCount > 5 then
+    			return
+    		end
+    
     		local logStr = string.format("[%s] %s.%s: %s -> %s", timestamp, instPath, propName, tostring(oldVal), tostring(newVal))
     		if env.HelperServer and env.HelperServer.Log then
     			local spawnFunc = (task and task.spawn) or function(f) coroutine.wrap(f)() end
@@ -20749,6 +20829,9 @@ DefaultSettings = (function()
 			PreferDecompilerFallback = false,
 			ShinyDecompilerPort = 3000,
 			HelperServerPort = 8080,
+			UseLocalHelper = false,
+			HelperLogChanges = false,
+			HelperRequestTimeout = 2,
 		},
 		AutoCheckUpdate = true,
 		AutoUpdateRef = "v3.1",
@@ -21461,6 +21544,8 @@ Main = (function()
 			local helper = {
 				LastStatus = "unknown",
 				LastChecked = 0,
+				FailCount = 0,
+				DisabledUntil = 0,
 			}
 
 			local function getBaseUrl()
@@ -21468,7 +21553,18 @@ Main = (function()
 				return "http://localhost:" .. tostring(port)
 			end
 
+			local function helperEnabled()
+				return Settings
+					and Settings.Decompiler
+					and Settings.Decompiler.UseLocalHelper == true
+			end
+
 			function helper.Request(path, method, body, contentType)
+				if not helperEnabled() then return nil, "local helper disabled" end
+				local now = os.clock()
+				if helper.DisabledUntil > now then
+					return nil, "local helper temporarily disabled"
+				end
 				local req = env.request or (syn and syn.request) or (http and http.request) or http_request or request
 				if not req then return nil, "request API unavailable" end
 
@@ -21478,13 +21574,26 @@ Main = (function()
 					Headers = {
 						["Content-Type"] = contentType or "text/plain"
 					},
-					Body = body
+					Body = body,
+					Timeout = Settings.Decompiler.HelperRequestTimeout or 2,
 				})
-				if not ok then return nil, tostring(result) end
+				if not ok or not result then
+					helper.FailCount += 1
+					if helper.FailCount >= 3 then
+						helper.DisabledUntil = os.clock() + 10
+						helper.LastStatus = "offline"
+					end
+					return nil, tostring(result)
+				end
+				helper.FailCount = 0
 				return result, nil
 			end
 
 			function helper.IsActive(force)
+				if not helperEnabled() then
+					helper.LastStatus = "disabled"
+					return false
+				end
 				if not force and os.clock() - helper.LastChecked < 5 then
 					return helper.LastStatus == "active"
 				end

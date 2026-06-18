@@ -455,6 +455,9 @@ local function main()
 			end
 
 			indexing = false
+			if helperIndexed > 0 and env.HelperServer and env.HelperServer.SaveSourceIndex then
+				pcall(env.HelperServer.SaveSourceIndex)
+			end
 			rebuildScriptLookup()
 			if env.GetClientSurfaceCoverage then
 				local coverage = env.GetClientSurfaceCoverage()

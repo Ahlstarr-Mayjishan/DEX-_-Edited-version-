@@ -25,6 +25,8 @@ local function main()
 	local selectedInstance: Instance? = nil
 	local searchText = ""
 	local logs = {}
+	local helperLogWindow = 0
+	local helperLogCount = 0
 	
 	local trackedInstances = {}
 	-- Struct:
@@ -84,7 +86,21 @@ local function main()
 		
 		PropertyTracker.RenderLogs()
 
-		-- Forward change logs asynchronously to local helper server if active
+		-- Forward change logs only when explicitly enabled; high-frequency property
+		-- changes can otherwise spam local HTTP and make the client stutter.
+		if not Settings.Decompiler or Settings.Decompiler.HelperLogChanges ~= true then
+			return
+		end
+		local now = os.clock()
+		if now - helperLogWindow >= 1 then
+			helperLogWindow = now
+			helperLogCount = 0
+		end
+		helperLogCount += 1
+		if helperLogCount > 5 then
+			return
+		end
+
 		local logStr = string.format("[%s] %s.%s: %s -> %s", timestamp, instPath, propName, tostring(oldVal), tostring(newVal))
 		if env.HelperServer and env.HelperServer.Log then
 			local spawnFunc = (task and task.spawn) or function(f) coroutine.wrap(f)() end

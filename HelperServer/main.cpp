@@ -304,6 +304,168 @@ std::string analyze_source(const std::string& source) {
     return json.str();
 }
 
+std::string trim_copy(const std::string& value);
+
+struct RemoteSummary {
+    std::string path;
+    int calls = 0;
+    int outgoing = 0;
+    int incoming = 0;
+    std::unordered_map<std::string, int> methods;
+    std::vector<std::string> samples;
+    int risk = 0;
+    std::vector<std::string> flags;
+};
+
+void add_remote_flag(RemoteSummary& summary, const std::string& flag, int score) {
+    if (std::find(summary.flags.begin(), summary.flags.end(), flag) == summary.flags.end()) {
+        summary.flags.push_back(flag);
+        summary.risk += score;
+    }
+}
+
+std::string compact_copy(const std::string& value, size_t limit) {
+    std::string out = value;
+    std::replace(out.begin(), out.end(), '\r', ' ');
+    std::replace(out.begin(), out.end(), '\n', ' ');
+    if (out.size() > limit) out = out.substr(0, limit) + "...";
+    return out;
+}
+
+std::string analyze_remote_logs(const std::string& logs) {
+    std::unordered_map<std::string, RemoteSummary> summaries;
+    std::unordered_map<std::string, int> method_counts;
+    int total = 0;
+    int parsed = 0;
+
+    std::stringstream input(logs);
+    std::string line;
+    while (std::getline(input, line)) {
+        line = trim_copy(line);
+        if (line.empty()) continue;
+        ++total;
+
+        std::string direction = "unknown";
+        if (line.find(" outgoing ") != std::string::npos || line.find("] out ") != std::string::npos || line.find("[outgoing]") != std::string::npos) {
+            direction = "out";
+        } else if (line.find(" incoming ") != std::string::npos || line.find("] in ") != std::string::npos || line.find("[incoming]") != std::string::npos) {
+            direction = "in";
+        }
+
+        size_t method_pos = line.find(":FireServer()");
+        std::string method = "unknown";
+        if (method_pos != std::string::npos) {
+            method = "FireServer";
+        } else {
+            method_pos = line.find(":InvokeServer()");
+            if (method_pos != std::string::npos) method = "InvokeServer";
+        }
+        if (method_pos == std::string::npos) {
+            method_pos = line.find(":Fire()");
+            if (method_pos != std::string::npos) method = "Fire";
+        }
+        if (method_pos == std::string::npos) {
+            method_pos = line.find(":Invoke()");
+            if (method_pos != std::string::npos) method = "Invoke";
+        }
+        if (method_pos == std::string::npos) {
+            method_pos = line.find(":OnClientEvent()");
+            if (method_pos != std::string::npos) method = "OnClientEvent";
+        }
+        if (method_pos == std::string::npos) {
+            method_pos = line.find(":Event()");
+            if (method_pos != std::string::npos) method = "Event";
+        }
+        if (method_pos == std::string::npos) continue;
+
+        size_t path_start = line.rfind(' ', method_pos);
+        if (path_start == std::string::npos) path_start = line.rfind(']', method_pos);
+        path_start = (path_start == std::string::npos) ? 0 : path_start + 1;
+        std::string path = trim_copy(line.substr(path_start, method_pos - path_start));
+        if (path.empty()) continue;
+
+        std::string args;
+        size_t args_pos = line.find('|', method_pos);
+        if (args_pos != std::string::npos) args = trim_copy(line.substr(args_pos + 1));
+
+        RemoteSummary& summary = summaries[path];
+        if (summary.path.empty()) summary.path = path;
+        summary.calls += 1;
+        if (direction == "out") summary.outgoing += 1;
+        if (direction == "in") summary.incoming += 1;
+        summary.methods[method] += 1;
+        method_counts[method] += 1;
+        if (!args.empty() && summary.samples.size() < 3) summary.samples.push_back(compact_copy(args, 180));
+        ++parsed;
+
+        std::string lower = lower_copy(path + " " + args);
+        if (lower.find("admin") != std::string::npos || lower.find("ban") != std::string::npos || lower.find("kick") != std::string::npos) {
+            add_remote_flag(summary, "admin/control wording", 4);
+        }
+        if (lower.find("cash") != std::string::npos || lower.find("coin") != std::string::npos || lower.find("money") != std::string::npos || lower.find("gem") != std::string::npos) {
+            add_remote_flag(summary, "currency wording", 3);
+        }
+        if (lower.find("buy") != std::string::npos || lower.find("purchase") != std::string::npos || lower.find("reward") != std::string::npos) {
+            add_remote_flag(summary, "transaction/reward wording", 3);
+        }
+        if (lower.find("teleport") != std::string::npos || lower.find("position") != std::string::npos || lower.find("cframe") != std::string::npos) {
+            add_remote_flag(summary, "movement/position wording", 2);
+        }
+        if (method == "InvokeServer") add_remote_flag(summary, "blocking remote function", 1);
+        if (summary.calls >= 30) add_remote_flag(summary, "high frequency", 2);
+    }
+
+    std::vector<RemoteSummary*> rows;
+    rows.reserve(summaries.size());
+    for (auto& item : summaries) rows.push_back(&item.second);
+    std::sort(rows.begin(), rows.end(), [](const RemoteSummary* a, const RemoteSummary* b) {
+        if (a->risk != b->risk) return a->risk > b->risk;
+        return a->calls > b->calls;
+    });
+
+    std::stringstream json;
+    json << "{\"ok\":true,\"lines\":" << total
+         << ",\"parsed\":" << parsed
+         << ",\"remotes\":" << rows.size()
+         << ",\"methodCounts\":{";
+    bool first = true;
+    for (const auto& item : method_counts) {
+        if (!first) json << ",";
+        first = false;
+        json << "\"" << escape_json(item.first) << "\":" << item.second;
+    }
+    json << "},\"results\":[";
+    size_t limit = std::min<size_t>(rows.size(), 80);
+    for (size_t i = 0; i < limit; ++i) {
+        const RemoteSummary& row = *rows[i];
+        if (i) json << ",";
+        json << "{\"path\":\"" << escape_json(row.path) << "\","
+             << "\"calls\":" << row.calls << ","
+             << "\"outgoing\":" << row.outgoing << ","
+             << "\"incoming\":" << row.incoming << ","
+             << "\"risk\":" << row.risk << ",\"methods\":{";
+        bool first_method = true;
+        for (const auto& method_item : row.methods) {
+            if (!first_method) json << ",";
+            first_method = false;
+            json << "\"" << escape_json(method_item.first) << "\":" << method_item.second;
+        }
+        json << "},\"flags\":[";
+        for (size_t j = 0; j < row.flags.size(); ++j) {
+            if (j) json << ",";
+            json << "\"" << escape_json(row.flags[j]) << "\"";
+        }
+        json << "],\"samples\":[";
+        for (size_t j = 0; j < row.samples.size(); ++j) {
+            if (j) json << ",";
+            json << "\"" << escape_json(row.samples[j]) << "\"";
+        }
+        json << "]}";
+    }
+    json << "]}";
+    return json.str();
+}
+
 struct RoleProfile {
     std::string id;
     std::string label;
@@ -490,13 +652,12 @@ std::string index_source_payload(const std::string& body) {
 
     size_t bytes = 0;
     for (const auto& item : g_script_index) bytes += item.second.source.size();
-    bool saved = save_index_locked();
 
     std::stringstream json;
     json << "{\"ok\":true,\"total\":" << g_script_index.size()
          << ",\"bytes\":" << bytes
          << ",\"updatedAt\":" << static_cast<long long>(updated_at)
-         << ",\"persisted\":" << (saved ? "true" : "false")
+         << ",\"persisted\":false"
          << "}";
     return json.str();
 }
@@ -813,11 +974,114 @@ void rotate_log_if_needed(const char* path) {
     std::rename(path, old_path.c_str());
 }
 
+std::string helper_dashboard_html() {
+    return R"DEXAPP(<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DEX++ Helper</title>
+<style>
+:root{color-scheme:dark;--bg:#101215;--panel:#171a1f;--panel2:#1e232b;--line:#2a303a;--text:#eef2f7;--muted:#9ca3af;--accent:#5b6cff;--accent2:#31c48d;--warn:#f59e0b;--bad:#fb7185}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.4 Segoe UI,Roboto,Arial,sans-serif}
+header{height:52px;display:flex;align-items:center;gap:14px;padding:0 18px;border-bottom:1px solid var(--line);background:#0d0f12;position:sticky;top:0;z-index:2}
+h1{font-size:17px;margin:0;font-weight:650}.pill{font:12px Consolas,monospace;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:3px 7px}
+main{display:grid;grid-template-columns:300px 1fr;min-height:calc(100vh - 52px)}
+aside{border-right:1px solid var(--line);background:#12151a;padding:14px;display:flex;flex-direction:column;gap:12px}
+section{padding:14px;display:grid;grid-template-rows:auto 1fr;gap:12px;min-width:0}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px}.title{font-weight:650;margin-bottom:8px}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px}.metric{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:9px}.metric b{display:block;font-size:18px}.metric span{color:var(--muted);font-size:12px}
+button,input,textarea{font:inherit}button{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:4px;height:30px;padding:0 10px;cursor:pointer}button:hover{border-color:var(--accent);background:#252b35}button.primary{background:var(--accent);border-color:var(--accent);color:white}.row{display:flex;gap:8px;align-items:center}.row>*{min-width:0}
+input,textarea{width:100%;background:#0f1115;border:1px solid var(--line);color:var(--text);border-radius:4px;padding:8px;outline:none}input:focus,textarea:focus{border-color:var(--accent)}textarea{min-height:160px;resize:vertical;font-family:Consolas,monospace}
+.toolbar{display:grid;grid-template-columns:1fr auto auto;gap:8px}.tabs{display:flex;gap:6px}.tab{height:30px}.tab.active{border-color:var(--accent);color:white}
+.results{overflow:auto;border:1px solid var(--line);border-radius:6px;background:#0e1013}.hit{padding:10px 12px;border-bottom:1px solid var(--line)}.hit:last-child{border-bottom:0}.hit h3{font-size:14px;margin:0 0 4px}.hit .meta{color:var(--muted);font:12px Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hit pre{margin:8px 0 0;white-space:pre-wrap;color:#cbd5e1;font:12px Consolas,monospace}
+.muted{color:var(--muted)}.ok{color:var(--accent2)}.warn{color:var(--warn)}.bad{color:var(--bad)}.hidden{display:none!important}
+@media(max-width:820px){main{grid-template-columns:1fr}aside{border-right:0;border-bottom:1px solid var(--line)}}
+</style>
+</head>
+<body>
+<header><h1>DEX++ Helper</h1><span class="pill" id="statusPill">checking</span><span class="pill">Roblox-light dashboard</span></header>
+<main>
+<aside>
+  <div class="card">
+    <div class="title">Index</div>
+    <div class="metrics">
+      <div class="metric"><b id="scripts">0</b><span>scripts</span></div>
+      <div class="metric"><b id="bytes">0</b><span>bytes</span></div>
+    </div>
+    <div class="row" style="margin-top:10px"><button id="refresh">Refresh</button><button id="load">Load</button><button id="save">Save</button><button id="clear">Clear</button></div>
+  </div>
+  <div class="card">
+    <div class="title">Roblox Smooth Mode</div>
+    <div class="muted">Keep heavy search and analysis here. In DEX, leave Helper logging off while playing. Index scripts only when you are not in a demanding fight/session.</div>
+  </div>
+  <div class="card">
+    <div class="title">Analyze Source</div>
+    <textarea id="sourceBox" placeholder="Paste cached/source text here"></textarea>
+    <div class="row" style="margin-top:8px"><button id="analyze" class="primary">Analyze</button><button id="normalize">Normalize</button></div>
+  </div>
+  <div class="card">
+    <div class="title">Remote Contract Analyzer</div>
+    <textarea id="remoteBox" placeholder="Paste RemoteSpy copied logs here"></textarea>
+    <div class="row" style="margin-top:8px"><button id="remoteAnalyze" class="primary">Analyze Remotes</button></div>
+  </div>
+</aside>
+<section>
+  <div class="toolbar">
+    <input id="query" placeholder="Search helper index: remote name, require, path, identifier">
+    <button id="search" class="primary">Search</button>
+    <button id="script">Open /script</button>
+  </div>
+  <div class="tabs">
+    <button class="tab active" data-view="resultsView">Results</button>
+    <button class="tab" data-view="analysisView">Analysis</button>
+    <button class="tab" data-view="remoteView">Remotes</button>
+    <button class="tab" data-view="helpView">Flow</button>
+  </div>
+  <div id="resultsView" class="results"><div class="hit"><h3>Ready</h3><div class="meta">Type a query and search the local index.</div></div></div>
+  <div id="analysisView" class="results hidden"><div class="hit"><h3>No analysis yet</h3><pre id="analysisOut">Paste source and click Analyze or Normalize.</pre></div></div>
+  <div id="remoteView" class="results hidden"><div class="hit"><h3>No remote analysis yet</h3><pre>Paste RemoteSpy logs and click Analyze Remotes.</pre></div></div>
+  <div id="helpView" class="results hidden">
+    <div class="hit"><h3>Recommended Flow</h3><pre>1. Start DEX_Helper.exe.
+2. Run DEX in Roblox with Use Local Helper enabled only when indexing/searching.
+3. Use Code Search > Index Scripts once to push cached source here.
+4. Search/analyze in this dashboard while Roblox keeps rendering normally.
+5. Keep Log Property Changes To Helper disabled unless debugging property changes.</pre></div>
+  </div>
+</section>
+</main>
+<script>
+const $=id=>document.getElementById(id);
+const fmt=n=>Number(n||0).toLocaleString();
+function setStatus(text, cls){const p=$('statusPill');p.textContent=text;p.className='pill '+(cls||'')}
+async function textFetch(path, opts={}){const r=await fetch(path,opts);const t=await r.text();if(!r.ok)throw new Error(t||r.statusText);return t}
+async function refreshStatus(){try{await textFetch('/status');setStatus('active','ok');const raw=await textFetch('/index-status');const j=JSON.parse(raw);$('scripts').textContent=fmt(j.scripts);$('bytes').textContent=fmt(j.bytes)}catch(e){setStatus('offline','bad')}}
+function show(view){document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.view===view));['resultsView','analysisView','remoteView','helpView'].forEach(id=>$(id).classList.toggle('hidden',id!==view))}
+function hitHtml(item){return `<div class="hit"><h3>${esc(item.name||item.key||'script')} <span class="muted">[${esc(item.className||'')}</span>]</h3><div class="meta">${esc(item.path||'')}</div><div class="meta">${esc(item.matchType||'hit')} score ${esc(item.score||0)} confidence ${Math.round(Number(item.confidence||0)*100)}%</div><pre>${esc(item.snippet||'')}</pre></div>`}
+function remoteHtml(item){const methods=Object.entries(item.methods||{}).map(([k,v])=>`${k}:${v}`).join(' ');const flags=(item.flags||[]).join(', ')||'none';const samples=(item.samples||[]).map(s=>`- ${s}`).join('\n');return `<div class="hit"><h3>${esc(item.path)} <span class="${Number(item.risk||0)>0?'warn':'ok'}">risk ${esc(item.risk||0)}</span></h3><div class="meta">calls ${esc(item.calls||0)} | out ${esc(item.outgoing||0)} | in ${esc(item.incoming||0)} | ${esc(methods)}</div><div class="meta">flags: ${esc(flags)}</div><pre>${esc(samples||'no args sample')}</pre></div>`}
+function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
+$('refresh').onclick=refreshStatus;
+$('load').onclick=async()=>{await textFetch('/index-load',{method:'POST'});refreshStatus()};
+$('save').onclick=async()=>{await textFetch('/index-save',{method:'POST'});refreshStatus()};
+$('clear').onclick=async()=>{if(confirm('Clear helper index?')){await textFetch('/index-clear',{method:'POST'});refreshStatus();$('resultsView').innerHTML='<div class="hit"><h3>Index cleared</h3></div>'}};
+$('search').onclick=async()=>{const q=$('query').value.trim();if(!q)return;show('resultsView');$('resultsView').innerHTML='<div class="hit"><h3>Searching...</h3></div>';try{const raw=await textFetch('/search-source',{method:'POST',headers:{'Content-Type':'text/plain'},body:'120\n'+q});const j=JSON.parse(raw);$('resultsView').innerHTML=(j.results||[]).map(hitHtml).join('')||'<div class="hit"><h3>No results</h3></div>';refreshStatus()}catch(e){$('resultsView').innerHTML='<div class="hit"><h3 class="bad">Search failed</h3><pre>'+esc(e.message)+'</pre></div>'}};
+$('query').addEventListener('keydown',e=>{if(e.key==='Enter')$('search').click()});
+$('analyze').onclick=async()=>{show('analysisView');try{$('analysisOut').textContent=await textFetch('/analyze-source',{method:'POST',headers:{'Content-Type':'text/plain'},body:$('sourceBox').value})}catch(e){$('analysisOut').textContent=e.message}};
+$('normalize').onclick=async()=>{show('analysisView');try{$('analysisOut').textContent=await textFetch('/normalize-source',{method:'POST',headers:{'Content-Type':'text/plain'},body:$('sourceBox').value})}catch(e){$('analysisOut').textContent=e.message}};
+$('remoteAnalyze').onclick=async()=>{show('remoteView');$('remoteView').innerHTML='<div class="hit"><h3>Analyzing remotes...</h3></div>';try{const raw=await textFetch('/analyze-remotes',{method:'POST',headers:{'Content-Type':'text/plain'},body:$('remoteBox').value});const j=JSON.parse(raw);const head=`<div class="hit"><h3>Remote Contract Summary</h3><div class="meta">lines ${esc(j.lines||0)} | parsed ${esc(j.parsed||0)} | remotes ${esc(j.remotes||0)}</div></div>`;$('remoteView').innerHTML=head+((j.results||[]).map(remoteHtml).join('')||'<div class="hit"><h3>No RemoteSpy lines parsed</h3></div>')}catch(e){$('remoteView').innerHTML='<div class="hit"><h3 class="bad">Remote analysis failed</h3><pre>'+esc(e.message)+'</pre></div>'}};
+$('script').onclick=()=>window.open('/script','_blank');
+document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>show(b.dataset.view));
+refreshStatus();
+</script>
+</body>
+</html>)DEXAPP";
+}
+
 // Send HTTP response helper
-void send_response(SOCKET client_socket, int status_code, const std::string& status_text, const std::string& body) {
+void send_response(SOCKET client_socket, int status_code, const std::string& status_text, const std::string& body, const std::string& content_type = "text/plain") {
     std::stringstream response;
     response << "HTTP/1.1 " << status_code << " " << status_text << "\r\n"
-             << "Content-Type: text/plain\r\n"
+             << "Content-Type: " << content_type << "\r\n"
              << "Content-Length: " << body.length() << "\r\n"
              << "Access-Control-Allow-Origin: *\r\n"
              << "Access-Control-Allow-Headers: *\r\n"
@@ -893,6 +1157,8 @@ void handle_client(SOCKET ClientSocket) {
 
         if (method == "OPTIONS") {
             send_response(ClientSocket, 204, "No Content", "");
+        } else if ((path == "/" || path == "/app") && method == "GET") {
+            send_response(ClientSocket, 200, "OK", helper_dashboard_html(), "text/html; charset=utf-8");
         } else if (path == "/status" && method == "GET") {
             send_response(ClientSocket, 200, "OK", "DEX++ C++ Helper Server Active");
         } else if (path == "/script" && method == "GET") {
@@ -926,6 +1192,8 @@ void handle_client(SOCKET ClientSocket) {
             send_response(ClientSocket, 200, "OK", normalize_source(body));
         } else if (path == "/analyze-source" && method == "POST") {
             send_response(ClientSocket, 200, "OK", analyze_source(body));
+        } else if (path == "/analyze-remotes" && method == "POST") {
+            send_response(ClientSocket, 200, "OK", analyze_remote_logs(body), "application/json");
         } else if (path == "/index-source" && method == "POST") {
             send_response(ClientSocket, 200, "OK", index_source_payload(body));
         } else if (path == "/search-source" && method == "POST") {

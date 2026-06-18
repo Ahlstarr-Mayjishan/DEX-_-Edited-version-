@@ -21,6 +21,8 @@ DarkDEX++ can run independently using the `DEX++_compiled.luau` file, or fetch t
 
 The helper accepts multiple local clients concurrently, with a small worker cap to keep indexing/search/status/log requests responsive without letting request spikes create unlimited threads.
 
+In DEX settings, `Use Local Helper` is off by default. Turn it on only when you want local source indexing/search. `Log Property Changes To Helper` is also off by default because high-frequency property changes can create a lot of local HTTP/log traffic.
+
 Update checks are pinned by `Settings.AutoUpdateRef` by default (`v3.1`). Branch refs such as `main` or `master` are ignored unless `Settings.AutoUpdateAllowBranch` is explicitly enabled, so auto-update does not silently track a moving branch.
 
 Important: This C++ helper is **not a bytecode decompiler**. It does not possess an engine to decompile Roblox bytecode into Luau source code, so it does not directly speed up the `decompile(script)` step. The decompile speed still depends on your executor's native decompiler, the Shiny/lua.expert fallbacks, and DarkDEX++'s built-in cache.
@@ -30,7 +32,8 @@ If `POST /decompile` is requested, the helper will return `501 Not Implemented` 
 ## Quick Start
 
 1. Open `HelperServer/DEX_Helper.exe`.
-2. In your executor, run:
+2. Open `http://localhost:8080/` for the external Helper Dashboard.
+3. In your executor, run:
 
 ```lua
 loadstring(game:HttpGet("http://localhost:8080/script"))()
@@ -67,16 +70,20 @@ The most effective approach currently is using the following pipeline:
 
 ## Local Analysis Engine
 
-When `DEX_Helper.exe` is running, `Code Search > Index Scripts` now delegates extra work to the helper:
+When `DEX_Helper.exe` is running and `Settings > Decompiler > Use Local Helper` is enabled, `Code Search > Index Scripts` delegates extra work to the helper:
 
 - decompiled/cached source is sent to `/index-source`;
-- the helper keeps a fast in-memory index and persists it to `dex_helper_index.dat`;
+- the helper keeps a fast in-memory index and persists it to `dex_helper_index.dat` once after an index run, instead of rewriting the file for every script;
 - `Code Search` and shared `ClientIndex.SearchCached` prefer `/search-source`;
 - helper search results include match type, score, confidence, freshness, source snippets, and compact source analysis;
 - `Client Intelligence > Index` shows helper index health, local cache coverage, and live client-surface coverage;
 - if the helper is offline or the helper index is empty, DarkDEX++ falls back to the old Luau cache scan.
 
 The helper loads `dex_helper_index.dat` on startup. Running `Index Scripts` refreshes entries and saves the updated helper index automatically.
+
+For smoother Roblox sessions, use the browser dashboard at `http://localhost:8080/` for source search, index health, and paste-in analysis. Keep `Log Property Changes To Helper` disabled unless you are actively debugging property changes.
+
+The dashboard also includes a passive `Remote Contract Analyzer`: copy logs from Remote Spy, paste them into the dashboard, and it will summarize remote paths, call direction, methods, sample arguments, frequency, and risk wording. It does not fire or fuzz remotes.
 
 ## Inspector Hub
 

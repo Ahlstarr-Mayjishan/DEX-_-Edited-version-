@@ -56,10 +56,68 @@ local function main()
 	local nilMap,nilCons = {},{}
 	local connectSignal = game.DescendantAdded.Connect
 	local addObject,removeObject,moveObject = nil,nil,nil
+	local pendingTreeUpdate,pendingTreeRefresh,treePaintScheduled = false,false,false
+	local lastExplorerCallbackWarn = 0
 
 	local iconData
 	local remote_blocklist = {} -- list of remotes beng blocked, k = the remote instance, v = their old function :3
 	nodes = nodes or {}
+
+	local function withExplorerAccess(fn,...)
+		local oldIdentity
+		local canSetIdentity = type(setthreadidentity) == "function"
+		if canSetIdentity and type(getthreadidentity) == "function" then
+			pcall(function()
+				oldIdentity = getthreadidentity()
+			end)
+		end
+		if canSetIdentity then
+			pcall(setthreadidentity, 7)
+		end
+
+		local ok,result = pcall(fn,...)
+		if canSetIdentity and oldIdentity ~= nil then
+			pcall(setthreadidentity, oldIdentity)
+		end
+		if not ok and os.clock() - lastExplorerCallbackWarn > 1 then
+			lastExplorerCallbackWarn = os.clock()
+			warn("DEX++ Explorer callback skipped: " .. tostring(result))
+		end
+		return ok,result
+	end
+
+	local function safeCallback(fn)
+		return function(...)
+			return withExplorerAccess(fn,...)
+		end
+	end
+
+	local function scheduleExplorerPaint(needsUpdate)
+		if needsUpdate then
+			pendingTreeUpdate = true
+		else
+			pendingTreeRefresh = true
+		end
+		if treePaintScheduled then return end
+		treePaintScheduled = true
+		task.delay(0.08, function()
+			local doUpdate = pendingTreeUpdate
+			local doRefresh = pendingTreeRefresh
+			pendingTreeUpdate = false
+			pendingTreeRefresh = false
+			treePaintScheduled = false
+
+			withExplorerAccess(function()
+				if not Explorer.Window or not Explorer.Window:IsVisible() then return end
+				if doUpdate then
+					Explorer.Update()
+					Explorer.Refresh()
+				elseif doRefresh and not updateDebounce then
+					Explorer.Refresh()
+				end
+			end)
+		end)
+	end
 
 	addObject = function(root)
 		if nodes[root] then return end
@@ -72,8 +130,8 @@ local function main()
 		if not par then
 			if nilMap[root] then
 				nilCons[root] = nilCons[root] or {
-					connectSignal(root.ChildAdded,addObject),
-					connectSignal(root.AncestryChanged,moveObject),
+					connectSignal(root.ChildAdded,safeCallback(addObject)),
+					connectSignal(root.AncestryChanged,safeCallback(moveObject)),
 				}
 				par = nilNode
 				isNil = true
@@ -83,8 +141,8 @@ local function main()
 		elseif nilMap[rootParObj] or par == nilNode then
 			nilMap[root] = true
 			nilCons[root] = nilCons[root] or {
-				connectSignal(root.ChildAdded,addObject),
-				connectSignal(root.AncestryChanged,moveObject),
+				connectSignal(root.ChildAdded,safeCallback(addObject)),
+				connectSignal(root.AncestryChanged,safeCallback(moveObject)),
 			}
 			isNil = true
 		end
@@ -140,8 +198,8 @@ local function main()
 			if isNil then
 				nilMap[obj] = true
 				nilCons[obj] = nilCons[obj] or {
-					connectSignal(obj.ChildAdded,addObject),
-					connectSignal(obj.AncestryChanged,moveObject),
+					connectSignal(obj.ChildAdded,safeCallback(addObject)),
+					connectSignal(obj.AncestryChanged,safeCallback(moveObject)),
 				}
 			end
 		end
@@ -152,9 +210,9 @@ local function main()
 
 		if not updateDebounce and Explorer.IsNodeVisible(par) then
 			if expanded[par] then
-				Explorer.PerformUpdate()
+				scheduleExplorerPaint(true)
 			elseif not refreshDebounce then
-				Explorer.PerformRefresh()
+				scheduleExplorerPaint(false)
 			end
 		end
 	end
@@ -189,9 +247,9 @@ local function main()
 
 		if par and not updateDebounce and Explorer.IsNodeVisible(par) then
 			if expanded[par] then
-				Explorer.PerformUpdate()
+				scheduleExplorerPaint(true)
 			elseif not refreshDebounce then
-				Explorer.PerformRefresh()
+				scheduleExplorerPaint(false)
 			end
 		end
 	end
@@ -214,8 +272,8 @@ local function main()
 		elseif nilMap[newPar.Obj] or newPar == nilNode then
 			nilMap[obj] = true
 			nilCons[obj] = nilCons[obj] or {
-				connectSignal(obj.ChildAdded,addObject),
-				connectSignal(obj.AncestryChanged,moveObject),
+				connectSignal(obj.ChildAdded,safeCallback(addObject)),
+				connectSignal(obj.AncestryChanged,safeCallback(moveObject)),
 			}
 		end
 
@@ -270,9 +328,9 @@ local function main()
 
 		if not updateDebounce and (Explorer.IsNodeVisible(newPar) or Explorer.IsNodeVisible(oldPar)) then
 			if expanded[newPar] or expanded[oldPar] then
-				Explorer.PerformUpdate()
+				scheduleExplorerPaint(true)
 			elseif not refreshDebounce then
-				Explorer.PerformRefresh()
+				scheduleExplorerPaint(false)
 			end
 		end
 	end
@@ -870,28 +928,23 @@ local function main()
 		if descendantRemovingCon then descendantRemovingCon:Disconnect() end
 		if itemChangedCon then itemChangedCon:Disconnect() end
 
-		if Main.Elevated then
-			descendantAddedCon = game.DescendantAdded:Connect(addObject)
-			descendantRemovingCon = game.DescendantRemoving:Connect(removeObject)
-		else
-			descendantAddedCon = game.DescendantAdded:Connect(function(obj) pcall(addObject,obj) end)
-			descendantRemovingCon = game.DescendantRemoving:Connect(function(obj) pcall(removeObject,obj) end)
-		end
+		descendantAddedCon = game.DescendantAdded:Connect(safeCallback(addObject))
+		descendantRemovingCon = game.DescendantRemoving:Connect(safeCallback(removeObject))
 
 		if Settings.Explorer.UseNameWidth then
-			itemChangedCon = game.ItemChanged:Connect(function(obj,prop)
+			itemChangedCon = game.ItemChanged:Connect(safeCallback(function(obj,prop)
 				if prop == "Parent" and nodes[obj] then
 					moveObject(obj)
 				elseif prop == "Name" and nodes[obj] then
 					nodes[obj].NameWidth = nil
 				end
-			end)
+			end))
 		else
-			itemChangedCon = game.ItemChanged:Connect(function(obj,prop)
+			itemChangedCon = game.ItemChanged:Connect(safeCallback(function(obj,prop)
 				if prop == "Parent" and nodes[obj] then
 					moveObject(obj)
 				end
-			end)
+			end))
 		end
 	end
 
@@ -2643,7 +2696,7 @@ return search]==]
 						fw()
 					end
 				end
-				if processed and not refreshDebounce then Explorer.PerformRefresh() end
+				if processed and not refreshDebounce then scheduleExplorerPaint(false) end
 				fw(0.5)
 			end
 		end)()
