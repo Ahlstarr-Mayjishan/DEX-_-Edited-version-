@@ -26,6 +26,7 @@ local function main()
 	local remoteClasses = {RemoteEvent=true, RemoteFunction=true, UnreliableRemoteEvent=true, BindableEvent=true, BindableFunction=true}
 
 	local function getPath(obj)
+        if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(obj) end
 		local ok, path = pcall(function()
 			if Explorer and Explorer.GetInstancePath then return Explorer.GetInstancePath(obj) end
 			return obj:GetFullName()

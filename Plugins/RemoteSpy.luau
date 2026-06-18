@@ -1,24 +1,24 @@
 local main_ref, lib_ref, apps_ref, settings_ref, theme_ref
 local explorer_ref, properties_ref
- 
+
 local plugin_data = {
 	name         = "RemoteSpy",
 	FriendlyName = "Remote Spy",
 }
- 
+
 local function initDeps(data)
 	main_ref     = data.Main
 	lib_ref      = data.Lib
 	apps_ref     = data.Apps
 	settings_ref = data.Settings
 end
- 
+
 local function initAfterMain(t)
 	explorer_ref   = t.Explorer
 	properties_ref = t.Properties
 	theme_ref      = t.Theme
 end
- 
+
 local function safe_str(v)
 	local t = typeof(v)
 	if t == "Instance" then
@@ -44,7 +44,7 @@ local function safe_str(v)
 		return tostring(v)
 	end
 end
- 
+
 local function args_str(args)
 	local n = args.n or #args
 	if n == 0 then return "()" end
@@ -52,7 +52,7 @@ local function args_str(args)
 	for i = 1, n do out[i] = safe_str(args[i]) end
 	return table.concat(out, ", ")
 end
- 
+
 local function inst_path(obj)
 	if not obj then return "?" end
 	local parts, cur = {}, obj
@@ -63,11 +63,11 @@ local function inst_path(obj)
 	table.insert(parts, 1, "game")
 	return table.concat(parts, ".")
 end
- 
+
 local function main()
 	local spy = {}
 	spy.PluginData = plugin_data
- 
+
 	local logs        = {}
 	local log_frames  = {}
 	local pending_rows = {}
@@ -89,19 +89,19 @@ local function main()
 	local rate_window_start = 0
 	local rate_window_count = 0
 	local dropped_logs = 0
- 
+
 	local namecall_orig = nil
 	local hook_cons   = {}
 	local seen        = {}
 	setmetatable(seen, { __mode = "k" })
- 
+
 	local colors = {
 		out_remote   = Color3.fromRGB(100, 200, 255),
 		in_remote    = Color3.fromRGB(120, 255, 120),
 		out_bindable = Color3.fromRGB(255, 200, 80),
 		in_bindable  = Color3.fromRGB(255, 140, 60),
 	}
- 
+
 	local remote_classes = {
 		RemoteEvent           = true,
 		RemoteFunction        = true,
@@ -109,20 +109,20 @@ local function main()
 		BindableEvent         = true,
 		BindableFunction      = true,
 	}
- 
+
 	local out_methods = {
 		FireServer = true, InvokeServer = true,
 		fireServer = true, invokeServer = true,
 		Fire = true, Invoke = true,
 		fire = true, invoke = true,
 	}
- 
+
 	local in_signals = {
 		RemoteEvent           = "OnClientEvent",
 		UnreliableRemoteEvent = "OnClientEvent",
 		BindableEvent         = "Event",
 	}
- 
+
 	local window, list_frame, tree_frame, scroll_v, status_label, detail_label, empty_label
 	local rebuild_list
 
@@ -143,7 +143,7 @@ local function main()
 			row.LayoutOrder = i
 		end
 	end
- 
+
 	local function color_for(dir, class_name)
 		local is_bind = class_name == "BindableEvent" or class_name == "BindableFunction"
 		if dir == "out" then
@@ -152,7 +152,7 @@ local function main()
 			return is_bind and colors.in_bindable or colors.in_remote
 		end
 	end
- 
+
 	local function matches(entry)
 		if selected_path ~= "" then
 			if entry.path ~= selected_path and entry.path:sub(1, #selected_path + 1) ~= selected_path .. "." then
@@ -353,23 +353,23 @@ local function main()
 			tree_frame.Parent.CanvasSize = UDim2.new(0, 0, 0, math.max(24, row_count * 24))
 		end
 	end
- 
+
 	local function push_row(entry)
 		if not list_frame then return end
 		if empty_label then empty_label.Visible = false end
 		local col = color_for(entry.dir, entry.class)
- 
+
 		local row = Instance.new("Frame")
 		row.BackgroundColor3 = settings_ref.Theme.Main1
 		row.BorderSizePixel  = 0
 		row.Size             = UDim2.new(1, 0, 0, 36)
 		row.ClipsDescendants = true
- 
+
 		local badge = Instance.new("Frame", row)
 		badge.BackgroundColor3 = col
 		badge.BorderSizePixel  = 0
 		badge.Size             = UDim2.new(0, 3, 1, 0)
- 
+
 		local tl = Instance.new("TextLabel", row)
 		tl.BackgroundTransparency = 1
 		tl.Position  = UDim2.new(0, 8, 0, 0)
@@ -379,7 +379,7 @@ local function main()
 		tl.TextColor3 = settings_ref.Theme.PlaceholderText
 		tl.TextXAlignment = Enum.TextXAlignment.Left
 		tl.Text = entry.time
- 
+
 		local dl = Instance.new("TextLabel", row)
 		dl.BackgroundTransparency = 1
 		dl.Position  = UDim2.new(0, 66, 0, 0)
@@ -389,7 +389,7 @@ local function main()
 		dl.TextColor3 = col
 		dl.TextXAlignment = Enum.TextXAlignment.Left
 		dl.Text = (entry.dir == "out" and "outgoing" or "incoming") .. "  [" .. entry.class .. "]"
- 
+
 		local ml = Instance.new("TextLabel", row)
 		ml.BackgroundTransparency = 1
 		ml.Position  = UDim2.new(0, 220, 0, 0)
@@ -399,7 +399,7 @@ local function main()
 		ml.TextColor3 = settings_ref.Theme.Text
 		ml.TextXAlignment = Enum.TextXAlignment.Left
 		ml.Text = ":" .. entry.method .. "()"
- 
+
 		local pl = Instance.new("TextLabel", row)
 		pl.BackgroundTransparency = 1
 		pl.Position  = UDim2.new(0, 8, 0, 19)
@@ -410,7 +410,7 @@ local function main()
 		pl.TextXAlignment = Enum.TextXAlignment.Left
 		pl.TextTruncate = Enum.TextTruncate.AtEnd
 		pl.Text = entry.path
- 
+
 		local al = Instance.new("TextLabel", row)
 		al.BackgroundTransparency = 1
 		al.Position  = UDim2.new(0.5, 0, 0, 19)
@@ -427,7 +427,7 @@ local function main()
 		separator.BorderSizePixel = 0
 		separator.Size = UDim2.new(1, 0, 0, 1)
 		separator.Position = UDim2.new(0, 0, 1, -1)
- 
+
 		row.InputBegan:Connect(function(i)
 			if i.UserInputType == Enum.UserInputType.MouseMovement then
 				row.BackgroundColor3 = settings_ref.Theme.ButtonHover
@@ -440,7 +440,7 @@ local function main()
 				row.BackgroundColor3 = settings_ref.Theme.Main1
 			end
 		end)
- 
+
 		row.LayoutOrder = #log_frames + 1
 		row.Parent = list_frame
 		table.insert(log_frames, row)
@@ -484,7 +484,7 @@ local function main()
 		end
 		return true
 	end
- 
+
 	local function add_log(dir, inst, method, raw_args)
 		if not active or paused then return end
 		if not can_capture_log() then return end
@@ -498,18 +498,18 @@ local function main()
 			args   = args_str(raw_args),
 		}
 		local _, created_remote = note_remote(inst, entry)
- 
+
 		logs[#logs + 1] = entry
 		if #logs > log_limit then
 			table.remove(logs, 1)
 		end
- 
+
 		if window and not window.Closed and matches(entry) then
 			pending_rows[#pending_rows + 1] = entry
 			if #pending_rows > visible_log_limit then table.remove(pending_rows, 1) end
 			schedule_flush()
 		end
- 
+
 		local now = tick()
 		if status_label and now - last_status_update > 0.25 then
 			last_status_update = now
@@ -523,7 +523,7 @@ local function main()
 			update_detail()
 		end
 	end
- 
+
 	rebuild_list = function()
 		for _, f in ipairs(log_frames) do f:Destroy() end
 		log_frames = {}
@@ -558,14 +558,14 @@ local function main()
 			scroll_v:Update()
 		end
 	end
- 
+
 	local function hook_instance(inst)
 		if seen[inst] then return end
 		local sig = in_signals[inst.ClassName]
 		if not sig then return end
 		seen[inst] = true
 		note_remote(inst)
- 
+
 		local ok, con = pcall(function()
 			return inst[sig]:Connect(function(...)
 				add_log("in", inst, sig, table.pack(...))
@@ -575,14 +575,14 @@ local function main()
 			hook_cons[#hook_cons + 1] = con
 		end
 	end
- 
+
 	local function start()
 		if active then return end
 		active = true
 		dropped_logs = 0
 		rate_window_start = os.clock()
 		rate_window_count = 0
- 
+
 		if hookmetamethod and not namecall_orig then
 			local ok, orig = pcall(hookmetamethod, game, "__namecall", function(self, ...)
 				local method = getnamecallmethod and getnamecallmethod() or ""
@@ -597,7 +597,7 @@ local function main()
 			end)
 			if ok then namecall_orig = orig end
 		end
- 
+
 		local ok, descs = pcall(game.GetDescendants, game)
 		if ok then
 			for _, inst in ipairs(descs) do
@@ -607,7 +607,7 @@ local function main()
 				hook_instance(inst)
 			end
 		end
- 
+
 		if getnilinstances then
 			local ok2, nil_insts = pcall(getnilinstances)
 			if ok2 then
@@ -621,7 +621,7 @@ local function main()
 		end
 		rebuild_tree()
 		update_detail()
- 
+
 		local da_con = game.DescendantAdded:Connect(function(inst)
 			if active then
 				if typeof(inst) == "Instance" and is_remote_class(inst.ClassName) then
@@ -633,20 +633,20 @@ local function main()
 		end)
 		hook_cons[#hook_cons + 1] = da_con
 	end
- 
+
 	local function stop()
 		if not active then return end
 		active = false
- 
+
 		for _, con in ipairs(hook_cons) do
 			pcall(function() con:Disconnect() end)
 		end
 		hook_cons = {}
- 
+
 		seen = {}
 		setmetatable(seen, { __mode = "k" })
 	end
- 
+
 	local function make_btn(parent, text, x, w)
 		local btn = Instance.new("TextButton")
 		btn.BorderSizePixel  = 0
@@ -668,19 +668,19 @@ local function main()
 		end
 		return btn
 	end
- 
+
 	spy.Init = function()
 		window = lib_ref.Window.new()
 		window:SetTitle("Remote Spy")
 		window:Resize(760, 460)
 		spy.Window = window
- 
+
 		local toolbar = Instance.new("Frame")
 		toolbar.BackgroundColor3 = settings_ref.Theme.Menu
 		toolbar.BorderSizePixel  = 0
 		toolbar.Size             = UDim2.new(1, 0, 0, 26)
 		toolbar.Parent           = window.GuiElems.Content
- 
+
 		local start_btn = make_btn(toolbar, "▶ start",  2,  58)
 		local stop_btn  = make_btn(toolbar, "■ stop",   64, 50)
 		local clear_btn = make_btn(toolbar, "clear",   118, 42)
@@ -701,7 +701,7 @@ local function main()
 		copy_btn.Position = UDim2.new(0, 228, 0, 4)
 		local all_btn = make_btn(toolbar, "All", 280, 42)
 		all_btn.Position = UDim2.new(0, 280, 0, 4)
- 
+
 		status_label = Instance.new("TextLabel")
 		status_label.BackgroundTransparency = 1
 		status_label.Font       = theme_ref and theme_ref.MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans
@@ -712,14 +712,14 @@ local function main()
 		status_label.Position   = UDim2.new(0, 326, 0, 0)
 		status_label.Text       = "0 logs"
 		status_label.Parent     = toolbar
- 
+
 		local search_bar = Instance.new("Frame")
 		search_bar.BackgroundColor3 = settings_ref.Theme.Main1
 		search_bar.BorderSizePixel  = 0
 		search_bar.Size             = UDim2.new(1, 0, 0, 26)
 		search_bar.Position         = UDim2.new(0, 0, 0, 26)
 		search_bar.Parent           = window.GuiElems.Content
- 
+
 		local search_box = Instance.new("TextBox", search_bar)
 		search_box.BackgroundTransparency = 1
 		search_box.PlaceholderText  = "filter…"
@@ -805,7 +805,7 @@ local function main()
 		detail_label.TextXAlignment = Enum.TextXAlignment.Left
 		detail_label.TextTruncate = Enum.TextTruncate.AtEnd
 		detail_label.Text = "All remotes"
- 
+
 		local list_container = Instance.new("Frame")
 		list_container.BackgroundColor3 = settings_ref.Theme.Main2
 		list_container.BorderSizePixel  = 0
@@ -813,13 +813,13 @@ local function main()
 		list_container.Position         = UDim2.new(0, 0, 0, 28)
 		list_container.ClipsDescendants = true
 		list_container.Parent           = right_panel
- 
+
 		list_frame = Instance.new("Frame")
 		list_frame.BackgroundTransparency = 1
 		list_frame.Size         = UDim2.new(1, 0, 0, 0)
 		list_frame.AutomaticSize = Enum.AutomaticSize.Y
 		list_frame.Parent       = list_container
- 
+
 		local layout = Instance.new("UIListLayout", list_frame)
 		layout.SortOrder = Enum.SortOrder.LayoutOrder
 		layout.Padding   = UDim.new(0, 1)
@@ -833,7 +833,7 @@ local function main()
 		empty_label.TextColor3 = settings_ref.Theme.PlaceholderText
 		empty_label.Text = "Start spy to capture calls"
 		empty_label.Visible = true
- 
+
 		scroll_v = lib_ref.ScrollBar.new()
 		scroll_v.WheelIncrement  = 3
 		scroll_v.Gui.Position    = UDim2.new(1, -16, 0, 28)
@@ -843,25 +843,25 @@ local function main()
 		scroll_v.Scrolled:Connect(function()
 			list_frame.Position = UDim2.new(0, 0, 0, -scroll_v.Index * 37)
 		end)
- 
+
 		local function update_button_states()
 			if not start_btn then return end
 			local theme = settings_ref.Theme
-			
+
 			if active then
 				start_btn.Text = paused and "Paused" or "Active"
 				start_btn.BackgroundColor3 = paused and Color3.fromRGB(234, 179, 8) or theme.ListSelection
-				
+
 				stop_btn.Text = "Stop"
 				stop_btn.BackgroundColor3 = theme.Button
 			else
 				start_btn.Text = "Start"
 				start_btn.BackgroundColor3 = theme.Button
-				
+
 				stop_btn.Text = "Stopped"
 				stop_btn.BackgroundColor3 = Color3.fromRGB(244, 63, 94)
 			end
-			
+
 			pause_btn.Text = paused and "Resume" or "Pause"
 			pause_btn.BackgroundColor3 = paused and Color3.fromRGB(234, 179, 8) or theme.Button
 		end
@@ -875,7 +875,7 @@ local function main()
 				rebuild_list()
 			end
 		end)
- 
+
 		stop_btn.MouseButton1Click:Connect(function()
 			if active then
 				stop()
@@ -884,7 +884,7 @@ local function main()
 				rebuild_list()
 			end
 		end)
- 
+
 		clear_btn.MouseButton1Click:Connect(function()
 			logs = {}
 			for _, f in ipairs(log_frames) do f:Destroy() end
@@ -900,7 +900,7 @@ local function main()
 			rebuild_list()
 			update_detail()
 		end)
- 
+
 		pause_btn.MouseButton1Click:Connect(function()
 			if active then
 				paused = not paused
@@ -914,7 +914,7 @@ local function main()
 			rebuild_tree()
 			rebuild_list()
 		end)
- 
+
 		copy_btn.MouseButton1Click:Connect(function()
 			if not setclipboard then return end
 			local lines = {}
@@ -928,7 +928,7 @@ local function main()
 		rebuild_tree()
 		update_detail()
 		rebuild_list()
- 
+
 		window.OnActivate:Connect(function()
 			if scroll_v then
 				scroll_v.TotalSpace   = #log_frames
@@ -937,14 +937,14 @@ local function main()
 			end
 		end)
 	end
- 
+
 	return spy
 end
- 
+
 return {
 	InitDeps      = initDeps,
 	InitAfterMain = initAfterMain,
 	Main          = main,
 	PluginData    = plugin_data,
 }
- 
+

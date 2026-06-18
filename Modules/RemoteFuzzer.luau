@@ -21,6 +21,7 @@ local function main()
 	local RemoteFuzzer = {}
 
 	local function getPath(obj)
+        if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(obj) end
 		local ok, path = pcall(function()
 			if Apps.Explorer and Apps.Explorer.GetInstancePath then
 				return Apps.Explorer.GetInstancePath(obj)

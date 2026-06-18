@@ -42,6 +42,7 @@ local function main()
 		return isScript(obj) and env.isViableDecompileScript and env.isViableDecompileScript(obj)
 	end
 	local function getPath(obj)
+        if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(obj) end
 		local success, path = pcall(function()
 			if Explorer and Explorer.GetInstancePath then
 				return Explorer.GetInstancePath(obj)

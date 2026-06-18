@@ -4054,6 +4054,7 @@ end,
     		selection.ShiftSet = {}
     		selection.Changed:Connect(Properties.ShowExplorerProps)
     		Explorer.Selection = selection
+    		Explorer.Nodes = nodes
     
     		Explorer.InitRightClick()
     		Explorer.InitInsertObject()
@@ -11564,11 +11565,15 @@ end,
     end
     
     local function getPath(obj)
-    	if obj.Parent == nil then
-    		return "Nil parented"
-    	else
-    		return Explorer.GetInstancePath(obj)
-    	end
+        if Main and Main.SafeGetInstancePath then
+            return Main.SafeGetInstancePath(obj)
+        end
+        if not obj then return "?" end
+        if obj.Parent == nil then return "Nil parented" end
+        local ok, fullName = pcall(function()
+            return obj:GetFullName()
+        end)
+        return ok and fullName or tostring(obj)
     end
     
     local function main()
@@ -14199,11 +14204,15 @@ end,
     end
     
     local function getPath(obj)
-    	if obj.Parent == nil then
-    		return "Nil parented"
-    	else
-    		return Explorer.GetInstancePath(obj)
-    	end
+        if Main and Main.SafeGetInstancePath then
+            return Main.SafeGetInstancePath(obj)
+        end
+        if not obj then return "?" end
+        if obj.Parent == nil then return "Nil parented" end
+        local ok, fullName = pcall(function()
+            return obj:GetFullName()
+        end)
+        return ok and fullName or tostring(obj)
     end
     
     local function main()
@@ -15423,6 +15432,7 @@ end,
     		if not okSource or type(source) ~= "string" then return false end
     
     		local okPath, path = pcall(function()
+                if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(scriptInstance) end
     			if Explorer and Explorer.GetInstancePath then return Explorer.GetInstancePath(scriptInstance) end
     			return scriptInstance:GetFullName()
     		end)
@@ -15711,6 +15721,7 @@ end,
     		return isScript(obj) and env.isViableDecompileScript and env.isViableDecompileScript(obj)
     	end
     	local function getPath(obj)
+            if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(obj) end
     		local success, path = pcall(function()
     			if Explorer and Explorer.GetInstancePath then
     				return Explorer.GetInstancePath(obj)
@@ -16028,6 +16039,7 @@ end,
     		return typeof(obj) == "Instance" and remoteClasses[obj.ClassName] == true
     	end
     	local function getPath(obj)
+            if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(obj) end
     		local success, path = pcall(function()
     			if Explorer and Explorer.GetInstancePath then return Explorer.GetInstancePath(obj) end
     			return obj:GetFullName()
@@ -16274,6 +16286,7 @@ end,
     	end
     
     	local function getPath(obj)
+            if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(obj) end
     		local ok, path = pcall(function()
     			if Explorer and Explorer.GetInstancePath then return Explorer.GetInstancePath(obj) end
     			return obj:GetFullName()
@@ -16599,6 +16612,7 @@ end,
     	}
     
     	local function getPath(obj)
+            if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(obj) end
     		local ok, path = pcall(function()
     			if Explorer and Explorer.GetInstancePath then return Explorer.GetInstancePath(obj) end
     			return obj:GetFullName()
@@ -16785,6 +16799,7 @@ end,
     	local scriptByKey = {}
     
     	local function getPath(obj)
+            if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(obj) end
     		local ok, path = pcall(function()
     			if Explorer and Explorer.GetInstancePath then return Explorer.GetInstancePath(obj) end
     			return obj:GetFullName()
@@ -17012,6 +17027,7 @@ end,
     	local maxEvents = 160
     
     	local function getPath(obj)
+            if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(obj) end
     		local ok, path = pcall(function()
     			if Explorer and Explorer.GetInstancePath then return Explorer.GetInstancePath(obj) end
     			return obj:GetFullName()
@@ -17141,6 +17157,7 @@ end,
     	local remoteClasses = {RemoteEvent=true, RemoteFunction=true, UnreliableRemoteEvent=true, BindableEvent=true, BindableFunction=true}
     
     	local function getPath(obj)
+            if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(obj) end
     		local ok, path = pcall(function()
     			if Explorer and Explorer.GetInstancePath then return Explorer.GetInstancePath(obj) end
     			return obj:GetFullName()
@@ -17315,6 +17332,7 @@ end,
     
     	local function setStatus(text) if statusLabel then statusLabel.Text = text end end
     	local function getPath(obj)
+            if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(obj) end
     		local ok, path = pcall(function()
     			if Explorer and Explorer.GetInstancePath then return Explorer.GetInstancePath(obj) end
     			return obj:GetFullName()
@@ -17515,6 +17533,7 @@ end,
     		end
     	end
     	local function getPath(obj)
+            if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(obj) end
     		local success, path = pcall(function()
     			if Explorer and Explorer.GetInstancePath then return Explorer.GetInstancePath(obj) end
     			return obj:GetFullName()
@@ -17828,6 +17847,7 @@ end,
     	end
     
     	local function getPath(obj)
+            if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(obj) end
     		local ok, path = pcall(function()
     			if Explorer and Explorer.GetInstancePath then
     				return Explorer.GetInstancePath(obj)
@@ -18292,7 +18312,7 @@ end,
     	Aggregates client-side snapshots, dependency hints, smart queries, timeline, and perf hints.
     ]]
     local Main,Lib,Apps,Settings
-    local Explorer, ScriptViewer, RuntimeInspector, ClientIntelligence
+    local Explorer, ScriptViewer, RuntimeInspector, ClientIntelligence, InspectorHub
     local API,RMD,env,service,plr,create,createSimple
     
     local function initDeps(data)
@@ -18306,6 +18326,7 @@ end,
     	ScriptViewer = Apps.ScriptViewer
     	RuntimeInspector = Apps.RuntimeInspector
     	ClientIntelligence = Apps.ClientIntelligence
+    	InspectorHub = Apps.InspectorHub
     end
     
     local function main()
@@ -18316,6 +18337,7 @@ end,
     
     	local function setStatus(text) if statusLabel then statusLabel.Text = text end end
     	local function getPath(obj)
+            if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(obj) end
     		local ok, path = pcall(function()
     			if Explorer and Explorer.GetInstancePath then return Explorer.GetInstancePath(obj) end
     			return obj:GetFullName()
@@ -18595,6 +18617,14 @@ end,
     		setStatus("Performance summary ready.")
     		window:Show()
     	end
+    	local function showHub()
+    		if InspectorHub and InspectorHub.ShowSnapshot then
+    			InspectorHub.ShowSnapshot()
+    			setStatus("Opened Inspector Hub snapshot.")
+    		else
+    			setStatus("Inspector Hub is unavailable.")
+    		end
+    	end
     	local function makeButton(parent, text, x, w, callback)
     		local b = createSimple("TextButton",{AutoButtonColor=false, BackgroundColor3=Settings.Theme.Button, BorderColor3=Settings.Theme.Outline2, Font=Enum.Font.SourceSans, Position=UDim2.new(0,x,0,4), Size=UDim2.new(0,w,0,22), Text=text, TextColor3=Settings.Theme.Text, TextSize=14, Parent=parent})
     		b.MouseButton1Click:Connect(callback)
@@ -18614,7 +18644,8 @@ end,
     		makeButton(toolbar,"Timeline",204,72,showTimeline)
     		makeButton(toolbar,"Perf",282,50,showPerf)
     		makeButton(toolbar,"Index",338,52,showIndexHealth)
-    		statusLabel = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSans, Position=UDim2.new(0,398,0,4), Size=UDim2.new(1,-404,0,22), Text="Client-side intelligence dashboard.", TextColor3=Settings.Theme.PlaceholderText, TextSize=14, TextTruncate=Enum.TextTruncate.AtEnd, TextXAlignment=Enum.TextXAlignment.Left, Parent=toolbar})
+    		makeButton(toolbar,"Hub",396,46,showHub)
+    		statusLabel = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSans, Position=UDim2.new(0,450,0,4), Size=UDim2.new(1,-456,0,22), Text="Client-side intelligence dashboard.", TextColor3=Settings.Theme.PlaceholderText, TextSize=14, TextTruncate=Enum.TextTruncate.AtEnd, TextXAlignment=Enum.TextXAlignment.Left, Parent=toolbar})
     		listFrame = createSimple("ScrollingFrame",{Active=true, AutomaticCanvasSize=Enum.AutomaticSize.Y, BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, BottomImage="", CanvasSize=UDim2.new(0,0,0,0), Position=UDim2.new(0,0,0,60), ScrollBarImageColor3=Color3.fromRGB(70,70,70), ScrollBarThickness=10, Size=UDim2.new(1,0,1,-60), TopImage="", Parent=content})
     		local layout = Instance.new("UIListLayout")
     		layout.Padding = UDim.new(0,4)
@@ -18628,6 +18659,298 @@ end,
     	ClientIntelligence.ShowSnapshot = showSnapshot
     	ClientIntelligence.ShowIndexHealth = showIndexHealth
     	return ClientIntelligence
+    end
+    
+    if gethsfuncs then
+    	_G.moduleData = {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
+    else
+    	return {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
+    end
+end,
+["InspectorHub"] = function()
+    --!strict
+    --[[
+    	Inspector Hub
+    	Centralizes high-signal client inspection: surface snapshot, hot remotes,
+    	risk queue, and an exportable brief for handoff.
+    ]]
+    local Main, Lib, Apps, Settings
+    local Explorer, ScriptViewer, RuntimeInspector, RemoteUsageMap, ClientIndex, InspectorHub
+    local API, RMD, env, service, plr, create, createSimple
+    
+    local function initDeps(data)
+    	Main, Lib, Apps, Settings = data.Main, data.Lib, data.Apps, data.Settings
+    	API, RMD, env, service, plr = data.API, data.RMD, data.env, data.service, data.plr
+    	create, createSimple = data.create, data.createSimple
+    end
+    
+    local function initAfterMain()
+    	Explorer = Apps.Explorer
+    	ScriptViewer = Apps.ScriptViewer
+    	RuntimeInspector = Apps.RuntimeInspector
+    	RemoteUsageMap = Apps.RemoteUsageMap
+    	ClientIndex = Apps.ClientIndex
+    	InspectorHub = Apps.InspectorHub
+    end
+    
+    local function main()
+    	local InspectorHub = {}
+    	local window, listFrame, statusLabel
+    	local scanToken = 0
+    	local remoteClasses = {RemoteEvent=true, RemoteFunction=true, UnreliableRemoteEvent=true, BindableEvent=true, BindableFunction=true}
+    	local riskyRemoteWords = {"admin","ban","kick","cash","money","give","kill","rank","save","load","purchase","buy","set","fire"}
+    	local riskyScriptWords = {"backdoor","loader","webhook","require","loadstring","httpget","httppost","getfenv","setfenv"}
+    
+    	local function setStatus(text)
+    		if statusLabel then statusLabel.Text = text end
+    	end
+    	local function getPath(obj)
+    		if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(obj) end
+    		local ok, path = pcall(function()
+    			if Explorer and Explorer.GetInstancePath then return Explorer.GetInstancePath(obj) end
+    			return obj:GetFullName()
+    		end)
+    		return ok and tostring(path) or tostring(obj)
+    	end
+    	local function getSurface(force)
+    		if ClientIndex and ClientIndex.RefreshSurface then
+    			return ClientIndex.RefreshSurface(force == true)
+    		end
+    		local all, scripts, remotes = {}, {}, {}
+    		for _, obj in ipairs(game:GetDescendants()) do
+    			all[#all + 1] = obj
+    			if obj:IsA("LuaSourceContainer") then scripts[#scripts + 1] = obj end
+    			if remoteClasses[obj.ClassName] then remotes[#remotes + 1] = obj end
+    		end
+    		return {AllInstances=all, AllScripts=scripts, ViableScripts=scripts, Remotes=remotes}
+    	end
+    	local function clearRows()
+    		if not listFrame then return end
+    		for _, child in ipairs(listFrame:GetChildren()) do
+    			if child:IsA("GuiButton") or child:IsA("TextLabel") or child:IsA("Frame") then child:Destroy() end
+    		end
+    	end
+    	local function pad(gui)
+    		local padding = Instance.new("UIPadding")
+    		padding.PaddingLeft = UDim.new(0, 8)
+    		padding.PaddingRight = UDim.new(0, 8)
+    		padding.Parent = gui
+    	end
+    	local function section(title)
+    		local label = createSimple("TextLabel",{BackgroundColor3=Settings.Theme.Main1, BorderSizePixel=0, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,-8,0,24), Text=title, TextColor3=Settings.Theme.Text, TextSize=14, TextXAlignment=Enum.TextXAlignment.Left, Parent=listFrame})
+    		pad(label)
+    	end
+    	local function textRow(text, muted)
+    		local label = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSans, Size=UDim2.new(1,-8,0,22), Text=text, TextColor3=muted and Settings.Theme.PlaceholderText or Settings.Theme.Text, TextSize=14, TextTruncate=Enum.TextTruncate.AtEnd, TextXAlignment=Enum.TextXAlignment.Left, Parent=listFrame})
+    		pad(label)
+    	end
+    	local function actionRow(title, detail, callback)
+    		local row = createSimple("TextButton",{AutoButtonColor=false, BackgroundColor3=Settings.Theme.Main2, BorderColor3=Settings.Theme.Outline1, BorderSizePixel=1, Font=Enum.Font.SourceSans, Size=UDim2.new(1,-8,0,44), Text="", Parent=listFrame})
+    		createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Position=UDim2.new(0,8,0,3), Size=UDim2.new(1,-16,0,18), Text=title, TextColor3=Settings.Theme.Text, TextSize=14, TextTruncate=Enum.TextTruncate.AtEnd, TextXAlignment=Enum.TextXAlignment.Left, Parent=row})
+    		createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSans, Position=UDim2.new(0,8,0,23), Size=UDim2.new(1,-16,0,18), Text=detail, TextColor3=Settings.Theme.PlaceholderText, TextSize=13, TextTruncate=Enum.TextTruncate.AtEnd, TextXAlignment=Enum.TextXAlignment.Left, Parent=row})
+    		Lib.ButtonAnim(row,{Mode=2, StartColor=Settings.Theme.Main2, HoverColor=Settings.Theme.ButtonHover, PressColor=Settings.Theme.ButtonPress, OutlineColor=Settings.Theme.Outline1})
+    		if callback then row.MouseButton1Click:Connect(callback) end
+    	end
+    	local function containsAny(text, words)
+    		local lower = tostring(text or ""):lower()
+    		for _, word in ipairs(words) do
+    			if lower:find(word, 1, true) then return word end
+    		end
+    		return nil
+    	end
+    	local function runtimeCounts()
+    		local counts, callers = {}, {}
+    		if not RuntimeInspector or not RuntimeInspector.GetBuffers then return counts, callers end
+    		local buffers = RuntimeInspector.GetBuffers()
+    		for _, call in ipairs(buffers.RemoteCall or {}) do
+    			local path = tostring(call.Path or "")
+    			counts[path] = (counts[path] or 0) + 1
+    			if call.Caller and tostring(call.Caller) ~= "unknown" then callers[path] = tostring(call.Caller) end
+    		end
+    		return counts, callers
+    	end
+    	local function getCacheEntries()
+    		if ClientIndex and ClientIndex.GetCacheEntries then
+    			local entries, cacheDir = ClientIndex.GetCacheEntries()
+    			return entries or {}, cacheDir
+    		end
+    		return {}, nil
+    	end
+    	local function sortedServices(surface)
+    		local services = {}
+    		for _, obj in ipairs(surface.AllInstances or {}) do
+    			local root = obj
+    			while root.Parent and root.Parent ~= game do root = root.Parent end
+    			services[root.Name] = (services[root.Name] or 0) + 1
+    		end
+    		local rows = {}
+    		for name, count in pairs(services) do rows[#rows + 1] = {Name=name, Count=count} end
+    		table.sort(rows, function(a,b) return a.Count > b.Count end)
+    		return rows
+    	end
+    	function InspectorHub.BuildSnapshot(force)
+    		local surface = getSurface(force == true)
+    		local partCount, guiCount = 0, 0
+    		for _, obj in ipairs(surface.AllInstances or {}) do
+    			if obj:IsA("BasePart") then partCount += 1 end
+    			if obj:IsA("GuiObject") then guiCount += 1 end
+    		end
+    		local cacheCount = 0
+    		local entries = getCacheEntries()
+    		for _ in pairs(entries) do cacheCount += 1 end
+    		return {
+    			Surface = surface,
+    			Instances = #(surface.AllInstances or {}),
+    			Scripts = #(surface.AllScripts or {}),
+    			ViableScripts = #(surface.ViableScripts or {}),
+    			Remotes = #(surface.Remotes or {}),
+    			Parts = partCount,
+    			GuiObjects = guiCount,
+    			CacheEntries = cacheCount,
+    			Services = sortedServices(surface),
+    		}
+    	end
+    	function InspectorHub.GetRemoteHotspots()
+    		local surface = getSurface(false)
+    		local counts, callers = runtimeCounts()
+    		local rows = {}
+    		for _, remote in ipairs(surface.Remotes or {}) do
+    			local path = getPath(remote)
+    			local word = containsAny(remote.Name, riskyRemoteWords)
+    			local score = (counts[path] or 0) * 2 + (word and 4 or 0) + (remote:IsA("RemoteFunction") and 2 or 0)
+    			rows[#rows + 1] = {Object=remote, Path=path, Name=remote.Name, ClassName=remote.ClassName, Calls=counts[path] or 0, Caller=callers[path] or "unknown", RiskWord=word or "", Score=score}
+    		end
+    		table.sort(rows, function(a,b)
+    			if a.Score == b.Score then return a.Path < b.Path end
+    			return a.Score > b.Score
+    		end)
+    		return rows
+    	end
+    	function InspectorHub.GetRiskQueue(limit)
+    		local queue, surface = {}, getSurface(false)
+    		for _, remote in ipairs(surface.Remotes or {}) do
+    			local word = containsAny(remote.Name, riskyRemoteWords)
+    			if word then queue[#queue + 1] = {Kind="Remote", Object=remote, Score=70, Title="Risky remote name: " .. remote.Name, Detail=word .. " | " .. getPath(remote)} end
+    		end
+    		local entries, cacheDir = getCacheEntries()
+    		local byKey = ClientIndex and ClientIndex.GetScriptLookup and ClientIndex.GetScriptLookup() or {}
+    		local scanned = 0
+    		for key, entry in pairs(entries) do
+    			if limit and #queue >= limit then break end
+    			if entry.File and cacheDir and env.isfile and env.isfile(cacheDir .. "/" .. tostring(entry.File)) then
+    				local ok, source = pcall(env.readfile, cacheDir .. "/" .. tostring(entry.File))
+    				if ok and type(source) == "string" then
+    					local word = containsAny(source, riskyScriptWords)
+    					if word then
+    						queue[#queue + 1] = {Kind="Script", Object=byKey[key], Score=60, Title="Cached source signal: " .. word, Detail=tostring(entry.Path or entry.Name or key)}
+    					end
+    				end
+    			end
+    			scanned += 1
+    			if scanned % 25 == 0 then task.wait() end
+    		end
+    		table.sort(queue, function(a,b) return a.Score > b.Score end)
+    		return queue
+    	end
+    	function InspectorHub.BuildBrief()
+    		local snap = InspectorHub.BuildSnapshot(false)
+    		local hot = InspectorHub.GetRemoteHotspots()
+    		local lines = {
+    			"DEX++ Inspector Brief",
+    			("surface: %d instances | %d scripts | %d viable | %d remotes"):format(snap.Instances, snap.Scripts, snap.ViableScripts, snap.Remotes),
+    			("objects: %d parts | %d gui objects | %d cached scripts"):format(snap.Parts, snap.GuiObjects, snap.CacheEntries),
+    			"top services:",
+    		}
+    		for i = 1, math.min(5, #snap.Services) do lines[#lines + 1] = ("- %s: %d descendants"):format(snap.Services[i].Name, snap.Services[i].Count) end
+    		lines[#lines + 1] = "hot/risky remotes:"
+    		for i = 1, math.min(10, #hot) do lines[#lines + 1] = ("- score %d | calls %d | %s"):format(hot[i].Score, hot[i].Calls, hot[i].Path) end
+    		return table.concat(lines, "\n")
+    	end
+    	local function focusObject(obj)
+    		if typeof(obj) ~= "Instance" then return end
+    		if obj:IsA("LuaSourceContainer") and ScriptViewer then pcall(ScriptViewer.ViewScript, obj) end
+    		if remoteClasses[obj.ClassName] and RemoteUsageMap then pcall(RemoteUsageMap.ShowForRemote, obj) end
+    		if Explorer and Explorer.Selection then pcall(function() Explorer.Selection:Set(obj) end) end
+    	end
+    	function InspectorHub.ShowSnapshot()
+    		scanToken += 1
+    		clearRows()
+    		local snap = InspectorHub.BuildSnapshot(true)
+    		section("Surface Snapshot")
+    		textRow(("instances %d | scripts %d | viable %d | remotes %d"):format(snap.Instances, snap.Scripts, snap.ViableScripts, snap.Remotes), false)
+    		textRow(("parts %d | gui %d | cached sources %d"):format(snap.Parts, snap.GuiObjects, snap.CacheEntries), true)
+    		section("Largest Services")
+    		for i = 1, math.min(10, #snap.Services) do textRow(snap.Services[i].Name .. " - " .. snap.Services[i].Count .. " descendants", false) end
+    		setStatus("Snapshot refreshed.")
+    		window:Show()
+    	end
+    	function InspectorHub.ShowHotRemotes()
+    		scanToken += 1
+    		clearRows()
+    		section("Hot / Risky Remotes")
+    		local rows = InspectorHub.GetRemoteHotspots()
+    		for i = 1, math.min(80, #rows) do
+    			local row = rows[i]
+    			actionRow(("score %d | %s [%s]"):format(row.Score, row.Name, row.ClassName), ("calls %d | %s | caller %s"):format(row.Calls, row.Path, row.Caller), function() focusObject(row.Object) end)
+    		end
+    		if #rows == 0 then textRow("No remotes found.", true) end
+    		setStatus("Remote hotspots ready.")
+    		window:Show()
+    	end
+    	function InspectorHub.ShowRiskQueue()
+    		scanToken += 1
+    		local token = scanToken
+    		clearRows()
+    		section("Risk Queue")
+    		textRow("Scanning cached source and remote names...", true)
+    		setStatus("Building risk queue...")
+    		window:Show()
+    		task.spawn(function()
+    			local queue = InspectorHub.GetRiskQueue(120)
+    			if token ~= scanToken then return end
+    			clearRows()
+    			section("Risk Queue")
+    			for i = 1, math.min(100, #queue) do
+    				local item = queue[i]
+    				actionRow(item.Kind .. " | " .. item.Title, item.Detail, function() focusObject(item.Object) end)
+    			end
+    			if #queue == 0 then textRow("No risk signals found in quick scan.", true) end
+    			setStatus(("Risk queue ready: %d signal(s)."):format(#queue))
+    		end)
+    	end
+    	function InspectorHub.ExportBrief()
+    		local brief = InspectorHub.BuildBrief()
+    		if env.setclipboard then env.setclipboard(brief) elseif setclipboard then setclipboard(brief) end
+    		setStatus("Brief copied to clipboard.")
+    	end
+    	local function makeButton(text, x, w, callback)
+    		local button = createSimple("TextButton",{AutoButtonColor=false, BackgroundColor3=Settings.Theme.Button, BorderColor3=Settings.Theme.Outline2, Font=Enum.Font.SourceSans, Position=UDim2.new(0,x,0,4), Size=UDim2.new(0,w,0,22), Text=text, TextColor3=Settings.Theme.Text, TextSize=14})
+    		button.MouseButton1Click:Connect(callback)
+    		Lib.ButtonAnim(button,{Mode=2, StartColor=Settings.Theme.Button, HoverColor=Settings.Theme.ButtonHover, PressColor=Settings.Theme.ButtonPress, OutlineColor=Settings.Theme.Outline2})
+    		return button
+    	end
+    	function InspectorHub.Init()
+    		window = Lib.Window.new()
+    		window:SetTitle("Inspector Hub")
+    		window:Resize(680, 430)
+    		InspectorHub.Window = window
+    		local content = window.GuiElems.Content
+    		local toolbar = createSimple("Frame",{BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, Size=UDim2.new(1,0,0,34), Parent=content})
+    		makeButton("Snapshot", 6, 74, InspectorHub.ShowSnapshot).Parent = toolbar
+    		makeButton("Remotes", 86, 70, InspectorHub.ShowHotRemotes).Parent = toolbar
+    		makeButton("Risk Queue", 162, 86, InspectorHub.ShowRiskQueue).Parent = toolbar
+    		makeButton("Copy Brief", 254, 82, InspectorHub.ExportBrief).Parent = toolbar
+    		statusLabel = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSans, Position=UDim2.new(0,344,0,6), Size=UDim2.new(1,-350,0,20), Text="Ready.", TextColor3=Settings.Theme.PlaceholderText, TextSize=13, TextTruncate=Enum.TextTruncate.AtEnd, TextXAlignment=Enum.TextXAlignment.Left, Parent=toolbar})
+    		listFrame = createSimple("ScrollingFrame",{Active=true, AutomaticCanvasSize=Enum.AutomaticSize.Y, BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, BottomImage="", CanvasSize=UDim2.new(0,0,0,0), Position=UDim2.new(0,0,0,34), ScrollBarImageColor3=Color3.fromRGB(70,70,70), ScrollBarThickness=10, Size=UDim2.new(1,0,1,-34), TopImage="", Parent=content})
+    		local layout = Instance.new("UIListLayout")
+    		layout.Padding = UDim.new(0,4)
+    		layout.SortOrder = Enum.SortOrder.LayoutOrder
+    		layout.Parent = listFrame
+    		local padding = Instance.new("UIPadding")
+    		padding.PaddingBottom, padding.PaddingLeft, padding.PaddingRight, padding.PaddingTop = UDim.new(0,6), UDim.new(0,4), UDim.new(0,4), UDim.new(0,4)
+    		padding.Parent = listFrame
+    	end
+    	return InspectorHub
     end
     
     if gethsfuncs then
@@ -19063,6 +19386,7 @@ end,
     	local RemoteFuzzer = {}
     
     	local function getPath(obj)
+            if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(obj) end
     		local ok, path = pcall(function()
     			if Apps.Explorer and Apps.Explorer.GetInstancePath then
     				return Apps.Explorer.GetInstancePath(obj)
@@ -20108,7 +20432,7 @@ end,
     				end)
     				
     				button(row, "Select", UDim2.new(0.6, 142, 0, 6), UDim2.new(0, 50, 0, 24), function()
-    					if Explorer and nodes[scr] then
+                        if Explorer and Explorer.Selection and Explorer.ViewNode and nodes[scr] then
     						Explorer.Selection:Set(nodes[scr])
     						Explorer.ViewNode(nodes[scr])
     					end
@@ -20293,7 +20617,7 @@ end,
 local isFsSupported = readfile and writefile and isfile and isfolder and listfiles and delfile and delfolder
 
 -- Main vars
-local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, ClientIndex, ActivityMap, DependencyGraph, SmartSearch, RuntimeInspector, ClientIntelligence, TaskRouter, Theme, SmartDecompiler, SecurityAuditor, RemoteFuzzer, PropertyTracker, InstanceSerializer, ThreadManager--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
+local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, ClientIndex, ActivityMap, DependencyGraph, SmartSearch, RuntimeInspector, ClientIntelligence, InspectorHub, TaskRouter, Theme, SmartDecompiler, SecurityAuditor, RemoteFuzzer, PropertyTracker, InstanceSerializer, ThreadManager--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
 local API, RMD
 
 -- Default Settings
@@ -20453,7 +20777,7 @@ end
 Main = (function()
 	local Main = {}
 
-	Main.ModuleList = {"Theme","SmartDecompiler","Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap","ObjectLinks","ImageViewer","ClientIndex","ActivityMap","DependencyGraph","SmartSearch","RuntimeInspector","ClientIntelligence","TaskRouter","SecurityAuditor","RemoteFuzzer","PropertyTracker","InstanceSerializer","ThreadManager"}
+	Main.ModuleList = {"Theme","SmartDecompiler","Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap","ObjectLinks","ImageViewer","ClientIndex","ActivityMap","DependencyGraph","SmartSearch","RuntimeInspector","ClientIntelligence","InspectorHub","TaskRouter","SecurityAuditor","RemoteFuzzer","PropertyTracker","InstanceSerializer","ThreadManager"}
 	Main.Elevated = false
 	Main.AllowDraggableOnMobile = true
 	Main.MissingEnv = {}
@@ -20603,6 +20927,49 @@ Main = (function()
 		}
 	end
 
+	Main.SafeGetInstancePath = function(obj)
+		if not obj then
+			return "?"
+		end
+
+		local explorerApp = Apps and Apps.Explorer
+		if explorerApp and explorerApp.GetInstancePath then
+			local ok, path = pcall(explorerApp.GetInstancePath, obj)
+			if ok and path ~= nil then
+				return tostring(path)
+			end
+		end
+
+		local okFullName, fullName = pcall(function()
+			return obj:GetFullName()
+		end)
+		if okFullName and fullName and fullName ~= "" then
+			return tostring(fullName)
+		end
+
+		local okManual, manualPath = pcall(function()
+			if typeof(obj) ~= "Instance" then
+				return tostring(obj)
+			end
+
+			local parts = {}
+			local cur = obj
+			while cur and cur ~= game do
+				table.insert(parts, 1, tostring(cur.Name))
+				cur = cur.Parent
+			end
+			if cur == game then
+				table.insert(parts, 1, "game")
+			end
+			return #parts > 0 and table.concat(parts, ".") or tostring(obj)
+		end)
+		if okManual and manualPath and manualPath ~= "" then
+			return tostring(manualPath)
+		end
+
+		return tostring(obj)
+	end
+
 	Main.Error = function(str)
 		if rconsoleprint then
 			rconsoleprint("DEX ERROR: "..tostring(str).."\n")
@@ -20615,6 +20982,31 @@ Main = (function()
 	Main.LoadModule = function(name)
 		if Main.Elevated then -- If you don't have filesystem api then ur outta luck tbh
 			local control
+			local usedLocalOverride = false
+
+			local function loadEmbeddedControl()
+				if not EmbeddedModules then return nil end
+				if not EmbeddedModules[name] then Main.Error("Missing Embedded Module: "..name) end
+				if gethsfuncs then _G.moduleData = nil end
+				local embeddedControl = EmbeddedModules[name]()
+
+				-- TODO: Remove when open source
+				if gethsfuncs then
+					embeddedControl = _G.moduleData
+				end
+
+				if not embeddedControl then Main.Error("Missing Embedded Module: "..name) end
+				return embeddedControl
+			end
+
+			local function activateControl(selectedControl)
+				Main.AppControls[name] = selectedControl
+				selectedControl.InitDeps(Main.GetInitDeps())
+
+				local moduleData = selectedControl.Main()
+				Apps[name] = moduleData
+				return moduleData
+			end
 
 			-- Developer Mode: Load directly from local file if exists
 			local localPath = 'dex/Modules/' .. name .. '.luau'
@@ -20628,59 +21020,61 @@ Main = (function()
 						control = _G.moduleData
 					end
 				end)
+				if s and control then
+					usedLocalOverride = true
+				end
 				if not s then
 					warn('Failed to load local module ' .. name .. ': ' .. tostring(err))
 				end
 			end
 
-			if not control and EmbeddedModules then -- Offline Modules
-				if not EmbeddedModules[name] then Main.Error("Missing Embedded Module: "..name) end
-				if gethsfuncs then _G.moduleData = nil end
-				control = EmbeddedModules[name]()
-
-				-- TODO: Remove when open source
-				if gethsfuncs then
-					control = _G.moduleData
-				end
-
-				if not control then Main.Error("Missing Embedded Module: "..name) end
-			else
-				-- Get hash data
-				local hashs = Main.ModuleHashData
-				if not hashs then
-					local s,hashDataStr = pcall(oldgame.HttpGet, game, "https://api.github.com/repos/"..Main.GitRepoName.."/ModuleHashs.dat")
-					if not s then Main.Error("Failed to get module hashs") end
-
-					local s,hashData = pcall(service.HttpService.JSONDecode,service.HttpService,hashDataStr)
-					if not s then Main.Error("Failed to decode module hash JSON") end
-
-					hashs = hashData
-					Main.ModuleHashData = hashs
-				end
-
-				-- Check if local copy exists with matching hashs
-				local hashfunc = (syn and syn.crypt.hash) or function() return "" end
-				local filePath = "dex/ModuleCache/"..name..".lua"
-				local s,moduleStr = pcall(env.readfile,filePath)
-
-				if s and hashfunc(moduleStr) == hashs[name] then
-					control = loadstring(moduleStr)()
+			if not control then
+				if EmbeddedModules then -- Offline Modules
+					control = loadEmbeddedControl()
 				else
-					-- Download and cache
-					local s,moduleStr = pcall(oldgame.HttpGet, game, "https://api.github.com/repos/"..Main.GitRepoName.."/Modules/"..name..".lua")
-					if not s then Main.Error("Failed to get external module data of "..name) end
+					-- Get hash data
+					local hashs = Main.ModuleHashData
+					if not hashs then
+						local s,hashDataStr = pcall(oldgame.HttpGet, game, "https://api.github.com/repos/"..Main.GitRepoName.."/ModuleHashs.dat")
+						if not s then Main.Error("Failed to get module hashs") end
 
-					env.writefile(filePath,moduleStr)
-					control = loadstring(moduleStr)()
+						local s,hashData = pcall(service.HttpService.JSONDecode,service.HttpService,hashDataStr)
+						if not s then Main.Error("Failed to decode module hash JSON") end
+
+						hashs = hashData
+						Main.ModuleHashData = hashs
+					end
+
+					-- Check if local copy exists with matching hashs
+					local hashfunc = (syn and syn.crypt.hash) or function() return "" end
+					local filePath = "dex/ModuleCache/"..name..".lua"
+					local s,moduleStr = pcall(env.readfile,filePath)
+
+					if s and hashfunc(moduleStr) == hashs[name] then
+						control = loadstring(moduleStr)()
+					else
+						-- Download and cache
+						local s,moduleStr = pcall(oldgame.HttpGet, game, "https://api.github.com/repos/"..Main.GitRepoName.."/Modules/"..name..".lua")
+						if not s then Main.Error("Failed to get external module data of "..name) end
+
+						env.writefile(filePath,moduleStr)
+						control = loadstring(moduleStr)()
+					end
 				end
 			end
 
-			Main.AppControls[name] = control
-			control.InitDeps(Main.GetInitDeps())
+			if usedLocalOverride then
+				local ok, moduleData = pcall(activateControl, control)
+				if ok then
+					return moduleData
+				end
+				warn("Local module " .. name .. " failed during init; falling back to embedded: " .. tostring(moduleData))
+				Main.AppControls[name] = nil
+				Apps[name] = nil
+				control = loadEmbeddedControl()
+			end
 
-			local moduleData = control.Main()
-			Apps[name] = moduleData
-			return moduleData
+			return activateControl(control)
 		else
 			local module = script:WaitForChild("Modules"):WaitForChild(name,2)
 			if not module then Main.Error("CANNOT FIND MODULE "..name) end
@@ -20745,6 +21139,7 @@ Main = (function()
 		SmartSearch = Apps.SmartSearch
 		RuntimeInspector = Apps.RuntimeInspector
 		ClientIntelligence = Apps.ClientIntelligence
+		InspectorHub = Apps.InspectorHub
 		TaskRouter = Apps.TaskRouter
 		Theme = Apps.Theme
 		SmartDecompiler = Apps.SmartDecompiler
@@ -20778,6 +21173,7 @@ Main = (function()
 			SmartSearch = SmartSearch,
 			RuntimeInspector = RuntimeInspector,
 			ClientIntelligence = ClientIntelligence,
+			InspectorHub = InspectorHub,
 			TaskRouter = TaskRouter,
 			SecurityAuditor = SecurityAuditor,
 			RemoteFuzzer = RemoteFuzzer,
@@ -22609,6 +23005,8 @@ Main = (function()
 
 		Main.CreateApp({Name = "Client Intelligence", IconMap = Main.LargeIcons, Icon = "Output", Window = ClientIntelligence.Window})
 
+		Main.CreateApp({Name = "Inspector Hub", IconMap = Main.LargeIcons, Icon = "Watcher", Window = InspectorHub.Window})
+
 		Main.CreateApp({Name = "Task Router", IconMap = Main.LargeIcons, Icon = "ScriptEdit", Window = TaskRouter.Window})
 
 		Main.CreateApp({Name = "Security Auditor", IconMap = Main.LargeIcons, Icon = "Watcher", Window = SecurityAuditor.Window})
@@ -22768,6 +23166,7 @@ Main = (function()
 		SmartSearch.Init()
 		RuntimeInspector.Init()
 		ClientIntelligence.Init()
+		InspectorHub.Init()
 		TaskRouter.Init()
 		SecurityAuditor.Init()
 		--SecretServicePanel.Init()
@@ -22838,28 +23237,2554 @@ end)()
 
 -- Bundled Plugins
 local bundled_plugins = {
+	["HttpSpy.lua"] = [[
+local _main_ref, lib_ref, apps_ref, settings_ref, theme_ref
+
+local plugin_data = {
+	name         = "HttpSpy",
+	FriendlyName = "HTTP Spy",
+}
+
+local function initDeps(data)
+	_main_ref    = data.Main
+	lib_ref      = data.Lib
+	apps_ref     = data.Apps
+	settings_ref = data.Settings
+end
+
+local function initAfterMain(t)
+	theme_ref    = t.Theme
+end
+
+local function get_theme()
+	return theme_ref or (apps_ref and apps_ref.Theme)
+end
+
+-- Fallback utilities for safety on different executors
+local table_clear = table.clear or function(t)
+	for k in pairs(t) do t[k] = nil end
+end
+
+local table_pack = table.pack or function(...)
+	return { n = select("#", ...), ... }
+end
+
+local function is_binary(str)
+	for i = 1, string.len(str) do
+		local c = string.byte(str, i)
+		if (c < 32 or c > 126) and c ~= 10 and c ~= 13 and c ~= 9 then
+			return true
+		end
+	end
+	return false
+end
+
+local function format_body(body)
+	if not body or body == "" then return "Empty" end
+	if is_binary(body) then
+		return "[Binary Data: " .. #body .. " bytes]"
+	end
+	return body
+end
+
+local function format_headers(headers)
+	if not headers or typeof(headers) ~= "table" then return "None" end
+	local lines = {}
+	for k, v in pairs(headers) do
+		table.insert(lines, tostring(k) .. ": " .. tostring(v))
+	end
+	table.sort(lines)
+	return table.concat(lines, "\n")
+end
+
+local function main()
+	local spy = {}
+	spy.PluginData = plugin_data
+
+	local logs = {}
+	local log_frames = {}
+	local row_entry_map = {}
+	local pending_rows = {}
+	local selected_entry = nil
+	local filter_text = ""
+	local active = false
+	local paused = false
+	local log_limit = 200
+	local visible_log_limit = 90
+	local running_hooks = {}
+
+	local hooked_functions = {}
+	local namecall_hook = nil
+
+	local colors = {
+		GET     = Color3.fromRGB(34, 197, 94),
+		POST    = Color3.fromRGB(59, 130, 246),
+		PUT     = Color3.fromRGB(249, 115, 22),
+		PATCH   = Color3.fromRGB(217, 119, 6),
+		DELETE  = Color3.fromRGB(239, 68, 68),
+		OTHER   = Color3.fromRGB(163, 163, 163),
+		PENDING = Color3.fromRGB(234, 179, 8),
+		ERROR   = Color3.fromRGB(239, 68, 68),
+	}
+
+	local window, list_frame, scroll_v, status_label, empty_label, inspector_scroll
+	local rebuild_list
+
+	local function matches(entry)
+		if filter_text == "" then return true end
+		local low = filter_text:lower()
+		return entry.url:lower():find(low, 1, true)
+			or entry.method:lower():find(low, 1, true)
+			or entry.source:lower():find(low, 1, true)
+			or (entry.request_body and entry.request_body:lower():find(low, 1, true))
+			or (entry.response_body and entry.response_body:lower():find(low, 1, true))
+	end
+
+	local function update_scroll()
+		if scroll_v then
+			scroll_v.TotalSpace = #log_frames
+			scroll_v.Index = math.max(0, #log_frames - scroll_v.VisibleSpace)
+			scroll_v:Update()
+		end
+	end
+
+	local function trim_visible_rows()
+		while #log_frames > visible_log_limit do
+			local old = table.remove(log_frames, 1)
+			if old then
+				row_entry_map[old] = nil
+				old:Destroy()
+			end
+		end
+		for i, row in ipairs(log_frames) do
+			row.LayoutOrder = i
+		end
+	end
+
+	local function rebuild_list_highlights()
+		for _, row in ipairs(log_frames) do
+			local entry = row_entry_map[row]
+			if entry == selected_entry then
+				row.BackgroundColor3 = settings_ref.Theme.ListSelection
+			else
+				row.BackgroundColor3 = settings_ref.Theme.Main1
+			end
+		end
+	end
+
+	local function update_status_label()
+		if status_label then
+			status_label.Text = #logs .. " requests logged"
+		end
+	end
+
+	local function create_detail_block(title, text, layout_order)
+		local frame = Instance.new("Frame")
+		frame.BackgroundTransparency = 1
+		frame.Size = UDim2.new(1, 0, 0, 0)
+		frame.AutomaticSize = Enum.AutomaticSize.Y
+		frame.LayoutOrder = layout_order
+		frame.Parent = inspector_scroll
+
+		local lbl = Instance.new("TextLabel", frame)
+		lbl.BackgroundTransparency = 1
+		lbl.Size = UDim2.new(1, -60, 0, 20)
+		lbl.Font = Enum.Font.SourceSansBold
+		lbl.TextSize = 13
+		lbl.TextColor3 = settings_ref.Theme.PlaceholderText
+		lbl.TextXAlignment = Enum.TextXAlignment.Left
+		lbl.Text = title
+
+		local copy_btn = Instance.new("TextButton", frame)
+		copy_btn.Size = UDim2.new(0, 50, 0, 18)
+		copy_btn.Position = UDim2.new(1, -52, 0, 1)
+		copy_btn.Text = "Copy"
+		copy_btn.Font = Enum.Font.SourceSans
+		copy_btn.TextSize = 12
+		copy_btn.AutoButtonColor = false
+		if get_theme() then
+			get_theme().StyleButton(copy_btn)
+		else
+			copy_btn.BackgroundColor3 = settings_ref.Theme.Button
+			copy_btn.TextColor3 = settings_ref.Theme.Text
+			local c = Instance.new("UICorner", copy_btn)
+			c.CornerRadius = UDim.new(0, 3)
+		end
+
+		local box = Instance.new("TextBox", frame)
+		box.BackgroundColor3 = settings_ref.Theme.Main1
+		box.BorderSizePixel = 0
+		box.Position = UDim2.new(0, 0, 0, 22)
+		box.Size = UDim2.new(1, 0, 0, 0)
+		box.AutomaticSize = Enum.AutomaticSize.Y
+		box.Font = Enum.Font.Code
+		box.TextSize = 11
+		box.TextColor3 = settings_ref.Theme.Text
+		box.TextEditable = false
+		box.ClearTextOnFocus = false
+		box.MultiLine = true
+		box.TextWrapped = true
+		box.Text = text
+		box.TextXAlignment = Enum.TextXAlignment.Left
+		box.TextYAlignment = Enum.TextYAlignment.Top
+
+		local pad = Instance.new("UIPadding", box)
+		pad.PaddingLeft = UDim.new(0, 6)
+		pad.PaddingRight = UDim.new(0, 6)
+		pad.PaddingTop = UDim.new(0, 6)
+		pad.PaddingBottom = UDim.new(0, 6)
+
+		if get_theme() then
+			get_theme().ApplyRounding(box, 4)
+		end
+
+		copy_btn.MouseButton1Click:Connect(function()
+			if setclipboard then
+				setclipboard(text)
+				copy_btn.Text = "Copied!"
+				task.delay(1, function()
+					copy_btn.Text = "Copy"
+				end)
+			end
+		end)
+	end
+
+	local function show_details(entry)
+		selected_entry = entry
+
+		-- Clear old children
+		for _, child in ipairs(inspector_scroll:GetChildren()) do
+			if not child:IsA("UIListLayout") then
+				child:Destroy()
+			end
+		end
+
+		if not entry then
+			local placeholder = Instance.new("TextLabel", inspector_scroll)
+			placeholder.BackgroundTransparency = 1
+			placeholder.Size = UDim2.new(1, 0, 0, 48)
+			placeholder.Font = get_theme() and get_theme().MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans
+			placeholder.TextSize = 14
+			placeholder.TextColor3 = settings_ref.Theme.PlaceholderText
+			placeholder.Text = "Select a request to view details"
+			return
+		end
+
+		local order = 1
+
+		-- URL
+		create_detail_block("URL", entry.url, order)
+		order += 1
+
+		-- General Info
+		local metadata_lines = {
+			"Method: " .. tostring(entry.method),
+			"Source: " .. tostring(entry.source),
+			"Status: " .. tostring(entry.response_status),
+			"Time: " .. tostring(entry.time)
+		}
+		create_detail_block("General Info", table.concat(metadata_lines, "\n"), order)
+		order += 1
+
+		-- Request Headers
+		if entry.request_headers then
+			create_detail_block("Request Headers", format_headers(entry.request_headers), order)
+			order += 1
+		end
+
+		-- Request Body
+		if entry.request_body and entry.request_body ~= "" then
+			create_detail_block("Request Body", format_body(entry.request_body), order)
+			order += 1
+		end
+
+		-- Response Headers
+		if entry.response_headers then
+			create_detail_block("Response Headers", format_headers(entry.response_headers), order)
+			order += 1
+		end
+
+		-- Response Body
+		if entry.completed then
+			create_detail_block("Response Body", format_body(entry.response_body), order)
+			order += 1
+		else
+			create_detail_block("Response Body", "Request pending...", order)
+			order += 1
+		end
+	end
+
+	local function push_row(entry)
+		if not list_frame then return end
+		if empty_label then empty_label.Visible = false end
+
+		local col = colors[entry.method] or colors.OTHER
+
+		local row = Instance.new("Frame")
+		row.BackgroundColor3 = settings_ref.Theme.Main1
+		row.BorderSizePixel  = 0
+		row.Size             = UDim2.new(1, 0, 0, 36)
+		row.ClipsDescendants = true
+
+		local badge = Instance.new("Frame", row)
+		badge.BackgroundColor3 = col
+		badge.BorderSizePixel  = 0
+		badge.Size             = UDim2.new(0, 3, 1, 0)
+
+		local time_lbl = Instance.new("TextLabel", row)
+		time_lbl.BackgroundTransparency = 1
+		time_lbl.Position  = UDim2.new(0, 8, 0, 0)
+		time_lbl.Size      = UDim2.new(0, 55, 0, 18)
+		time_lbl.Font      = Enum.Font.Code
+		time_lbl.TextSize  = 11
+		time_lbl.TextColor3 = settings_ref.Theme.PlaceholderText
+		time_lbl.TextXAlignment = Enum.TextXAlignment.Left
+		time_lbl.Text = entry.time
+
+		local method_lbl = Instance.new("TextLabel", row)
+		method_lbl.BackgroundTransparency = 1
+		method_lbl.Position  = UDim2.new(0, 66, 0, 0)
+		method_lbl.Size      = UDim2.new(1, -72, 0, 18)
+		method_lbl.Font      = get_theme() and get_theme().MapFont(Enum.Font.SourceSansBold) or Enum.Font.SourceSansBold
+		method_lbl.TextSize  = 13
+		method_lbl.TextColor3 = col
+		method_lbl.TextXAlignment = Enum.TextXAlignment.Left
+
+		local function update_status_text()
+			local status_str = tostring(entry.response_status)
+			method_lbl.Text = entry.method .. "  |  Status: " .. status_str .. "  [" .. entry.source .. "]"
+			if status_str == "Pending" then
+				method_lbl.TextColor3 = colors.PENDING
+			elseif status_str == "Error" or (tonumber(status_str) and tonumber(status_str) >= 400) then
+				method_lbl.TextColor3 = colors.ERROR
+			else
+				method_lbl.TextColor3 = col
+			end
+		end
+		update_status_text()
+		entry.update_ui = update_status_text
+
+		local url_lbl = Instance.new("TextLabel", row)
+		url_lbl.BackgroundTransparency = 1
+		url_lbl.Position  = UDim2.new(0, 8, 0, 18)
+		url_lbl.Size      = UDim2.new(1, -16, 0, 18)
+		url_lbl.Font      = Enum.Font.Code
+		url_lbl.TextSize  = 11
+		url_lbl.TextColor3 = settings_ref.Theme.PlaceholderText
+		url_lbl.TextXAlignment = Enum.TextXAlignment.Left
+		url_lbl.TextTruncate = Enum.TextTruncate.AtEnd
+		url_lbl.Text = entry.url
+
+		local separator = Instance.new("Frame", row)
+		separator.BackgroundColor3 = settings_ref.Theme.Outline1
+		separator.BorderSizePixel = 0
+		separator.Size = UDim2.new(1, 0, 0, 1)
+		separator.Position = UDim2.new(0, 0, 1, -1)
+
+		row.InputBegan:Connect(function(i)
+			if i.UserInputType == Enum.UserInputType.MouseMovement then
+				row.BackgroundColor3 = selected_entry == entry and settings_ref.Theme.ListSelection or settings_ref.Theme.ButtonHover
+			elseif i.UserInputType == Enum.UserInputType.MouseButton1 then
+				selected_entry = entry
+				show_details(entry)
+				rebuild_list_highlights()
+			elseif i.UserInputType == Enum.UserInputType.MouseButton2 and setclipboard then
+				setclipboard(entry.url)
+			end
+		end)
+
+		row.InputEnded:Connect(function(i)
+			if i.UserInputType == Enum.UserInputType.MouseMovement then
+				row.BackgroundColor3 = selected_entry == entry and settings_ref.Theme.ListSelection or settings_ref.Theme.Main1
+			end
+		end)
+
+		row.LayoutOrder = #log_frames + 1
+		row.Parent = list_frame
+		table.insert(log_frames, row)
+		row_entry_map[row] = entry
+	end
+
+	rebuild_list = function()
+		for _, f in ipairs(log_frames) do f:Destroy() end
+		log_frames = {}
+		table_clear(row_entry_map)
+		table_clear(pending_rows)
+
+		local visible_count = 0
+		local matched = {}
+		for i = #logs, 1, -1 do
+			local e = logs[i]
+			if matches(e) then
+				table.insert(matched, 1, e)
+				if #matched >= visible_log_limit then break end
+			end
+		end
+
+		for _, e in ipairs(matched) do
+			visible_count += 1
+			push_row(e)
+		end
+
+		trim_visible_rows()
+
+		if empty_label then
+			empty_label.Visible = visible_count == 0
+			if filter_text ~= "" then
+				empty_label.Text = "No requests match filter"
+			else
+				empty_label.Text = "Start spy to capture HTTP traffic"
+			end
+		end
+
+		if scroll_v then
+			scroll_v.TotalSpace = #log_frames
+			scroll_v.Index = math.max(0, #log_frames - scroll_v.VisibleSpace)
+			scroll_v:Update()
+		end
+
+		rebuild_list_highlights()
+	end
+
+	local function log_request(source, method, url, headers, body)
+		local entry = {
+			time = os.date("%H:%M:%S"),
+			source = source,
+			method = method:upper(),
+			url = url,
+			request_headers = headers,
+			request_body = body,
+			completed = false,
+			response_status = "Pending",
+			response_headers = nil,
+			response_body = nil,
+		}
+
+		table.insert(logs, entry)
+		if #logs > log_limit then
+			table.remove(logs, 1)
+		end
+
+		if window and not window.Closed and matches(entry) then
+			pending_rows[#pending_rows + 1] = entry
+			if #pending_rows > visible_log_limit then table.remove(pending_rows, 1) end
+
+			task.spawn(function()
+				push_row(entry)
+				trim_visible_rows()
+				update_scroll()
+			end)
+		end
+
+		update_status_label()
+		return entry
+	end
+
+	local function log_response(entry, status, headers, body)
+		entry.completed = true
+		entry.response_status = status or 200
+		entry.response_headers = headers
+		entry.response_body = body
+
+		if selected_entry == entry then
+			task.spawn(show_details, entry)
+		end
+
+		if entry.update_ui then
+			task.spawn(entry.update_ui)
+		end
+	end
+
+	-- Hooking Functions
+	local function hook_request_func(req_name, req_func)
+		if typeof(req_func) ~= "function" then return end
+		if hooked_functions[req_name] then return end
+		if not hookfunction then return end
+
+		local orig
+		orig = hookfunction(req_func, function(options)
+			if not active or paused then
+				return orig(options)
+			end
+			if checkcaller and checkcaller() then
+				return orig(options)
+			end
+
+			local thread = coroutine.running()
+			if running_hooks[thread] then
+				return orig(options)
+			end
+
+			running_hooks[thread] = true
+
+			local method = options.Method or "GET"
+			local url = options.Url or ""
+			local headers = options.Headers
+			local body = options.Body
+
+			local entry = log_request(req_name, method, url, headers, body)
+
+			local success, response = pcall(orig, options)
+
+			running_hooks[thread] = nil
+
+			if not success then
+				log_response(entry, "Error", nil, tostring(response))
+				error(response)
+			end
+
+			if response and typeof(response) == "table" then
+				log_response(entry, response.StatusCode, response.Headers, response.Body)
+			else
+				log_response(entry, "Unknown", nil, tostring(response))
+			end
+
+			return response
+		end)
+
+		hooked_functions[req_name] = orig
+	end
+
+	local function hook_roblox_method(method_name, method_func, method_type)
+		if typeof(method_func) ~= "function" then return end
+		if hooked_functions[method_name] then return end
+		if not hookfunction then return end
+
+		local orig
+		orig = hookfunction(method_func, function(self, url, arg3, arg4)
+			if not active or paused then
+				return orig(self, url, arg3, arg4)
+			end
+			if typeof(self) ~= "Instance" or self ~= game then
+				return orig(self, url, arg3, arg4)
+			end
+			if checkcaller and checkcaller() then
+				return orig(self, url, arg3, arg4)
+			end
+
+			local thread = coroutine.running()
+			if running_hooks[thread] then
+				return orig(self, url, arg3, arg4)
+			end
+
+			running_hooks[thread] = true
+
+			local method = (method_type == "POST") and "POST" or "GET"
+			local body = (method_type == "POST") and arg3 or nil
+			local headers = (method_type == "POST" and arg4) and { ["Content-Type"] = arg4 } or nil
+
+			local entry = log_request(method_name, method, url, headers, body)
+
+			local success, response = pcall(orig, self, url, arg3, arg4)
+
+			running_hooks[thread] = nil
+
+			if not success then
+				log_response(entry, "Error", nil, tostring(response))
+				error(response)
+			end
+
+			log_response(entry, 200, nil, response)
+			return response
+		end)
+
+		hooked_functions[method_name] = orig
+	end
+
+	local function start_namecall_hook()
+		if not hookmetamethod or namecall_hook then return end
+
+		local ok, orig = pcall(hookmetamethod, game, "__namecall", function(self, ...)
+			if not active or paused then
+				return namecall_hook(self, ...)
+			end
+			if typeof(self) ~= "Instance" or self ~= game then
+				return namecall_hook(self, ...)
+			end
+			if checkcaller and checkcaller() then
+				return namecall_hook(self, ...)
+			end
+
+			local method = getnamecallmethod and getnamecallmethod() or ""
+			if method == "HttpGet" or method == "HttpGetAsync" or method == "HttpPost" or method == "HttpPostAsync" then
+				local thread = coroutine.running()
+				if running_hooks[thread] then
+					return namecall_hook(self, ...)
+				end
+
+				running_hooks[thread] = true
+
+				local url = ...
+				local is_post = method:find("HttpPost")
+				local req_method = is_post and "POST" or "GET"
+				local body = is_post and select(2, ...) or nil
+				local content_type = is_post and select(3, ...) or nil
+				local headers = content_type and { ["Content-Type"] = content_type } or nil
+
+				local entry = log_request(method, req_method, url, headers, body)
+
+				local results = table_pack(pcall(namecall_hook, self, ...))
+
+				running_hooks[thread] = nil
+
+				if not results[1] then
+					log_response(entry, "Error", nil, tostring(results[2]))
+					error(results[2])
+				end
+
+				log_response(entry, 200, nil, results[2])
+				return table.unpack(results, 2, results.n)
+			end
+
+			return namecall_hook(self, ...)
+		end)
+
+		if ok then
+			namecall_hook = orig
+		end
+	end
+
+	local function start()
+		if active then return end
+		active = true
+
+		-- Hook request variant closures
+		hook_request_func("request", request or (getgenv and getgenv().request))
+		hook_request_func("http_request", http_request or (getgenv and getgenv().http_request))
+		if syn and syn.request then
+			hook_request_func("syn.request", syn.request)
+		end
+		if http and http.request then
+			hook_request_func("http.request", http.request)
+		end
+
+		-- Hook Roblox HTTP methods
+		hook_roblox_method("HttpGet", game.HttpGet, "GET")
+		hook_roblox_method("HttpGetAsync", game.HttpGetAsync, "GET")
+		hook_roblox_method("HttpPost", game.HttpPost, "POST")
+		hook_roblox_method("HttpPostAsync", game.HttpPostAsync, "POST")
+
+		-- Metatable fallback hook
+		start_namecall_hook()
+
+		rebuild_list()
+	end
+
+	local function stop()
+		if not active then return end
+		active = false
+		rebuild_list()
+	end
+
+	local function make_btn(parent, text, x, w)
+		local btn = Instance.new("TextButton")
+		btn.BorderSizePixel  = 0
+		btn.Font             = Enum.Font.SourceSans
+		btn.TextSize         = 13
+		btn.Text             = text
+		btn.AutoButtonColor  = false
+		btn.Size             = UDim2.new(0, w, 0, 18)
+		btn.Position         = UDim2.new(0, x, 0, 2)
+		btn.Parent           = parent
+		if get_theme() then
+			get_theme().StyleButton(btn)
+		else
+			btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58)
+			btn.TextColor3       = Color3.fromRGB(238, 242, 247)
+			local c = Instance.new("UICorner", btn)
+			c.CornerRadius = UDim.new(0, 3)
+			btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(55, 63, 75) end)
+			btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Color3.fromRGB(43, 49, 58) end)
+		end
+		return btn
+	end
+
+	spy.Init = function()
+		window = lib_ref.Window.new()
+		window:SetTitle("HTTP Spy")
+		window:Resize(760, 460)
+		spy.Window = window
+
+		local toolbar = Instance.new("Frame")
+		toolbar.BackgroundColor3 = settings_ref.Theme.Menu
+		toolbar.BorderSizePixel  = 0
+		toolbar.Size             = UDim2.new(1, 0, 0, 26)
+		toolbar.Parent           = window.GuiElems.Content
+
+		local start_btn = make_btn(toolbar, "Start",  4,  58)
+		local stop_btn  = make_btn(toolbar, "Stop",   66, 50)
+		local clear_btn = make_btn(toolbar, "Clear",  122, 48)
+		local pause_btn = make_btn(toolbar, "Pause",  174, 50)
+		local copy_btn  = make_btn(toolbar, "Copy All", 228, 58)
+
+		status_label = Instance.new("TextLabel")
+		status_label.BackgroundTransparency = 1
+		status_label.Font       = get_theme() and get_theme().MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans
+		status_label.TextSize   = 12
+		status_label.TextColor3 = settings_ref.Theme.PlaceholderText
+		status_label.TextXAlignment = Enum.TextXAlignment.Right
+		status_label.Size       = UDim2.new(1, -300, 1, 0)
+		status_label.Position   = UDim2.new(0, 292, 0, 0)
+		status_label.Text       = "0 requests logged"
+		status_label.Parent     = toolbar
+
+		local search_bar = Instance.new("Frame")
+		search_bar.BackgroundColor3 = settings_ref.Theme.Main1
+		search_bar.BorderSizePixel  = 0
+		search_bar.Size             = UDim2.new(1, 0, 0, 26)
+		search_bar.Position         = UDim2.new(0, 0, 0, 26)
+		search_bar.Parent           = window.GuiElems.Content
+
+		local search_box = Instance.new("TextBox", search_bar)
+		search_box.BackgroundTransparency = 1
+		search_box.PlaceholderText  = "Filter path, method, or payload..."
+		search_box.PlaceholderColor3 = settings_ref.Theme.PlaceholderText
+		search_box.Text             = ""
+		search_box.Font             = Enum.Font.Code
+		search_box.TextSize         = 13
+		search_box.TextColor3       = settings_ref.Theme.Text
+		search_box.TextXAlignment   = Enum.TextXAlignment.Left
+		search_box.ClearTextOnFocus = false
+		search_box.Size             = UDim2.new(1, -14, 1, 0)
+		search_box.Position         = UDim2.new(0, 8, 0, 0)
+		search_box:GetPropertyChangedSignal("Text"):Connect(function()
+			filter_text = search_box.Text
+			rebuild_list()
+		end)
+
+		local body = Instance.new("Frame")
+		body.BackgroundColor3 = settings_ref.Theme.Main2
+		body.BorderSizePixel = 0
+		body.Position = UDim2.new(0, 0, 0, 52)
+		body.Size = UDim2.new(1, 0, 1, -52)
+		body.Parent = window.GuiElems.Content
+
+		local left_panel = Instance.new("Frame")
+		left_panel.BackgroundColor3 = settings_ref.Theme.Main1
+		left_panel.BorderSizePixel = 0
+		left_panel.Size = UDim2.new(0, 320, 1, 0)
+		left_panel.Parent = body
+
+		local list_container = Instance.new("Frame")
+		list_container.BackgroundColor3 = settings_ref.Theme.Main2
+		list_container.BorderSizePixel  = 0
+		list_container.Size             = UDim2.new(1, -16, 1, 0)
+		list_container.ClipsDescendants = true
+		list_container.Parent           = left_panel
+
+		list_frame = Instance.new("Frame")
+		list_frame.BackgroundTransparency = 1
+		list_frame.Size         = UDim2.new(1, 0, 0, 0)
+		list_frame.AutomaticSize = Enum.AutomaticSize.Y
+		list_frame.Parent       = list_container
+
+		local layout = Instance.new("UIListLayout", list_frame)
+		layout.SortOrder = Enum.SortOrder.LayoutOrder
+		layout.Padding   = UDim.new(0, 1)
+
+		empty_label = Instance.new("TextLabel", list_container)
+		empty_label.BackgroundTransparency = 1
+		empty_label.Size = UDim2.new(1, 0, 0, 48)
+		empty_label.Position = UDim2.new(0, 0, 0.5, -24)
+		empty_label.Font = get_theme() and get_theme().MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans
+		empty_label.TextSize = 14
+		empty_label.TextColor3 = settings_ref.Theme.PlaceholderText
+		empty_label.Text = "Start spy to capture HTTP traffic"
+		empty_label.Visible = true
+
+		scroll_v = lib_ref.ScrollBar.new()
+		scroll_v.WheelIncrement  = 3
+		scroll_v.Gui.Position    = UDim2.new(1, -16, 0, 0)
+		scroll_v.Gui.Size        = UDim2.new(0, 16, 1, 0)
+		scroll_v.Gui.Parent      = left_panel
+		scroll_v:SetScrollFrame(list_container)
+		scroll_v.Scrolled:Connect(function()
+			list_frame.Position = UDim2.new(0, 0, 0, -scroll_v.Index * 37)
+		end)
+
+		local split_line = Instance.new("Frame", body)
+		split_line.BackgroundColor3 = settings_ref.Theme.Outline1
+		split_line.BorderSizePixel = 0
+		split_line.Position = UDim2.new(0, 320, 0, 0)
+		split_line.Size = UDim2.new(0, 1, 1, 0)
+
+		local right_panel = Instance.new("Frame")
+		right_panel.BackgroundColor3 = settings_ref.Theme.Main2
+		right_panel.BorderSizePixel = 0
+		right_panel.Position = UDim2.new(0, 321, 0, 0)
+		right_panel.Size = UDim2.new(1, -321, 1, 0)
+		right_panel.Parent = body
+
+		inspector_scroll = Instance.new("ScrollingFrame")
+		inspector_scroll.Active = true
+		inspector_scroll.BackgroundTransparency = 1
+		inspector_scroll.BorderSizePixel = 0
+		inspector_scroll.Size = UDim2.new(1, -10, 1, -10)
+		inspector_scroll.Position = UDim2.new(0, 5, 0, 5)
+		inspector_scroll.ScrollBarImageColor3 = settings_ref.Theme.Highlight
+		inspector_scroll.ScrollBarThickness = 4
+		inspector_scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+		inspector_scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		inspector_scroll.Parent = right_panel
+
+		local inspector_layout = Instance.new("UIListLayout", inspector_scroll)
+		inspector_layout.SortOrder = Enum.SortOrder.LayoutOrder
+		inspector_layout.Padding = UDim.new(0, 10)
+
+		local function update_button_states()
+			if not start_btn then return end
+			local theme = settings_ref.Theme
+
+			if active then
+				start_btn.Text = paused and "Paused" or "Active"
+				start_btn.BackgroundColor3 = paused and Color3.fromRGB(234, 179, 8) or theme.ListSelection
+				stop_btn.Text = "Stop"
+				stop_btn.BackgroundColor3 = theme.Button
+			else
+				start_btn.Text = "Start"
+				start_btn.BackgroundColor3 = theme.Button
+				stop_btn.Text = "Stopped"
+				stop_btn.BackgroundColor3 = Color3.fromRGB(244, 63, 94)
+			end
+
+			pause_btn.Text = paused and "Resume" or "Pause"
+			pause_btn.BackgroundColor3 = paused and Color3.fromRGB(234, 179, 8) or theme.Button
+		end
+
+		start_btn.MouseButton1Click:Connect(function()
+			if not active then
+				start()
+				paused = false
+				update_button_states()
+			end
+		end)
+
+		stop_btn.MouseButton1Click:Connect(function()
+			if active then
+				stop()
+				paused = false
+				update_button_states()
+			end
+		end)
+
+		clear_btn.MouseButton1Click:Connect(function()
+			logs = {}
+			for _, f in ipairs(log_frames) do f:Destroy() end
+			log_frames = {}
+			table_clear(row_entry_map)
+			table_clear(pending_rows)
+			selected_entry = nil
+			update_status_label()
+			rebuild_list()
+			show_details(nil)
+		end)
+
+		pause_btn.MouseButton1Click:Connect(function()
+			if active then
+				paused = not paused
+				update_button_states()
+			end
+		end)
+
+		copy_btn.MouseButton1Click:Connect(function()
+			if not setclipboard then return end
+			local lines = {}
+			for _, e in ipairs(logs) do
+				lines[#lines + 1] = string.format("[%s] %s | %s %s | Status: %s",
+					e.time, e.source, e.method, e.url, tostring(e.response_status))
+			end
+			setclipboard(table.concat(lines, "\n"))
+		end)
+
+		update_button_states()
+		rebuild_list()
+		show_details(nil)
+
+		window.OnActivate:Connect(function()
+			if scroll_v then
+				scroll_v.TotalSpace   = #log_frames
+				scroll_v.VisibleSpace = math.floor(list_container.AbsoluteSize.Y / 37)
+				scroll_v:Update()
+			end
+		end)
+	end
+
+	return spy
+end
+
+return {
+	InitDeps      = initDeps,
+	InitAfterMain = initAfterMain,
+	Main          = main,
+	PluginData    = plugin_data,
+}
+]],
+	["LoadedModuleSpy.lua"] = [[
+local _main_ref, lib_ref, apps_ref, settings_ref, theme_ref
+
+local plugin_data = {
+	name         = "LoadedModuleSpy",
+	FriendlyName = "Loaded Modules",
+}
+
+local function initDeps(data)
+	_main_ref    = data.Main
+	lib_ref      = data.Lib
+	apps_ref     = data.Apps
+	settings_ref = data.Settings
+end
+
+local function initAfterMain(t)
+	theme_ref    = t.Theme
+end
+
+local function get_theme()
+	return theme_ref or (apps_ref and apps_ref.Theme)
+end
+
+local function inst_path(obj)
+	if not obj then return "?" end
+	local ok, path = pcall(function()
+		local parts, cur = {}, obj
+		while cur and cur ~= game do
+			table.insert(parts, 1, cur.Name)
+			cur = cur.Parent
+		end
+		table.insert(parts, 1, "game")
+		return table.concat(parts, ".")
+	end)
+	return ok and path or tostring(obj)
+end
+
+local function main()
+	local plugin = {}
+	plugin.PluginData = plugin_data
+
+	local modules = {}
+	local filtered_modules = {}
+	local log_frames = {}
+	local row_module_map = {}
+	local selected_module = nil
+	local filter_text = ""
+
+	local window, list_frame, scroll_v, status_label, empty_label
+	local path_box, decompile_btn, explore_btn, inspect_btn, error_label
+	local rebuild_list
+
+	local function scan_modules()
+		table.clear(modules)
+		
+		-- Try getloadedmodules
+		if env.getloadedmodules then
+			local ok, loaded = pcall(env.getloadedmodules)
+			if ok and typeof(loaded) == "table" then
+				for _, m in pairs(loaded) do
+					if typeof(m) == "Instance" and m:IsA("ModuleScript") then
+						table.insert(modules, m)
+					end
+				end
+			end
+		end
+		
+		-- Fallback/complementary: scan game descendants
+		if #modules == 0 then
+			local ok, descs = pcall(game.GetDescendants, game)
+			if ok then
+				for _, m in ipairs(descs) do
+					if typeof(m) == "Instance" and m:IsA("ModuleScript") then
+						table.insert(modules, m)
+					end
+				end
+			end
+			
+			-- Nil instances too
+			if env.getnilinstances then
+				local ok2, nils = pcall(env.getnilinstances)
+				if ok2 and typeof(nils) == "table" then
+					for _, m in pairs(nils) do
+						if typeof(m) == "Instance" and m:IsA("ModuleScript") then
+							table.insert(modules, m)
+						end
+					end
+				end
+			end
+		end
+		
+		-- Sort modules by name
+		table.sort(modules, function(a, b)
+			return a.Name:lower() < b.Name:lower()
+		end)
+	end
+
+	local function matches(m)
+		if filter_text == "" then return true end
+		local low = filter_text:lower()
+		return m.Name:lower():find(low, 1, true) or inst_path(m):lower():find(low, 1, true)
+	end
+
+	local function update_scroll()
+		if scroll_v then
+			scroll_v.TotalSpace = #log_frames
+			scroll_v.Index = math.max(0, #log_frames - scroll_v.VisibleSpace)
+			scroll_v:Update()
+		end
+	end
+
+	local function rebuild_list_highlights()
+		for _, row in ipairs(log_frames) do
+			local m = row_module_map[row]
+			if m == selected_module then
+				row.BackgroundColor3 = settings_ref.Theme.ListSelection
+			else
+				row.BackgroundColor3 = settings_ref.Theme.Main1
+			end
+		end
+	end
+
+	local function show_details(m)
+		selected_module = m
+		if not m then
+			path_box.Text = ""
+			decompile_btn.Active = false
+			decompile_btn.BackgroundColor3 = settings_ref.Theme.Main1
+			explore_btn.Active = false
+			explore_btn.BackgroundColor3 = settings_ref.Theme.Main1
+			inspect_btn.Active = false
+			inspect_btn.BackgroundColor3 = settings_ref.Theme.Main1
+			error_label.Text = ""
+			return
+		end
+		
+		path_box.Text = inst_path(m)
+		
+		decompile_btn.Active = true
+		decompile_btn.BackgroundColor3 = settings_ref.Theme.Button
+		explore_btn.Active = true
+		explore_btn.BackgroundColor3 = settings_ref.Theme.Button
+		inspect_btn.Active = true
+		inspect_btn.BackgroundColor3 = settings_ref.Theme.Button
+		error_label.Text = ""
+	end
+
+	local function push_row(m)
+		if not list_frame then return end
+		if empty_label then empty_label.Visible = false end
+		
+		local row = Instance.new("Frame")
+		row.BackgroundColor3 = settings_ref.Theme.Main1
+		row.BorderSizePixel  = 0
+		row.Size             = UDim2.new(1, 0, 0, 36)
+		row.ClipsDescendants = true
+		
+		local badge = Instance.new("Frame", row)
+		badge.BackgroundColor3 = Color3.fromRGB(139, 92, 246) -- Purple badge for ModuleScript
+		badge.BorderSizePixel  = 0
+		badge.Size             = UDim2.new(0, 3, 1, 0)
+		
+		local name_lbl = Instance.new("TextLabel", row)
+		name_lbl.BackgroundTransparency = 1
+		name_lbl.Position  = UDim2.new(0, 8, 0, 2)
+		name_lbl.Size      = UDim2.new(1, -16, 0, 16)
+		name_lbl.Font      = get_theme() and get_theme().MapFont(Enum.Font.SourceSansBold) or Enum.Font.SourceSansBold
+		name_lbl.TextSize  = 13
+		name_lbl.TextColor3 = settings_ref.Theme.Text
+		name_lbl.TextXAlignment = Enum.TextXAlignment.Left
+		name_lbl.Text = m.Name
+		
+		local path_lbl = Instance.new("TextLabel", row)
+		path_lbl.BackgroundTransparency = 1
+		path_lbl.Position  = UDim2.new(0, 8, 0, 18)
+		path_lbl.Size      = UDim2.new(1, -16, 0, 16)
+		path_lbl.Font      = Enum.Font.Code
+		path_lbl.TextSize  = 10
+		path_lbl.TextColor3 = settings_ref.Theme.PlaceholderText
+		path_lbl.TextXAlignment = Enum.TextXAlignment.Left
+		path_lbl.TextTruncate = Enum.TextTruncate.AtEnd
+		path_lbl.Text = inst_path(m)
+		
+		local separator = Instance.new("Frame", row)
+		separator.BackgroundColor3 = settings_ref.Theme.Outline1
+		separator.BorderSizePixel = 0
+		separator.Size = UDim2.new(1, 0, 0, 1)
+		separator.Position = UDim2.new(0, 0, 1, -1)
+		
+		row.InputBegan:Connect(function(i)
+			if i.UserInputType == Enum.UserInputType.MouseMovement then
+				row.BackgroundColor3 = selected_module == m and settings_ref.Theme.ListSelection or settings_ref.Theme.ButtonHover
+			elseif i.UserInputType == Enum.UserInputType.MouseButton1 then
+				selected_module = m
+				show_details(m)
+				rebuild_list_highlights()
+			end
+		end)
+		
+		row.InputEnded:Connect(function(i)
+			if i.UserInputType == Enum.UserInputType.MouseMovement then
+				row.BackgroundColor3 = selected_module == m and settings_ref.Theme.ListSelection or settings_ref.Theme.Main1
+			end
+		end)
+		
+		row.LayoutOrder = #log_frames + 1
+		row.Parent = list_frame
+		table.insert(log_frames, row)
+		row_module_map[row] = m
+	end
+
+	rebuild_list = function()
+		for _, f in ipairs(log_frames) do f:Destroy() end
+		log_frames = {}
+		table.clear(row_module_map)
+		
+		table.clear(filtered_modules)
+		for _, m in ipairs(modules) do
+			if matches(m) then
+				table.insert(filtered_modules, m)
+			end
+		end
+		
+		for _, m in ipairs(filtered_modules) do
+			push_row(m)
+		end
+		
+		if empty_label then
+			empty_label.Visible = #filtered_modules == 0
+			empty_label.Text = #modules == 0 and "No loaded ModuleScripts found" or "No modules match filter"
+		end
+		
+		if status_label then
+			status_label.Text = #modules .. " loaded modules (" .. #filtered_modules .. " filtered)"
+		end
+		
+		update_scroll()
+		rebuild_list_highlights()
+	end
+
+	local function make_btn(parent, text, y, h)
+		local btn = Instance.new("TextButton")
+		btn.BorderSizePixel  = 0
+		btn.Font             = Enum.Font.SourceSans
+		btn.TextSize         = 14
+		btn.Text             = text
+		btn.AutoButtonColor  = false
+		btn.Size             = UDim2.new(1, -20, 0, h)
+		btn.Position         = UDim2.new(0, 10, 0, y)
+		btn.Parent           = parent
+		if get_theme() then
+			get_theme().StyleButton(btn)
+		else
+			btn.BackgroundColor3 = settings_ref.Theme.Button
+			btn.TextColor3       = settings_ref.Theme.Text
+			local c = Instance.new("UICorner", btn)
+			c.CornerRadius = UDim.new(0, 4)
+			btn.MouseEnter:Connect(function() if btn.Active then btn.BackgroundColor3 = Color3.fromRGB(55, 63, 75) end end)
+			btn.MouseLeave:Connect(function() if btn.Active then btn.BackgroundColor3 = settings_ref.Theme.Button end end)
+		end
+		return btn
+	end
+
+	plugin.Init = function()
+		window = lib_ref.Window.new()
+		window:SetTitle("Loaded Modules")
+		window:Resize(720, 400)
+		plugin.Window = window
+
+		local toolbar = Instance.new("Frame")
+		toolbar.BackgroundColor3 = settings_ref.Theme.Menu
+		toolbar.BorderSizePixel  = 0
+		toolbar.Size             = UDim2.new(1, 0, 0, 26)
+		toolbar.Parent           = window.GuiElems.Content
+
+		local refresh_btn = Instance.new("TextButton")
+		refresh_btn.BorderSizePixel = 0
+		refresh_btn.Font = Enum.Font.SourceSans
+		refresh_btn.TextSize = 13
+		refresh_btn.Text = "Refresh"
+		refresh_btn.AutoButtonColor = false
+		refresh_btn.Size = UDim2.new(0, 64, 0, 18)
+		refresh_btn.Position = UDim2.new(0, 4, 0, 4)
+		refresh_btn.Parent = toolbar
+		if get_theme() then get_theme().StyleButton(refresh_btn) end
+
+		status_label = Instance.new("TextLabel")
+		status_label.BackgroundTransparency = 1
+		status_label.Font       = get_theme() and get_theme().MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans
+		status_label.TextSize   = 12
+		status_label.TextColor3 = settings_ref.Theme.PlaceholderText
+		status_label.TextXAlignment = Enum.TextXAlignment.Right
+		status_label.Size       = UDim2.new(1, -80, 1, 0)
+		status_label.Position   = UDim2.new(0, 72, 0, 0)
+		status_label.Text       = "0 loaded modules"
+		status_label.Parent     = toolbar
+
+		local search_bar = Instance.new("Frame")
+		search_bar.BackgroundColor3 = settings_ref.Theme.Main1
+		search_bar.BorderSizePixel  = 0
+		search_bar.Size             = UDim2.new(1, 0, 0, 26)
+		search_bar.Position         = UDim2.new(0, 0, 0, 26)
+		search_bar.Parent           = window.GuiElems.Content
+
+		local search_box = Instance.new("TextBox", search_bar)
+		search_box.BackgroundTransparency = 1
+		search_box.PlaceholderText  = "Search module name or path..."
+		search_box.PlaceholderColor3 = settings_ref.Theme.PlaceholderText
+		search_box.Text             = ""
+		search_box.Font             = Enum.Font.Code
+		search_box.TextSize         = 13
+		search_box.TextColor3       = settings_ref.Theme.Text
+		search_box.TextXAlignment   = Enum.TextXAlignment.Left
+		search_box.ClearTextOnFocus = false
+		search_box.Size             = UDim2.new(1, -14, 1, 0)
+		search_box.Position         = UDim2.new(0, 8, 0, 0)
+		search_box:GetPropertyChangedSignal("Text"):Connect(function()
+			filter_text = search_box.Text
+			rebuild_list()
+		end)
+
+		local body = Instance.new("Frame")
+		body.BackgroundColor3 = settings_ref.Theme.Main2
+		body.BorderSizePixel = 0
+		body.Position = UDim2.new(0, 0, 0, 52)
+		body.Size = UDim2.new(1, 0, 1, -52)
+		body.Parent = window.GuiElems.Content
+
+		local left_panel = Instance.new("Frame")
+		left_panel.BackgroundColor3 = settings_ref.Theme.Main1
+		left_panel.BorderSizePixel = 0
+		left_panel.Size = UDim2.new(0, 320, 1, 0)
+		left_panel.Parent = body
+
+		local list_container = Instance.new("Frame")
+		list_container.BackgroundColor3 = settings_ref.Theme.Main2
+		list_container.BorderSizePixel  = 0
+		list_container.Size             = UDim2.new(1, -16, 1, 0)
+		list_container.ClipsDescendants = true
+		list_container.Parent           = left_panel
+
+		list_frame = Instance.new("Frame")
+		list_frame.BackgroundTransparency = 1
+		list_frame.Size         = UDim2.new(1, 0, 0, 0)
+		list_frame.AutomaticSize = Enum.AutomaticSize.Y
+		list_frame.Parent       = list_container
+
+		local layout = Instance.new("UIListLayout", list_frame)
+		layout.SortOrder = Enum.SortOrder.LayoutOrder
+		layout.Padding   = UDim.new(0, 1)
+
+		empty_label = Instance.new("TextLabel", list_container)
+		empty_label.BackgroundTransparency = 1
+		empty_label.Size = UDim2.new(1, 0, 0, 48)
+		empty_label.Position = UDim2.new(0, 0, 0.5, -24)
+		empty_label.Font = get_theme() and get_theme().MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans
+		empty_label.TextSize = 14
+		empty_label.TextColor3 = settings_ref.Theme.PlaceholderText
+		empty_label.Text = "No loaded ModuleScripts found"
+		empty_label.Visible = true
+
+		scroll_v = lib_ref.ScrollBar.new()
+		scroll_v.WheelIncrement  = 3
+		scroll_v.Gui.Position    = UDim2.new(1, -16, 0, 0)
+		scroll_v.Gui.Size        = UDim2.new(0, 16, 1, 0)
+		scroll_v.Gui.Parent      = left_panel
+		scroll_v:SetScrollFrame(list_container)
+		scroll_v.Scrolled:Connect(function()
+			list_frame.Position = UDim2.new(0, 0, 0, -scroll_v.Index * 37)
+		end)
+
+		local split_line = Instance.new("Frame", body)
+		split_line.BackgroundColor3 = settings_ref.Theme.Outline1
+		split_line.BorderSizePixel = 0
+		split_line.Position = UDim2.new(0, 320, 0, 0)
+		split_line.Size = UDim2.new(0, 1, 1, 0)
+
+		local right_panel = Instance.new("Frame")
+		right_panel.BackgroundColor3 = settings_ref.Theme.Main2
+		right_panel.BorderSizePixel = 0
+		right_panel.Position = UDim2.new(0, 321, 0, 0)
+		right_panel.Size = UDim2.new(1, -321, 1, 0)
+		right_panel.Parent = body
+
+		local detail_lbl = Instance.new("TextLabel", right_panel)
+		detail_lbl.BackgroundTransparency = 1
+		detail_lbl.Position = UDim2.new(0, 10, 0, 10)
+		detail_lbl.Size = UDim2.new(1, -20, 0, 20)
+		detail_lbl.Font = get_theme() and get_theme().MapFont(Enum.Font.SourceSansBold) or Enum.Font.SourceSansBold
+		detail_lbl.TextSize = 14
+		detail_lbl.TextColor3 = settings_ref.Theme.Text
+		detail_lbl.TextXAlignment = Enum.TextXAlignment.Left
+		detail_lbl.Text = "Module Details"
+
+		path_box = Instance.new("TextBox", right_panel)
+		path_box.BackgroundColor3 = settings_ref.Theme.Main1
+		path_box.BorderSizePixel = 0
+		path_box.Position = UDim2.new(0, 10, 0, 35)
+		path_box.Size = UDim2.new(1, -20, 0, 32)
+		path_box.Font = Enum.Font.Code
+		path_box.TextSize = 11
+		path_box.TextColor3 = settings_ref.Theme.Text
+		path_box.TextEditable = false
+		path_box.ClearTextOnFocus = false
+		path_box.MultiLine = true
+		path_box.TextWrapped = true
+		path_box.Text = ""
+		path_box.TextXAlignment = Enum.TextXAlignment.Left
+		path_box.TextYAlignment = Enum.TextYAlignment.Center
+		local pad = Instance.new("UIPadding", path_box)
+		pad.PaddingLeft = UDim.new(0, 6)
+		pad.PaddingRight = UDim.new(0, 6)
+		if get_theme() then get_theme().ApplyRounding(path_box, 4) end
+
+		decompile_btn = make_btn(right_panel, "Decompile Source", 78, 28)
+		explore_btn   = make_btn(right_panel, "View in Explorer", 112, 28)
+		inspect_btn   = make_btn(right_panel, "Inspect Return Value", 146, 28)
+
+		error_label = Instance.new("TextLabel", right_panel)
+		error_label.BackgroundTransparency = 1
+		error_label.Position = UDim2.new(0, 10, 0, 185)
+		error_label.Size = UDim2.new(1, -20, 1, -195)
+		error_label.Font = get_theme() and get_theme().MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans
+		error_label.TextSize = 12
+		error_label.TextColor3 = Color3.fromRGB(239, 68, 68) -- red error
+		error_label.TextWrapped = true
+		error_label.TextXAlignment = Enum.TextXAlignment.Left
+		error_label.TextYAlignment = Enum.TextYAlignment.Top
+		error_label.Text = ""
+
+		-- Click Handlers
+		refresh_btn.MouseButton1Click:Connect(function()
+			scan_modules()
+			rebuild_list()
+			show_details(nil)
+		end)
+
+		decompile_btn.MouseButton1Click:Connect(function()
+			if not selected_module then return end
+			local sv = apps_ref.ScriptViewer
+			if sv and sv.ViewScript then
+				task.spawn(function()
+					sv.ViewScript(selected_module)
+					sv.Window:Show()
+				end)
+			end
+		end)
+
+		explore_btn.MouseButton1Click:Connect(function()
+			if not selected_module then return end
+			local exp = apps_ref.Explorer
+			if exp and exp.Nodes and exp.Selection then
+				local node = exp.Nodes[selected_module]
+				if node then
+					exp.MakeNodeVisible(node, true)
+					exp.Selection:Set(node)
+					exp.ViewNode(node)
+				end
+			end
+		end)
+
+		inspect_btn.MouseButton1Click:Connect(function()
+			if not selected_module then return end
+			error_label.Text = "Requiring module..."
+			error_label.TextColor3 = settings_ref.Theme.PlaceholderText
+			
+			task.spawn(function()
+				local success, result = pcall(require, selected_module)
+				if success then
+					error_label.Text = "Module loaded. Opening in Table Editor..."
+					error_label.TextColor3 = Color3.fromRGB(34, 197, 94) -- green success
+					
+					local te = apps_ref.TableEditor
+					if te and te.LoadTable then
+						te.LoadTable(result, selected_module.Name)
+						te.Window:Show()
+					else
+						error_label.Text = "Table Editor plugin not found/active."
+						error_label.TextColor3 = Color3.fromRGB(239, 68, 68)
+					end
+				else
+					error_label.Text = "Failed to require module:\n" .. tostring(result)
+					error_label.TextColor3 = Color3.fromRGB(239, 68, 68)
+				end
+			end)
+		end)
+
+		scan_modules()
+		rebuild_list()
+		show_details(nil)
+
+		window.OnActivate:Connect(function()
+			if scroll_v then
+				scroll_v.TotalSpace   = #log_frames
+				scroll_v.VisibleSpace = math.floor(list_container.AbsoluteSize.Y / 37)
+				scroll_v:Update()
+			end
+		end)
+	end
+
+	return plugin
+end
+
+return {
+	InitDeps      = initDeps,
+	InitAfterMain = initAfterMain,
+	Main          = main,
+	PluginData    = plugin_data,
+}
+]],
+	["MetatableHookManager.lua"] = [[
+local main_ref, lib_ref, apps_ref, settings_ref, env_ref, theme_ref
+
+local plugin_data = {
+	Name = "MetatableHookManager",
+	FriendlyName = "Metatable Hook Manager",
+}
+
+local function initDeps(data)
+	main_ref = data.Main
+	lib_ref = data.Lib
+	apps_ref = data.Apps
+	settings_ref = data.Settings
+	env_ref = data.env
+end
+
+local function initAfterMain(t)
+	theme_ref = t.Theme
+end
+
+local function get_theme()
+	return theme_ref or (apps_ref and apps_ref.Theme)
+end
+
+local table_clear = table.clear or function(t)
+	for k in pairs(t) do
+		t[k] = nil
+	end
+end
+
+local table_pack = table.pack or function(...)
+	return { n = select("#", ...), ... }
+end
+
+local function env_func(name)
+	local env = env_ref
+	if env and type(env[name]) == "function" then
+		return env[name]
+	end
+	if type(getfenv) == "function" then
+		local ok, value = pcall(function()
+			return getfenv()[name]
+		end)
+		if ok and type(value) == "function" then
+			return value
+		end
+	end
+	return nil
+end
+
+local function protect_closure(fn)
+	local newcclosure_fn = env_func("newcclosure")
+	if newcclosure_fn then
+		local ok, wrapped = pcall(newcclosure_fn, fn)
+		if ok and wrapped then
+			return wrapped
+		end
+	end
+	return fn
+end
+
+local function main()
+	local manager = {}
+	manager.PluginData = plugin_data
+
+	local hooks = {
+		__namecall = {
+			name = "__namecall",
+			enabled = true,
+			installed = false,
+			count = 0,
+			last = "never",
+			color = Color3.fromRGB(96, 165, 250),
+			error = "",
+		},
+		__index = {
+			name = "__index",
+			enabled = false,
+			installed = false,
+			count = 0,
+			last = "never",
+			color = Color3.fromRGB(34, 197, 94),
+			error = "",
+		},
+		__newindex = {
+			name = "__newindex",
+			enabled = true,
+			installed = false,
+			count = 0,
+			last = "never",
+			color = Color3.fromRGB(249, 115, 22),
+			error = "",
+		},
+	}
+	local hook_order = { "__namecall", "__index", "__newindex" }
+
+	local logs = {}
+	local log_frames = {}
+	local row_entry_map = {}
+	local selected_entry = nil
+	local running_hooks = {}
+	local filter_text = ""
+	local active = false
+	local paused = false
+	local refresh_scheduled = false
+	local dropped_logs = 0
+	local rate_window_start = 0
+	local rate_window_count = 0
+	local max_logs_per_second = 140
+	local log_limit = 320
+	local visible_log_limit = 90
+
+	local window, list_frame, scroll_v, status_label, empty_label, inspector_scroll, hook_panel, capability_label
+	local rebuild_list, render_hooks, show_details
+
+	local function checkcaller_safe()
+		local checkcaller_fn = env_func("checkcaller")
+		if not checkcaller_fn then
+			return false
+		end
+		local ok, result = pcall(checkcaller_fn)
+		return ok and result == true
+	end
+
+	local function getnamecallmethod_safe()
+		local getnamecallmethod_fn = env_func("getnamecallmethod")
+		if not getnamecallmethod_fn then
+			return "unknown"
+		end
+		local ok, result = pcall(getnamecallmethod_fn)
+		return ok and tostring(result) or "unknown"
+	end
+
+	local function get_caller()
+		local getcallingscript_fn = env_func("getcallingscript")
+		if not getcallingscript_fn then
+			return nil
+		end
+		local ok, caller = pcall(getcallingscript_fn)
+		if ok and typeof(caller) == "Instance" then
+			return caller
+		end
+		return nil
+	end
+
+	local function inst_path(obj)
+		if typeof(obj) ~= "Instance" then
+			return tostring(obj)
+		end
+		if main_ref and main_ref.SafeGetInstancePath then
+			local ok, path = pcall(main_ref.SafeGetInstancePath, obj)
+			if ok and path then
+				return tostring(path)
+			end
+		end
+		local ok, full = pcall(function()
+			return obj:GetFullName()
+		end)
+		if ok and full then
+			return "game." .. tostring(full)
+		end
+		local parts, cur = {}, obj
+		while cur and cur ~= game do
+			local ok_name, name = pcall(function()
+				return cur.Name
+			end)
+			table.insert(parts, 1, ok_name and name or "?")
+			local ok_parent, parent = pcall(function()
+				return cur.Parent
+			end)
+			cur = ok_parent and parent or nil
+		end
+		table.insert(parts, 1, "game")
+		return table.concat(parts, ".")
+	end
+
+	local function summarize_value(value, depth)
+		depth = depth or 0
+		local kind = typeof(value)
+		if kind == "Instance" then
+			local class_name = "Instance"
+			local ok_class, class = pcall(function()
+				return value.ClassName
+			end)
+			if ok_class then
+				class_name = class
+			end
+			return class_name .. ":" .. inst_path(value)
+		elseif kind == "string" then
+			local s = #value > 120 and value:sub(1, 120) .. "...(" .. #value .. ")" or value
+			return '"' .. s:gsub("\\", "\\\\"):gsub('"', '\\"'):gsub("\n", "\\n") .. '"'
+		elseif kind == "table" then
+			if depth >= 2 then
+				return "{...}"
+			end
+			local out, n = {}, 0
+			for k, v in pairs(value) do
+				n += 1
+				if n > 6 then
+					out[#out + 1] = "..."
+					break
+				end
+				out[#out + 1] = tostring(k) .. "=" .. summarize_value(v, depth + 1)
+			end
+			return "{" .. table.concat(out, ", ") .. "}"
+		elseif kind == "function" then
+			return "function"
+		elseif kind == "nil" then
+			return "nil"
+		end
+		return tostring(value)
+	end
+
+	local function summarize_args(args)
+		local n = args.n or #args
+		if n == 0 then
+			return "()"
+		end
+		local out = {}
+		for i = 1, math.min(n, 6) do
+			out[#out + 1] = summarize_value(args[i])
+		end
+		if n > 6 then
+			out[#out + 1] = "..."
+		end
+		return table.concat(out, ", ")
+	end
+
+	local function class_name_of(obj)
+		if typeof(obj) ~= "Instance" then
+			return typeof(obj)
+		end
+		local ok, class = pcall(function()
+			return obj.ClassName
+		end)
+		return ok and class or "Instance"
+	end
+
+	local function can_capture_log()
+		local now = os.clock()
+		if now - rate_window_start >= 1 then
+			rate_window_start = now
+			rate_window_count = 0
+		end
+		rate_window_count += 1
+		if rate_window_count > max_logs_per_second then
+			dropped_logs += 1
+			return false
+		end
+		return true
+	end
+
+	local function matches(entry)
+		if filter_text == "" then
+			return true
+		end
+		local low = filter_text:lower()
+		return entry.hook:lower():find(low, 1, true)
+			or entry.path:lower():find(low, 1, true)
+			or entry.action:lower():find(low, 1, true)
+			or entry.summary:lower():find(low, 1, true)
+			or entry.caller:lower():find(low, 1, true)
+	end
+
+	local function update_scroll()
+		if not scroll_v then
+			return
+		end
+		scroll_v.TotalSpace = #log_frames
+		scroll_v.Index = math.max(0, #log_frames - scroll_v.VisibleSpace)
+		scroll_v:Update()
+	end
+
+	local function update_status()
+		if not status_label then
+			return
+		end
+		local installed_count = 0
+		for _, name in ipairs(hook_order) do
+			if hooks[name].installed then
+				installed_count += 1
+			end
+		end
+		status_label.Text = string.format(
+			"%s | %d hooks installed | %d events%s",
+			active and (paused and "Paused" or "Capturing") or "Idle",
+			installed_count,
+			#logs,
+			dropped_logs > 0 and (" | dropped " .. dropped_logs) or ""
+		)
+	end
+
+	local function schedule_refresh()
+		if refresh_scheduled then
+			return
+		end
+		refresh_scheduled = true
+		task.delay(0.12, function()
+			refresh_scheduled = false
+			if render_hooks then
+				render_hooks()
+			end
+			if rebuild_list then
+				rebuild_list()
+			end
+			update_status()
+		end)
+	end
+
+	local function add_event(hook_name, target, action, summary, arg_count, extra)
+		if not active or paused then
+			return
+		end
+		if not hooks[hook_name] or not hooks[hook_name].enabled then
+			return
+		end
+		if checkcaller_safe() then
+			return
+		end
+		if not can_capture_log() then
+			return
+		end
+
+		local caller = get_caller()
+		local hook = hooks[hook_name]
+		hook.count += 1
+		hook.last = os.date("%H:%M:%S")
+
+		local entry = {
+			time = hook.last,
+			hook = hook_name,
+			path = inst_path(target),
+			class = class_name_of(target),
+			action = tostring(action or ""),
+			summary = tostring(summary or ""),
+			arg_count = arg_count or 0,
+			caller = caller and inst_path(caller) or "unknown",
+			extra = extra or "",
+		}
+
+		logs[#logs + 1] = entry
+		if #logs > log_limit then
+			table.remove(logs, 1)
+		end
+		schedule_refresh()
+	end
+
+	local function install_namecall_hook()
+		local hook = hooks.__namecall
+		if hook.installed then
+			return
+		end
+		local hookmetamethod_fn = env_func("hookmetamethod")
+		if not hookmetamethod_fn then
+			hook.error = "hookmetamethod unavailable"
+			return
+		end
+
+		local original
+		local ok, result = pcall(hookmetamethod_fn, game, "__namecall", protect_closure(function(self, ...)
+			local packed_args = table_pack(...)
+			if active and hook.enabled and typeof(self) == "Instance" then
+				local thread = coroutine.running()
+				if not running_hooks[thread] then
+					running_hooks[thread] = true
+					local ok_log = pcall(function()
+						local method = getnamecallmethod_safe()
+						add_event("__namecall", self, method .. "()", summarize_args(packed_args), packed_args.n)
+					end)
+					running_hooks[thread] = nil
+					if not ok_log then
+						dropped_logs += 1
+					end
+				end
+			end
+			return original(self, ...)
+		end))
+
+		if ok and result then
+			original = result
+			hook.installed = true
+			hook.error = ""
+		else
+			hook.error = tostring(result or "install failed")
+		end
+	end
+
+	local function install_index_hook()
+		local hook = hooks.__index
+		if hook.installed then
+			return
+		end
+		local hookmetamethod_fn = env_func("hookmetamethod")
+		if not hookmetamethod_fn then
+			hook.error = "hookmetamethod unavailable"
+			return
+		end
+
+		local original
+		local ok, result = pcall(hookmetamethod_fn, game, "__index", protect_closure(function(self, key)
+			if active and hook.enabled and typeof(self) == "Instance" then
+				local thread = coroutine.running()
+				if running_hooks[thread] then
+					return original(self, key)
+				end
+				running_hooks[thread] = true
+				local ok_call, value = pcall(original, self, key)
+				local ok_log = pcall(function()
+					add_event("__index", self, tostring(key), ok_call and summarize_value(value) or ("error: " .. tostring(value)), 1)
+				end)
+				running_hooks[thread] = nil
+				if not ok_log then
+					dropped_logs += 1
+				end
+				if not ok_call then
+					error(value, 0)
+				end
+				return value
+			end
+			return original(self, key)
+		end))
+
+		if ok and result then
+			original = result
+			hook.installed = true
+			hook.error = ""
+		else
+			hook.error = tostring(result or "install failed")
+		end
+	end
+
+	local function install_newindex_hook()
+		local hook = hooks.__newindex
+		if hook.installed then
+			return
+		end
+		local hookmetamethod_fn = env_func("hookmetamethod")
+		if not hookmetamethod_fn then
+			hook.error = "hookmetamethod unavailable"
+			return
+		end
+
+		local original
+		local ok, result = pcall(hookmetamethod_fn, game, "__newindex", protect_closure(function(self, key, value)
+			if active and hook.enabled and typeof(self) == "Instance" then
+				local thread = coroutine.running()
+				if running_hooks[thread] then
+					return original(self, key, value)
+				end
+				running_hooks[thread] = true
+				local ok_log = pcall(function()
+					add_event("__newindex", self, tostring(key), summarize_value(value), 1)
+				end)
+				running_hooks[thread] = nil
+				if not ok_log then
+					dropped_logs += 1
+				end
+			end
+			return original(self, key, value)
+		end))
+
+		if ok and result then
+			original = result
+			hook.installed = true
+			hook.error = ""
+		else
+			hook.error = tostring(result or "install failed")
+		end
+	end
+
+	local function install_hooks()
+		install_namecall_hook()
+		install_index_hook()
+		install_newindex_hook()
+	end
+
+	local function clear_log_rows()
+		for _, row in ipairs(log_frames) do
+			row_entry_map[row] = nil
+			row:Destroy()
+		end
+		log_frames = {}
+	end
+
+	local function rebuild_list_highlights()
+		for _, row in ipairs(log_frames) do
+			local entry = row_entry_map[row]
+			row.BackgroundColor3 = entry == selected_entry and settings_ref.Theme.ListSelection or settings_ref.Theme.Main1
+		end
+	end
+
+	local function push_row(entry)
+		if not list_frame then
+			return
+		end
+		if empty_label then
+			empty_label.Visible = false
+		end
+
+		local hook = hooks[entry.hook]
+		local col = hook and hook.color or settings_ref.Theme.Highlight
+
+		local row = Instance.new("TextButton")
+		row.AutoButtonColor = false
+		row.BackgroundColor3 = entry == selected_entry and settings_ref.Theme.ListSelection or settings_ref.Theme.Main1
+		row.BorderSizePixel = 0
+		row.Size = UDim2.new(1, 0, 0, 42)
+		row.Text = ""
+		row.ClipsDescendants = true
+
+		local badge = Instance.new("Frame", row)
+		badge.BackgroundColor3 = col
+		badge.BorderSizePixel = 0
+		badge.Size = UDim2.new(0, 3, 1, 0)
+
+		local time_lbl = Instance.new("TextLabel", row)
+		time_lbl.BackgroundTransparency = 1
+		time_lbl.Position = UDim2.new(0, 8, 0, 0)
+		time_lbl.Size = UDim2.new(0, 58, 0, 18)
+		time_lbl.Font = Enum.Font.Code
+		time_lbl.TextSize = 11
+		time_lbl.TextColor3 = settings_ref.Theme.PlaceholderText
+		time_lbl.TextXAlignment = Enum.TextXAlignment.Left
+		time_lbl.Text = entry.time
+
+		local hook_lbl = Instance.new("TextLabel", row)
+		hook_lbl.BackgroundTransparency = 1
+		hook_lbl.Position = UDim2.new(0, 68, 0, 0)
+		hook_lbl.Size = UDim2.new(0, 92, 0, 18)
+		hook_lbl.Font = get_theme() and get_theme().MapFont(Enum.Font.SourceSansBold) or Enum.Font.SourceSansBold
+		hook_lbl.TextSize = 13
+		hook_lbl.TextColor3 = col
+		hook_lbl.TextXAlignment = Enum.TextXAlignment.Left
+		hook_lbl.Text = entry.hook
+
+		local action_lbl = Instance.new("TextLabel", row)
+		action_lbl.BackgroundTransparency = 1
+		action_lbl.Position = UDim2.new(0, 162, 0, 0)
+		action_lbl.Size = UDim2.new(1, -168, 0, 18)
+		action_lbl.Font = Enum.Font.Code
+		action_lbl.TextSize = 12
+		action_lbl.TextColor3 = settings_ref.Theme.Text
+		action_lbl.TextXAlignment = Enum.TextXAlignment.Left
+		action_lbl.TextTruncate = Enum.TextTruncate.AtEnd
+		action_lbl.Text = entry.action
+
+		local path_lbl = Instance.new("TextLabel", row)
+		path_lbl.BackgroundTransparency = 1
+		path_lbl.Position = UDim2.new(0, 8, 0, 20)
+		path_lbl.Size = UDim2.new(0.55, -8, 0, 18)
+		path_lbl.Font = Enum.Font.Code
+		path_lbl.TextSize = 11
+		path_lbl.TextColor3 = settings_ref.Theme.PlaceholderText
+		path_lbl.TextXAlignment = Enum.TextXAlignment.Left
+		path_lbl.TextTruncate = Enum.TextTruncate.AtEnd
+		path_lbl.Text = entry.path
+
+		local summary_lbl = Instance.new("TextLabel", row)
+		summary_lbl.BackgroundTransparency = 1
+		summary_lbl.Position = UDim2.new(0.55, 0, 0, 20)
+		summary_lbl.Size = UDim2.new(0.45, -8, 0, 18)
+		summary_lbl.Font = Enum.Font.Code
+		summary_lbl.TextSize = 11
+		summary_lbl.TextColor3 = settings_ref.Theme.Syntax.Number or Color3.fromRGB(210, 210, 140)
+		summary_lbl.TextXAlignment = Enum.TextXAlignment.Right
+		summary_lbl.TextTruncate = Enum.TextTruncate.AtEnd
+		summary_lbl.Text = entry.summary
+
+		local separator = Instance.new("Frame", row)
+		separator.BackgroundColor3 = settings_ref.Theme.Outline1
+		separator.BorderSizePixel = 0
+		separator.Size = UDim2.new(1, 0, 0, 1)
+		separator.Position = UDim2.new(0, 0, 1, -1)
+
+		row.MouseEnter:Connect(function()
+			if selected_entry ~= entry then
+				row.BackgroundColor3 = settings_ref.Theme.ButtonHover
+			end
+		end)
+		row.MouseLeave:Connect(function()
+			if selected_entry ~= entry then
+				row.BackgroundColor3 = settings_ref.Theme.Main1
+			end
+		end)
+		row.InputBegan:Connect(function(input)
+			if input.UserInputType == Enum.UserInputType.MouseButton1 then
+				selected_entry = entry
+				if show_details then
+					show_details(entry)
+				end
+				rebuild_list_highlights()
+			elseif input.UserInputType == Enum.UserInputType.MouseButton2 and setclipboard then
+				setclipboard(entry.path)
+			end
+		end)
+
+		row.LayoutOrder = #log_frames + 1
+		row.Parent = list_frame
+		log_frames[#log_frames + 1] = row
+		row_entry_map[row] = entry
+	end
+
+	rebuild_list = function()
+		if not list_frame then
+			return
+		end
+		clear_log_rows()
+
+		local matched = {}
+		for i = #logs, 1, -1 do
+			local entry = logs[i]
+			if matches(entry) then
+				table.insert(matched, 1, entry)
+				if #matched >= visible_log_limit then
+					break
+				end
+			end
+		end
+
+		for _, entry in ipairs(matched) do
+			push_row(entry)
+		end
+
+		if empty_label then
+			empty_label.Visible = #matched == 0
+			empty_label.Text = filter_text ~= "" and "No hook events match filter" or "Start capture to visualize metatable activity"
+		end
+
+		update_scroll()
+		rebuild_list_highlights()
+	end
+
+	local function create_detail_block(title, text, order)
+		local frame = Instance.new("Frame")
+		frame.BackgroundTransparency = 1
+		frame.Size = UDim2.new(1, 0, 0, 0)
+		frame.AutomaticSize = Enum.AutomaticSize.Y
+		frame.LayoutOrder = order
+		frame.Parent = inspector_scroll
+
+		local title_lbl = Instance.new("TextLabel", frame)
+		title_lbl.BackgroundTransparency = 1
+		title_lbl.Size = UDim2.new(1, -54, 0, 19)
+		title_lbl.Font = get_theme() and get_theme().MapFont(Enum.Font.SourceSansBold) or Enum.Font.SourceSansBold
+		title_lbl.TextSize = 12
+		title_lbl.TextColor3 = settings_ref.Theme.PlaceholderText
+		title_lbl.TextXAlignment = Enum.TextXAlignment.Left
+		title_lbl.Text = title
+
+		local copy_btn = Instance.new("TextButton", frame)
+		copy_btn.AutoButtonColor = false
+		copy_btn.Position = UDim2.new(1, -50, 0, 0)
+		copy_btn.Size = UDim2.new(0, 48, 0, 18)
+		copy_btn.Font = Enum.Font.SourceSans
+		copy_btn.TextSize = 12
+		copy_btn.Text = "Copy"
+		if get_theme() then
+			get_theme().StyleButton(copy_btn)
+		else
+			copy_btn.BackgroundColor3 = settings_ref.Theme.Button
+			copy_btn.TextColor3 = settings_ref.Theme.Text
+		end
+
+		local box = Instance.new("TextBox", frame)
+		box.BackgroundColor3 = settings_ref.Theme.Main1
+		box.BorderSizePixel = 0
+		box.ClearTextOnFocus = false
+		box.MultiLine = true
+		box.TextEditable = false
+		box.TextWrapped = true
+		box.TextXAlignment = Enum.TextXAlignment.Left
+		box.TextYAlignment = Enum.TextYAlignment.Top
+		box.Position = UDim2.new(0, 0, 0, 21)
+		box.Size = UDim2.new(1, 0, 0, math.max(44, math.min(130, 26 + math.ceil(#text / 58) * 14)))
+		box.Font = Enum.Font.Code
+		box.TextSize = 11
+		box.TextColor3 = settings_ref.Theme.Text
+		box.Text = text
+
+		local pad = Instance.new("UIPadding", box)
+		pad.PaddingLeft = UDim.new(0, 6)
+		pad.PaddingRight = UDim.new(0, 6)
+		pad.PaddingTop = UDim.new(0, 5)
+		pad.PaddingBottom = UDim.new(0, 5)
+
+		if get_theme() then
+			get_theme().ApplyRounding(box, 4)
+		end
+
+		copy_btn.MouseButton1Click:Connect(function()
+			if setclipboard then
+				setclipboard(text)
+				copy_btn.Text = "Copied"
+				task.delay(0.8, function()
+					if copy_btn then
+						copy_btn.Text = "Copy"
+					end
+				end)
+			end
+		end)
+	end
+
+	show_details = function(entry)
+		if not inspector_scroll then
+			return
+		end
+		for _, child in ipairs(inspector_scroll:GetChildren()) do
+			if not child:IsA("UIListLayout") then
+				child:Destroy()
+			end
+		end
+
+		if not entry then
+			local placeholder = Instance.new("TextLabel", inspector_scroll)
+			placeholder.BackgroundTransparency = 1
+			placeholder.Size = UDim2.new(1, 0, 0, 50)
+			placeholder.Font = get_theme() and get_theme().MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans
+			placeholder.TextSize = 14
+			placeholder.TextColor3 = settings_ref.Theme.PlaceholderText
+			placeholder.Text = "Select a hook event to inspect"
+			return
+		end
+
+		local meta = table.concat({
+			"Time: " .. entry.time,
+			"Hook: " .. entry.hook,
+			"Action: " .. entry.action,
+			"Class: " .. entry.class,
+			"Arg count: " .. tostring(entry.arg_count),
+			"Caller: " .. entry.caller,
+		}, "\n")
+
+		create_detail_block("Event", meta, 1)
+		create_detail_block("Target", entry.path, 2)
+		create_detail_block("Value / Args", entry.summary, 3)
+	end
+
+	render_hooks = function()
+		if not hook_panel then
+			return
+		end
+		for _, child in ipairs(hook_panel:GetChildren()) do
+			if not child:IsA("UIListLayout") then
+				child:Destroy()
+			end
+		end
+
+		for i, name in ipairs(hook_order) do
+			local hook = hooks[name]
+			local row = Instance.new("TextButton")
+			row.AutoButtonColor = false
+			row.BackgroundColor3 = hook.enabled and settings_ref.Theme.Main2 or settings_ref.Theme.Main1
+			row.BorderSizePixel = 0
+			row.Size = UDim2.new(1, -8, 0, 56)
+			row.Text = ""
+			row.LayoutOrder = i
+			row.Parent = hook_panel
+			if get_theme() then
+				get_theme().ApplyRounding(row, 4)
+			end
+
+			local badge = Instance.new("Frame", row)
+			badge.BackgroundColor3 = hook.enabled and hook.color or settings_ref.Theme.Outline2
+			badge.BorderSizePixel = 0
+			badge.Size = UDim2.new(0, 4, 1, 0)
+
+			local name_lbl = Instance.new("TextLabel", row)
+			name_lbl.BackgroundTransparency = 1
+			name_lbl.Position = UDim2.new(0, 10, 0, 3)
+			name_lbl.Size = UDim2.new(1, -20, 0, 18)
+			name_lbl.Font = get_theme() and get_theme().MapFont(Enum.Font.SourceSansBold) or Enum.Font.SourceSansBold
+			name_lbl.TextSize = 14
+			name_lbl.TextColor3 = hook.enabled and settings_ref.Theme.Text or settings_ref.Theme.PlaceholderText
+			name_lbl.TextXAlignment = Enum.TextXAlignment.Left
+			name_lbl.Text = hook.name
+
+			local state_lbl = Instance.new("TextLabel", row)
+			state_lbl.BackgroundTransparency = 1
+			state_lbl.Position = UDim2.new(0, 10, 0, 22)
+			state_lbl.Size = UDim2.new(1, -20, 0, 15)
+			state_lbl.Font = Enum.Font.Code
+			state_lbl.TextSize = 11
+			state_lbl.TextColor3 = hook.installed and hook.color or settings_ref.Theme.PlaceholderText
+			state_lbl.TextXAlignment = Enum.TextXAlignment.Left
+			local state_text = hook.installed and "installed" or "not installed"
+			if hook.error ~= "" then
+				state_text = hook.error
+			end
+			state_lbl.Text = (hook.enabled and "capture on | " or "capture off | ") .. state_text
+
+			local count_lbl = Instance.new("TextLabel", row)
+			count_lbl.BackgroundTransparency = 1
+			count_lbl.Position = UDim2.new(0, 10, 0, 38)
+			count_lbl.Size = UDim2.new(1, -20, 0, 15)
+			count_lbl.Font = Enum.Font.Code
+			count_lbl.TextSize = 11
+			count_lbl.TextColor3 = settings_ref.Theme.PlaceholderText
+			count_lbl.TextXAlignment = Enum.TextXAlignment.Left
+			count_lbl.Text = tostring(hook.count) .. " events | last " .. hook.last
+
+			row.MouseButton1Click:Connect(function()
+				hook.enabled = not hook.enabled
+				if active and hook.enabled then
+					install_hooks()
+				end
+				render_hooks()
+				update_status()
+			end)
+		end
+
+		if capability_label then
+			local caps = {
+				(env_func("hookmetamethod") and "hookmetamethod OK" or "hookmetamethod missing"),
+				(env_func("getnamecallmethod") and "getnamecallmethod OK" or "getnamecallmethod missing"),
+				(env_func("checkcaller") and "checkcaller OK" or "checkcaller missing"),
+				(env_func("getcallingscript") and "getcallingscript OK" or "getcallingscript missing"),
+			}
+			capability_label.Text = table.concat(caps, "\n")
+		end
+	end
+
+	local function make_btn(parent, text, x, w)
+		local btn = Instance.new("TextButton")
+		btn.BorderSizePixel = 0
+		btn.Font = Enum.Font.SourceSans
+		btn.TextSize = 13
+		btn.Text = text
+		btn.AutoButtonColor = false
+		btn.Size = UDim2.new(0, w, 0, 18)
+		btn.Position = UDim2.new(0, x, 0, 4)
+		btn.Parent = parent
+		if get_theme() then
+			get_theme().StyleButton(btn)
+		else
+			btn.BackgroundColor3 = settings_ref.Theme.Button
+			btn.TextColor3 = settings_ref.Theme.Text
+		end
+		return btn
+	end
+
+	local function update_button_states(start_btn, stop_btn, pause_btn)
+		local theme = settings_ref.Theme
+		if active then
+			start_btn.Text = paused and "Paused" or "Active"
+			start_btn.BackgroundColor3 = paused and Color3.fromRGB(234, 179, 8) or theme.ListSelection
+			stop_btn.Text = "Stop"
+			stop_btn.BackgroundColor3 = theme.Button
+		else
+			start_btn.Text = "Start"
+			start_btn.BackgroundColor3 = theme.Button
+			stop_btn.Text = "Stopped"
+			stop_btn.BackgroundColor3 = Color3.fromRGB(244, 63, 94)
+		end
+		pause_btn.Text = paused and "Resume" or "Pause"
+		pause_btn.BackgroundColor3 = paused and Color3.fromRGB(234, 179, 8) or theme.Button
+		update_status()
+	end
+
+	manager.Init = function()
+		window = lib_ref.Window.new()
+		window:SetTitle("Metatable Hook Manager")
+		window:Resize(860, 500)
+		manager.Window = window
+
+		local content = window.GuiElems.Content
+
+		local toolbar = Instance.new("Frame")
+		toolbar.BackgroundColor3 = settings_ref.Theme.Menu
+		toolbar.BorderSizePixel = 0
+		toolbar.Size = UDim2.new(1, 0, 0, 26)
+		toolbar.Parent = content
+
+		local start_btn = make_btn(toolbar, "Start", 4, 58)
+		local stop_btn = make_btn(toolbar, "Stop", 66, 58)
+		local pause_btn = make_btn(toolbar, "Pause", 128, 58)
+		local clear_btn = make_btn(toolbar, "Clear", 190, 54)
+		local copy_btn = make_btn(toolbar, "Copy", 248, 54)
+
+		status_label = Instance.new("TextLabel")
+		status_label.BackgroundTransparency = 1
+		status_label.Position = UDim2.new(0, 310, 0, 0)
+		status_label.Size = UDim2.new(1, -318, 1, 0)
+		status_label.Font = get_theme() and get_theme().MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans
+		status_label.TextSize = 12
+		status_label.TextColor3 = settings_ref.Theme.PlaceholderText
+		status_label.TextXAlignment = Enum.TextXAlignment.Right
+		status_label.Text = "Idle"
+		status_label.Parent = toolbar
+
+		local search_bar = Instance.new("Frame")
+		search_bar.BackgroundColor3 = settings_ref.Theme.Main1
+		search_bar.BorderSizePixel = 0
+		search_bar.Position = UDim2.new(0, 0, 0, 26)
+		search_bar.Size = UDim2.new(1, 0, 0, 26)
+		search_bar.Parent = content
+
+		local search_box = Instance.new("TextBox", search_bar)
+		search_box.BackgroundTransparency = 1
+		search_box.ClearTextOnFocus = false
+		search_box.Font = Enum.Font.Code
+		search_box.PlaceholderColor3 = settings_ref.Theme.PlaceholderText
+		search_box.PlaceholderText = "filter hook, target, action, value, or caller"
+		search_box.Position = UDim2.new(0, 8, 0, 0)
+		search_box.Size = UDim2.new(1, -16, 1, 0)
+		search_box.Text = ""
+		search_box.TextColor3 = settings_ref.Theme.Text
+		search_box.TextSize = 13
+		search_box.TextXAlignment = Enum.TextXAlignment.Left
+		search_box.Parent = search_bar
+		search_box:GetPropertyChangedSignal("Text"):Connect(function()
+			filter_text = search_box.Text
+			rebuild_list()
+		end)
+
+		local body = Instance.new("Frame")
+		body.BackgroundColor3 = settings_ref.Theme.Main2
+		body.BorderSizePixel = 0
+		body.Position = UDim2.new(0, 0, 0, 52)
+		body.Size = UDim2.new(1, 0, 1, -52)
+		body.Parent = content
+
+		local left_panel = Instance.new("Frame")
+		left_panel.BackgroundColor3 = settings_ref.Theme.Main1
+		left_panel.BorderSizePixel = 0
+		left_panel.Size = UDim2.new(0, 226, 1, 0)
+		left_panel.Parent = body
+
+		local left_title = Instance.new("TextLabel", left_panel)
+		left_title.BackgroundTransparency = 1
+		left_title.Position = UDim2.new(0, 8, 0, 0)
+		left_title.Size = UDim2.new(1, -16, 0, 26)
+		left_title.Font = get_theme() and get_theme().MapFont(Enum.Font.SourceSansBold) or Enum.Font.SourceSansBold
+		left_title.TextSize = 14
+		left_title.TextColor3 = settings_ref.Theme.Text
+		left_title.TextXAlignment = Enum.TextXAlignment.Left
+		left_title.Text = "Hook controls"
+
+		hook_panel = Instance.new("Frame")
+		hook_panel.BackgroundTransparency = 1
+		hook_panel.Position = UDim2.new(0, 4, 0, 30)
+		hook_panel.Size = UDim2.new(1, -4, 0, 176)
+		hook_panel.Parent = left_panel
+
+		local hook_layout = Instance.new("UIListLayout", hook_panel)
+		hook_layout.SortOrder = Enum.SortOrder.LayoutOrder
+		hook_layout.Padding = UDim.new(0, 6)
+
+		capability_label = Instance.new("TextLabel", left_panel)
+		capability_label.BackgroundColor3 = settings_ref.Theme.Main2
+		capability_label.BorderSizePixel = 0
+		capability_label.Position = UDim2.new(0, 8, 0, 218)
+		capability_label.Size = UDim2.new(1, -16, 0, 88)
+		capability_label.Font = Enum.Font.Code
+		capability_label.TextSize = 11
+		capability_label.TextColor3 = settings_ref.Theme.PlaceholderText
+		capability_label.TextXAlignment = Enum.TextXAlignment.Left
+		capability_label.TextYAlignment = Enum.TextYAlignment.Top
+		capability_label.TextWrapped = true
+		if get_theme() then
+			get_theme().ApplyRounding(capability_label, 4)
+		end
+
+		local left_note = Instance.new("TextLabel", left_panel)
+		left_note.BackgroundTransparency = 1
+		left_note.Position = UDim2.new(0, 8, 0, 316)
+		left_note.Size = UDim2.new(1, -16, 0, 78)
+		left_note.Font = get_theme() and get_theme().MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans
+		left_note.TextSize = 12
+		left_note.TextColor3 = settings_ref.Theme.PlaceholderText
+		left_note.TextWrapped = true
+		left_note.TextXAlignment = Enum.TextXAlignment.Left
+		left_note.TextYAlignment = Enum.TextYAlignment.Top
+		left_note.Text = "Click a hook card to toggle capture. Stop disables capture, but installed metamethod chains stay passive."
+
+		local split_left = Instance.new("Frame", body)
+		split_left.BackgroundColor3 = settings_ref.Theme.Outline1
+		split_left.BorderSizePixel = 0
+		split_left.Position = UDim2.new(0, 226, 0, 0)
+		split_left.Size = UDim2.new(0, 1, 1, 0)
+
+		local list_panel = Instance.new("Frame")
+		list_panel.BackgroundColor3 = settings_ref.Theme.Main2
+		list_panel.BorderSizePixel = 0
+		list_panel.Position = UDim2.new(0, 227, 0, 0)
+		list_panel.Size = UDim2.new(0, 384, 1, 0)
+		list_panel.Parent = body
+
+		local list_container = Instance.new("Frame")
+		list_container.BackgroundColor3 = settings_ref.Theme.Main2
+		list_container.BorderSizePixel = 0
+		list_container.ClipsDescendants = true
+		list_container.Size = UDim2.new(1, -16, 1, 0)
+		list_container.Parent = list_panel
+
+		list_frame = Instance.new("Frame")
+		list_frame.BackgroundTransparency = 1
+		list_frame.Size = UDim2.new(1, 0, 0, 0)
+		list_frame.AutomaticSize = Enum.AutomaticSize.Y
+		list_frame.Parent = list_container
+
+		local list_layout = Instance.new("UIListLayout", list_frame)
+		list_layout.SortOrder = Enum.SortOrder.LayoutOrder
+		list_layout.Padding = UDim.new(0, 1)
+
+		empty_label = Instance.new("TextLabel", list_container)
+		empty_label.BackgroundTransparency = 1
+		empty_label.Position = UDim2.new(0, 0, 0.5, -24)
+		empty_label.Size = UDim2.new(1, 0, 0, 48)
+		empty_label.Font = get_theme() and get_theme().MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans
+		empty_label.TextSize = 14
+		empty_label.TextColor3 = settings_ref.Theme.PlaceholderText
+		empty_label.Text = "Start capture to visualize metatable activity"
+		empty_label.Visible = true
+		empty_label.Parent = list_container
+
+		scroll_v = lib_ref.ScrollBar.new()
+		scroll_v.WheelIncrement = 3
+		scroll_v.Gui.Position = UDim2.new(1, -16, 0, 0)
+		scroll_v.Gui.Size = UDim2.new(0, 16, 1, 0)
+		scroll_v.Gui.Parent = list_panel
+		scroll_v:SetScrollFrame(list_container)
+		scroll_v.Scrolled:Connect(function()
+			list_frame.Position = UDim2.new(0, 0, 0, -scroll_v.Index * 43)
+		end)
+
+		local split_right = Instance.new("Frame", body)
+		split_right.BackgroundColor3 = settings_ref.Theme.Outline1
+		split_right.BorderSizePixel = 0
+		split_right.Position = UDim2.new(0, 611, 0, 0)
+		split_right.Size = UDim2.new(0, 1, 1, 0)
+
+		local right_panel = Instance.new("Frame")
+		right_panel.BackgroundColor3 = settings_ref.Theme.Main2
+		right_panel.BorderSizePixel = 0
+		right_panel.Position = UDim2.new(0, 612, 0, 0)
+		right_panel.Size = UDim2.new(1, -612, 1, 0)
+		right_panel.Parent = body
+
+		inspector_scroll = Instance.new("ScrollingFrame")
+		inspector_scroll.Active = true
+		inspector_scroll.BackgroundTransparency = 1
+		inspector_scroll.BorderSizePixel = 0
+		inspector_scroll.Position = UDim2.new(0, 6, 0, 6)
+		inspector_scroll.Size = UDim2.new(1, -12, 1, -12)
+		inspector_scroll.ScrollBarImageColor3 = settings_ref.Theme.Highlight
+		inspector_scroll.ScrollBarThickness = 4
+		inspector_scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+		inspector_scroll.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		inspector_scroll.Parent = right_panel
+
+		local inspector_layout = Instance.new("UIListLayout", inspector_scroll)
+		inspector_layout.SortOrder = Enum.SortOrder.LayoutOrder
+		inspector_layout.Padding = UDim.new(0, 10)
+
+		start_btn.MouseButton1Click:Connect(function()
+			if not active then
+				active = true
+				paused = false
+				rate_window_start = os.clock()
+				rate_window_count = 0
+				install_hooks()
+				update_button_states(start_btn, stop_btn, pause_btn)
+				render_hooks()
+			end
+		end)
+
+		stop_btn.MouseButton1Click:Connect(function()
+			if active then
+				active = false
+				paused = false
+				update_button_states(start_btn, stop_btn, pause_btn)
+				render_hooks()
+			end
+		end)
+
+		pause_btn.MouseButton1Click:Connect(function()
+			if active then
+				paused = not paused
+				update_button_states(start_btn, stop_btn, pause_btn)
+			end
+		end)
+
+		clear_btn.MouseButton1Click:Connect(function()
+			logs = {}
+			clear_log_rows()
+			table_clear(row_entry_map)
+			selected_entry = nil
+			dropped_logs = 0
+			for _, name in ipairs(hook_order) do
+				hooks[name].count = 0
+				hooks[name].last = "never"
+			end
+			rebuild_list()
+			render_hooks()
+			show_details(nil)
+			update_status()
+		end)
+
+		copy_btn.MouseButton1Click:Connect(function()
+			if not setclipboard then
+				return
+			end
+			local lines = {}
+			for _, entry in ipairs(logs) do
+				lines[#lines + 1] = string.format("[%s] %s %s %s | %s | caller %s",
+					entry.time, entry.hook, entry.path, entry.action, entry.summary, entry.caller)
+			end
+			setclipboard(table.concat(lines, "\n"))
+		end)
+
+		render_hooks()
+		rebuild_list()
+		show_details(nil)
+		update_button_states(start_btn, stop_btn, pause_btn)
+
+		window.OnActivate:Connect(function()
+			if scroll_v then
+				scroll_v.TotalSpace = #log_frames
+				scroll_v.VisibleSpace = math.floor(list_container.AbsoluteSize.Y / 43)
+				scroll_v:Update()
+			end
+		end)
+	end
+
+	return manager
+end
+
+return {
+	InitDeps = initDeps,
+	InitAfterMain = initAfterMain,
+	Main = main,
+	PluginData = plugin_data,
+}
+]],
 	["RemoteSpy.lua"] = [[
 local main_ref, lib_ref, apps_ref, settings_ref, theme_ref
 local explorer_ref, properties_ref
- 
+
 local plugin_data = {
 	name         = "RemoteSpy",
 	FriendlyName = "Remote Spy",
 }
- 
+
 local function initDeps(data)
 	main_ref     = data.Main
 	lib_ref      = data.Lib
 	apps_ref     = data.Apps
 	settings_ref = data.Settings
 end
- 
+
 local function initAfterMain(t)
 	explorer_ref   = t.Explorer
 	properties_ref = t.Properties
 	theme_ref      = t.Theme
 end
- 
+
 local function safe_str(v)
 	local t = typeof(v)
 	if t == "Instance" then
@@ -22885,7 +25810,7 @@ local function safe_str(v)
 		return tostring(v)
 	end
 end
- 
+
 local function args_str(args)
 	local n = args.n or #args
 	if n == 0 then return "()" end
@@ -22893,7 +25818,7 @@ local function args_str(args)
 	for i = 1, n do out[i] = safe_str(args[i]) end
 	return table.concat(out, ", ")
 end
- 
+
 local function inst_path(obj)
 	if not obj then return "?" end
 	local parts, cur = {}, obj
@@ -22904,11 +25829,11 @@ local function inst_path(obj)
 	table.insert(parts, 1, "game")
 	return table.concat(parts, ".")
 end
- 
+
 local function main()
 	local spy = {}
 	spy.PluginData = plugin_data
- 
+
 	local logs        = {}
 	local log_frames  = {}
 	local pending_rows = {}
@@ -22930,19 +25855,19 @@ local function main()
 	local rate_window_start = 0
 	local rate_window_count = 0
 	local dropped_logs = 0
- 
+
 	local namecall_orig = nil
 	local hook_cons   = {}
 	local seen        = {}
 	setmetatable(seen, { __mode = "k" })
- 
+
 	local colors = {
 		out_remote   = Color3.fromRGB(100, 200, 255),
 		in_remote    = Color3.fromRGB(120, 255, 120),
 		out_bindable = Color3.fromRGB(255, 200, 80),
 		in_bindable  = Color3.fromRGB(255, 140, 60),
 	}
- 
+
 	local remote_classes = {
 		RemoteEvent           = true,
 		RemoteFunction        = true,
@@ -22950,20 +25875,20 @@ local function main()
 		BindableEvent         = true,
 		BindableFunction      = true,
 	}
- 
+
 	local out_methods = {
 		FireServer = true, InvokeServer = true,
 		fireServer = true, invokeServer = true,
 		Fire = true, Invoke = true,
 		fire = true, invoke = true,
 	}
- 
+
 	local in_signals = {
 		RemoteEvent           = "OnClientEvent",
 		UnreliableRemoteEvent = "OnClientEvent",
 		BindableEvent         = "Event",
 	}
- 
+
 	local window, list_frame, tree_frame, scroll_v, status_label, detail_label, empty_label
 	local rebuild_list
 
@@ -22984,7 +25909,7 @@ local function main()
 			row.LayoutOrder = i
 		end
 	end
- 
+
 	local function color_for(dir, class_name)
 		local is_bind = class_name == "BindableEvent" or class_name == "BindableFunction"
 		if dir == "out" then
@@ -22993,7 +25918,7 @@ local function main()
 			return is_bind and colors.in_bindable or colors.in_remote
 		end
 	end
- 
+
 	local function matches(entry)
 		if selected_path ~= "" then
 			if entry.path ~= selected_path and entry.path:sub(1, #selected_path + 1) ~= selected_path .. "." then
@@ -23194,23 +26119,23 @@ local function main()
 			tree_frame.Parent.CanvasSize = UDim2.new(0, 0, 0, math.max(24, row_count * 24))
 		end
 	end
- 
+
 	local function push_row(entry)
 		if not list_frame then return end
 		if empty_label then empty_label.Visible = false end
 		local col = color_for(entry.dir, entry.class)
- 
+
 		local row = Instance.new("Frame")
 		row.BackgroundColor3 = settings_ref.Theme.Main1
 		row.BorderSizePixel  = 0
 		row.Size             = UDim2.new(1, 0, 0, 36)
 		row.ClipsDescendants = true
- 
+
 		local badge = Instance.new("Frame", row)
 		badge.BackgroundColor3 = col
 		badge.BorderSizePixel  = 0
 		badge.Size             = UDim2.new(0, 3, 1, 0)
- 
+
 		local tl = Instance.new("TextLabel", row)
 		tl.BackgroundTransparency = 1
 		tl.Position  = UDim2.new(0, 8, 0, 0)
@@ -23220,7 +26145,7 @@ local function main()
 		tl.TextColor3 = settings_ref.Theme.PlaceholderText
 		tl.TextXAlignment = Enum.TextXAlignment.Left
 		tl.Text = entry.time
- 
+
 		local dl = Instance.new("TextLabel", row)
 		dl.BackgroundTransparency = 1
 		dl.Position  = UDim2.new(0, 66, 0, 0)
@@ -23230,7 +26155,7 @@ local function main()
 		dl.TextColor3 = col
 		dl.TextXAlignment = Enum.TextXAlignment.Left
 		dl.Text = (entry.dir == "out" and "outgoing" or "incoming") .. "  [" .. entry.class .. "]"
- 
+
 		local ml = Instance.new("TextLabel", row)
 		ml.BackgroundTransparency = 1
 		ml.Position  = UDim2.new(0, 220, 0, 0)
@@ -23240,7 +26165,7 @@ local function main()
 		ml.TextColor3 = settings_ref.Theme.Text
 		ml.TextXAlignment = Enum.TextXAlignment.Left
 		ml.Text = ":" .. entry.method .. "()"
- 
+
 		local pl = Instance.new("TextLabel", row)
 		pl.BackgroundTransparency = 1
 		pl.Position  = UDim2.new(0, 8, 0, 19)
@@ -23251,7 +26176,7 @@ local function main()
 		pl.TextXAlignment = Enum.TextXAlignment.Left
 		pl.TextTruncate = Enum.TextTruncate.AtEnd
 		pl.Text = entry.path
- 
+
 		local al = Instance.new("TextLabel", row)
 		al.BackgroundTransparency = 1
 		al.Position  = UDim2.new(0.5, 0, 0, 19)
@@ -23268,7 +26193,7 @@ local function main()
 		separator.BorderSizePixel = 0
 		separator.Size = UDim2.new(1, 0, 0, 1)
 		separator.Position = UDim2.new(0, 0, 1, -1)
- 
+
 		row.InputBegan:Connect(function(i)
 			if i.UserInputType == Enum.UserInputType.MouseMovement then
 				row.BackgroundColor3 = settings_ref.Theme.ButtonHover
@@ -23281,7 +26206,7 @@ local function main()
 				row.BackgroundColor3 = settings_ref.Theme.Main1
 			end
 		end)
- 
+
 		row.LayoutOrder = #log_frames + 1
 		row.Parent = list_frame
 		table.insert(log_frames, row)
@@ -23325,7 +26250,7 @@ local function main()
 		end
 		return true
 	end
- 
+
 	local function add_log(dir, inst, method, raw_args)
 		if not active or paused then return end
 		if not can_capture_log() then return end
@@ -23339,18 +26264,18 @@ local function main()
 			args   = args_str(raw_args),
 		}
 		local _, created_remote = note_remote(inst, entry)
- 
+
 		logs[#logs + 1] = entry
 		if #logs > log_limit then
 			table.remove(logs, 1)
 		end
- 
+
 		if window and not window.Closed and matches(entry) then
 			pending_rows[#pending_rows + 1] = entry
 			if #pending_rows > visible_log_limit then table.remove(pending_rows, 1) end
 			schedule_flush()
 		end
- 
+
 		local now = tick()
 		if status_label and now - last_status_update > 0.25 then
 			last_status_update = now
@@ -23364,7 +26289,7 @@ local function main()
 			update_detail()
 		end
 	end
- 
+
 	rebuild_list = function()
 		for _, f in ipairs(log_frames) do f:Destroy() end
 		log_frames = {}
@@ -23399,14 +26324,14 @@ local function main()
 			scroll_v:Update()
 		end
 	end
- 
+
 	local function hook_instance(inst)
 		if seen[inst] then return end
 		local sig = in_signals[inst.ClassName]
 		if not sig then return end
 		seen[inst] = true
 		note_remote(inst)
- 
+
 		local ok, con = pcall(function()
 			return inst[sig]:Connect(function(...)
 				add_log("in", inst, sig, table.pack(...))
@@ -23416,14 +26341,14 @@ local function main()
 			hook_cons[#hook_cons + 1] = con
 		end
 	end
- 
+
 	local function start()
 		if active then return end
 		active = true
 		dropped_logs = 0
 		rate_window_start = os.clock()
 		rate_window_count = 0
- 
+
 		if hookmetamethod and not namecall_orig then
 			local ok, orig = pcall(hookmetamethod, game, "__namecall", function(self, ...)
 				local method = getnamecallmethod and getnamecallmethod() or ""
@@ -23438,7 +26363,7 @@ local function main()
 			end)
 			if ok then namecall_orig = orig end
 		end
- 
+
 		local ok, descs = pcall(game.GetDescendants, game)
 		if ok then
 			for _, inst in ipairs(descs) do
@@ -23448,7 +26373,7 @@ local function main()
 				hook_instance(inst)
 			end
 		end
- 
+
 		if getnilinstances then
 			local ok2, nil_insts = pcall(getnilinstances)
 			if ok2 then
@@ -23462,7 +26387,7 @@ local function main()
 		end
 		rebuild_tree()
 		update_detail()
- 
+
 		local da_con = game.DescendantAdded:Connect(function(inst)
 			if active then
 				if typeof(inst) == "Instance" and is_remote_class(inst.ClassName) then
@@ -23474,20 +26399,20 @@ local function main()
 		end)
 		hook_cons[#hook_cons + 1] = da_con
 	end
- 
+
 	local function stop()
 		if not active then return end
 		active = false
- 
+
 		for _, con in ipairs(hook_cons) do
 			pcall(function() con:Disconnect() end)
 		end
 		hook_cons = {}
- 
+
 		seen = {}
 		setmetatable(seen, { __mode = "k" })
 	end
- 
+
 	local function make_btn(parent, text, x, w)
 		local btn = Instance.new("TextButton")
 		btn.BorderSizePixel  = 0
@@ -23509,19 +26434,19 @@ local function main()
 		end
 		return btn
 	end
- 
+
 	spy.Init = function()
 		window = lib_ref.Window.new()
 		window:SetTitle("Remote Spy")
 		window:Resize(760, 460)
 		spy.Window = window
- 
+
 		local toolbar = Instance.new("Frame")
 		toolbar.BackgroundColor3 = settings_ref.Theme.Menu
 		toolbar.BorderSizePixel  = 0
 		toolbar.Size             = UDim2.new(1, 0, 0, 26)
 		toolbar.Parent           = window.GuiElems.Content
- 
+
 		local start_btn = make_btn(toolbar, "▶ start",  2,  58)
 		local stop_btn  = make_btn(toolbar, "■ stop",   64, 50)
 		local clear_btn = make_btn(toolbar, "clear",   118, 42)
@@ -23542,7 +26467,7 @@ local function main()
 		copy_btn.Position = UDim2.new(0, 228, 0, 4)
 		local all_btn = make_btn(toolbar, "All", 280, 42)
 		all_btn.Position = UDim2.new(0, 280, 0, 4)
- 
+
 		status_label = Instance.new("TextLabel")
 		status_label.BackgroundTransparency = 1
 		status_label.Font       = theme_ref and theme_ref.MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans
@@ -23553,14 +26478,14 @@ local function main()
 		status_label.Position   = UDim2.new(0, 326, 0, 0)
 		status_label.Text       = "0 logs"
 		status_label.Parent     = toolbar
- 
+
 		local search_bar = Instance.new("Frame")
 		search_bar.BackgroundColor3 = settings_ref.Theme.Main1
 		search_bar.BorderSizePixel  = 0
 		search_bar.Size             = UDim2.new(1, 0, 0, 26)
 		search_bar.Position         = UDim2.new(0, 0, 0, 26)
 		search_bar.Parent           = window.GuiElems.Content
- 
+
 		local search_box = Instance.new("TextBox", search_bar)
 		search_box.BackgroundTransparency = 1
 		search_box.PlaceholderText  = "filter…"
@@ -23646,7 +26571,7 @@ local function main()
 		detail_label.TextXAlignment = Enum.TextXAlignment.Left
 		detail_label.TextTruncate = Enum.TextTruncate.AtEnd
 		detail_label.Text = "All remotes"
- 
+
 		local list_container = Instance.new("Frame")
 		list_container.BackgroundColor3 = settings_ref.Theme.Main2
 		list_container.BorderSizePixel  = 0
@@ -23654,13 +26579,13 @@ local function main()
 		list_container.Position         = UDim2.new(0, 0, 0, 28)
 		list_container.ClipsDescendants = true
 		list_container.Parent           = right_panel
- 
+
 		list_frame = Instance.new("Frame")
 		list_frame.BackgroundTransparency = 1
 		list_frame.Size         = UDim2.new(1, 0, 0, 0)
 		list_frame.AutomaticSize = Enum.AutomaticSize.Y
 		list_frame.Parent       = list_container
- 
+
 		local layout = Instance.new("UIListLayout", list_frame)
 		layout.SortOrder = Enum.SortOrder.LayoutOrder
 		layout.Padding   = UDim.new(0, 1)
@@ -23674,7 +26599,7 @@ local function main()
 		empty_label.TextColor3 = settings_ref.Theme.PlaceholderText
 		empty_label.Text = "Start spy to capture calls"
 		empty_label.Visible = true
- 
+
 		scroll_v = lib_ref.ScrollBar.new()
 		scroll_v.WheelIncrement  = 3
 		scroll_v.Gui.Position    = UDim2.new(1, -16, 0, 28)
@@ -23684,25 +26609,25 @@ local function main()
 		scroll_v.Scrolled:Connect(function()
 			list_frame.Position = UDim2.new(0, 0, 0, -scroll_v.Index * 37)
 		end)
- 
+
 		local function update_button_states()
 			if not start_btn then return end
 			local theme = settings_ref.Theme
-			
+
 			if active then
 				start_btn.Text = paused and "Paused" or "Active"
 				start_btn.BackgroundColor3 = paused and Color3.fromRGB(234, 179, 8) or theme.ListSelection
-				
+
 				stop_btn.Text = "Stop"
 				stop_btn.BackgroundColor3 = theme.Button
 			else
 				start_btn.Text = "Start"
 				start_btn.BackgroundColor3 = theme.Button
-				
+
 				stop_btn.Text = "Stopped"
 				stop_btn.BackgroundColor3 = Color3.fromRGB(244, 63, 94)
 			end
-			
+
 			pause_btn.Text = paused and "Resume" or "Pause"
 			pause_btn.BackgroundColor3 = paused and Color3.fromRGB(234, 179, 8) or theme.Button
 		end
@@ -23716,7 +26641,7 @@ local function main()
 				rebuild_list()
 			end
 		end)
- 
+
 		stop_btn.MouseButton1Click:Connect(function()
 			if active then
 				stop()
@@ -23725,7 +26650,7 @@ local function main()
 				rebuild_list()
 			end
 		end)
- 
+
 		clear_btn.MouseButton1Click:Connect(function()
 			logs = {}
 			for _, f in ipairs(log_frames) do f:Destroy() end
@@ -23741,7 +26666,7 @@ local function main()
 			rebuild_list()
 			update_detail()
 		end)
- 
+
 		pause_btn.MouseButton1Click:Connect(function()
 			if active then
 				paused = not paused
@@ -23755,7 +26680,7 @@ local function main()
 			rebuild_tree()
 			rebuild_list()
 		end)
- 
+
 		copy_btn.MouseButton1Click:Connect(function()
 			if not setclipboard then return end
 			local lines = {}
@@ -23769,7 +26694,7 @@ local function main()
 		rebuild_tree()
 		update_detail()
 		rebuild_list()
- 
+
 		window.OnActivate:Connect(function()
 			if scroll_v then
 				scroll_v.TotalSpace   = #log_frames
@@ -23778,10 +26703,1241 @@ local function main()
 			end
 		end)
 	end
- 
+
 	return spy
 end
- 
+
+return {
+	InitDeps      = initDeps,
+	InitAfterMain = initAfterMain,
+	Main          = main,
+	PluginData    = plugin_data,
+}
+]],
+	["TableEditor.lua"] = [[
+local _main_ref, lib_ref, apps_ref, settings_ref, theme_ref
+
+local plugin_data = {
+	name         = "TableEditor",
+	FriendlyName = "Table Editor",
+}
+
+local function initDeps(data)
+	_main_ref    = data.Main
+	lib_ref      = data.Lib
+	apps_ref     = data.Apps
+	settings_ref = data.Settings
+end
+
+local function initAfterMain(t)
+	theme_ref    = t.Theme
+end
+
+local function get_theme()
+	return theme_ref or (apps_ref and apps_ref.Theme)
+end
+
+-- Fallbacks and executors utilities
+local table_clear = table.clear or function(t)
+	for k in pairs(t) do t[k] = nil end
+end
+
+local table_pack = table.pack or function(...)
+	return { n = select("#", ...), ... }
+end
+
+local debug_getupvalue = debug["getupvalue"] or getupvalue
+local debug_setupvalue = debug["setupvalue"] or setupvalue
+local debug_getconstants = debug["getconstants"] or getconstants
+local debug_setconstant = debug["setconstant"] or setconstant
+
+local function get_upvalues_list(f)
+	local list = {}
+	if not debug_getupvalue then return list end
+	local index = 1
+	while true do
+		local name, val = debug_getupvalue(f, index)
+		if not name then break end
+		table.insert(list, { index = index, name = name, value = val })
+		index = index + 1
+	end
+	return list
+end
+
+local function get_constants_list(f)
+	if debug_getconstants then
+		local ok, list = pcall(debug_getconstants, f)
+		if ok and typeof(list) == "table" then
+			return list
+		end
+	end
+	return {}
+end
+
+local function safe_tostring(val)
+	local ok, str = pcall(tostring, val)
+	return ok and str or ("[error: " .. typeof(val) .. "]")
+end
+
+local function safe_string(val)
+	local t = typeof(val)
+	if t == "Instance" then
+		local ok, path = pcall(function() return val:GetFullName() end)
+		return ok and path or safe_tostring(val)
+	elseif t == "string" then
+		return '"' .. val .. '"'
+	elseif t == "table" or t == "function" or t == "userdata" then
+		return safe_tostring(val)
+	else
+		return safe_tostring(val)
+	end
+end
+
+local function scan_gc_filtered(filter)
+	local items = {}
+	if not env.getgc then return items end
+	
+	local ok, gc = pcall(env.getgc, true)
+	if not ok or type(gc) ~= "table" then return items end
+	
+	local count = 0
+	local filter_low = filter:lower()
+	for _, v in pairs(gc) do
+		local t = type(v)
+		if t == "table" or t == "function" then
+			local matches_filter = false
+			if filter == "" then
+				matches_filter = true
+			else
+				if t == "table" then
+					pcall(function()
+						for k, val in pairs(v) do
+							if safe_tostring(k):lower():find(filter_low, 1, true) or safe_tostring(val):lower():find(filter_low, 1, true) then
+								matches_filter = true
+								break
+							end
+						end
+					end)
+				elseif t == "function" then
+					local name = debug.info(v, "n") or ""
+					local source = debug.info(v, "s") or ""
+					if name:lower():find(filter_low, 1, true) or source:lower():find(filter_low, 1, true) then
+						matches_filter = true
+					end
+				end
+			end
+			
+			if matches_filter then
+				count = count + 1
+				table.insert(items, v)
+				if count >= 400 then break end
+			end
+		end
+	end
+	return items
+end
+
+local function main()
+	local editor = {}
+	editor.PluginData = plugin_data
+
+	-- State management
+	local current_target = _G
+	local current_target_name = "_G"
+	local current_view_type = "table" -- "table", "function_inspect", "upvalues", "constants", "gc_list"
+	local history = {} -- Stack of { target, name, view_type }
+	local keys_list = {}
+	local log_frames = {}
+	local row_key_map = {}
+	local selected_key = nil
+	local selected_val = nil
+	local filter_text = ""
+	local selected_source = "_G"
+	
+	-- UI Elements
+	local window, list_frame, scroll_v, status_label, empty_label, breadcrumb_scroll, expr_frame, expr_box
+	local detail_title, detail_type, detail_box, edit_btn, call_btn, explore_btn, decompile_btn, copy_btn
+	local edit_overlay, edit_title, edit_input, edit_check, edit_type_btn, edit_error, edit_cast_type
+	local call_overlay, call_func_name, call_input, call_output, call_exec_btn
+	local rebuild_list
+
+	local colors = {
+		table    = Color3.fromRGB(59, 130, 246),
+		["function"] = Color3.fromRGB(139, 92, 246),
+		string   = Color3.fromRGB(249, 115, 22),
+		number   = Color3.fromRGB(34, 197, 94),
+		boolean  = Color3.fromRGB(217, 119, 6),
+		Instance = Color3.fromRGB(6, 182, 212),
+		OTHER    = Color3.fromRGB(163, 163, 163),
+	}
+
+	local function get_color_for_type(t)
+		return colors[t] or colors.OTHER
+	end
+
+	local function build_keys()
+		table.clear(keys_list)
+		if current_view_type == "table" then
+			if typeof(current_target) == "table" then
+				local ok, err = pcall(function()
+					for k, v in pairs(current_target) do
+						local k_str = safe_tostring(k)
+						if filter_text == "" or k_str:lower():find(filter_text:lower(), 1, true) then
+							table.insert(keys_list, { key = k, value = v, type = typeof(v) })
+						end
+					end
+				end)
+				if not ok then
+					table.insert(keys_list, { key = "Error", value = safe_tostring(err), type = "string" })
+				end
+			end
+			table.sort(keys_list, function(a, b)
+				return safe_tostring(a.key):lower() < safe_tostring(b.key):lower()
+			end)
+		elseif current_view_type == "function_inspect" then
+			table.insert(keys_list, { key = "Upvalues", value = "Folder containing upvalues", type = "virtual_folder", tag = "upvalues" })
+			table.insert(keys_list, { key = "Constants", value = "Folder containing constants", type = "virtual_folder", tag = "constants" })
+		elseif current_view_type == "upvalues" then
+			local ups = get_upvalues_list(current_target)
+			for _, up in ipairs(ups) do
+				if filter_text == "" or up.name:lower():find(filter_text:lower(), 1, true) then
+					table.insert(keys_list, { key = up.index, name = up.name, value = up.value, type = typeof(up.value), tag = "upvalue" })
+				end
+			end
+		elseif current_view_type == "constants" then
+			local consts = get_constants_list(current_target)
+			for i, const in ipairs(consts) do
+				if filter_text == "" or safe_tostring(const):lower():find(filter_text:lower(), 1, true) then
+					table.insert(keys_list, { key = i, value = const, type = typeof(const), tag = "constant" })
+				end
+			end
+		elseif current_view_type == "gc_list" then
+			local gc_items = scan_gc_filtered(filter_text)
+			for i, v in ipairs(gc_items) do
+				local preview = (typeof(v) == "table") and safe_tostring(v) or (debug.info(v, "n") or "anonymous") .. "()"
+				table.insert(keys_list, { key = i, value = v, type = typeof(v), preview = preview, tag = "gc_item" })
+			end
+		end
+	end
+
+	local function rebuild_breadcrumbs()
+		for _, child in ipairs(breadcrumb_scroll:GetChildren()) do
+			if not child:IsA("UIListLayout") then child:Destroy() end
+		end
+		
+		local function add_crumb(name, index)
+			local btn = Instance.new("TextButton")
+			btn.BackgroundTransparency = 1
+			btn.Font = Enum.Font.SourceSans
+			btn.TextSize = 13
+			btn.TextColor3 = settings_ref.Theme.Text
+			btn.Text = name .. "  >"
+			btn.Size = UDim2.new(0, 0, 1, 0)
+			btn.AutomaticSize = Enum.AutomaticSize.X
+			btn.Parent = breadcrumb_scroll
+			
+			btn.MouseButton1Click:Connect(function()
+				-- Pop history back to index
+				while #history > index do
+					table.remove(history)
+				end
+				local state = table.remove(history)
+				if state then
+					current_target = state.target
+					current_target_name = state.name
+					current_view_type = state.view_type
+					selected_key = nil
+					selected_val = nil
+					rebuild_list()
+				end
+			end)
+		end
+		
+		for i, state in ipairs(history) do
+			add_crumb(state.name, i)
+		end
+		
+		local current_lbl = Instance.new("TextLabel")
+		current_lbl.BackgroundTransparency = 1
+		current_lbl.Font = Enum.Font.SourceSansBold
+		current_lbl.TextSize = 13
+		current_lbl.TextColor3 = settings_ref.Theme.PlaceholderText
+		current_lbl.Text = current_target_name
+		current_lbl.Size = UDim2.new(0, 0, 1, 0)
+		current_lbl.AutomaticSize = Enum.AutomaticSize.X
+		current_lbl.Parent = breadcrumb_scroll
+	end
+
+	local function update_details(key, val, t, tag)
+		selected_key = key
+		selected_val = val
+		
+		if key == nil then
+			detail_title.Text = "Select an item"
+			detail_type.Text = ""
+			detail_box.Text = ""
+			edit_btn.Active = false
+			edit_btn.BackgroundColor3 = settings_ref.Theme.Main1
+			call_btn.Active = false
+			call_btn.BackgroundColor3 = settings_ref.Theme.Main1
+			explore_btn.Active = false
+			explore_btn.BackgroundColor3 = settings_ref.Theme.Main1
+			decompile_btn.Active = false
+			decompile_btn.BackgroundColor3 = settings_ref.Theme.Main1
+			copy_btn.Active = false
+			copy_btn.BackgroundColor3 = settings_ref.Theme.Main1
+			return
+		end
+		
+		detail_title.Text = safe_tostring(key)
+		detail_type.Text = "Type: " .. t
+		detail_type.TextColor3 = get_color_for_type(t)
+		detail_box.Text = safe_string(val)
+		
+		decompile_btn.Active = (t == "Instance" and val:IsA("LuaSourceContainer"))
+		decompile_btn.BackgroundColor3 = decompile_btn.Active and settings_ref.Theme.Button or settings_ref.Theme.Main1
+		
+		explore_btn.Active = (t == "Instance")
+		explore_btn.BackgroundColor3 = explore_btn.Active and settings_ref.Theme.Button or settings_ref.Theme.Main1
+		
+		call_btn.Active = (t == "function")
+		call_btn.BackgroundColor3 = call_btn.Active and settings_ref.Theme.Button or settings_ref.Theme.Main1
+		
+		edit_btn.Active = (t ~= "virtual_folder" and t ~= "userdata" and t ~= "thread" and tag ~= "gc_item")
+		edit_btn.BackgroundColor3 = edit_btn.Active and settings_ref.Theme.Button or settings_ref.Theme.Main1
+		
+		copy_btn.Active = true
+		copy_btn.BackgroundColor3 = settings_ref.Theme.Button
+	end
+
+	local function update_scroll()
+		if scroll_v then
+			scroll_v.TotalSpace = #log_frames
+			scroll_v.Index = math.max(0, #log_frames - scroll_v.VisibleSpace)
+			scroll_v:Update()
+		end
+	end
+
+	local function rebuild_list_highlights()
+		for _, row in ipairs(log_frames) do
+			local k = row_key_map[row]
+			if k == selected_key then
+				row.BackgroundColor3 = settings_ref.Theme.ListSelection
+			else
+				row.BackgroundColor3 = settings_ref.Theme.Main1
+			end
+		end
+	end
+
+	local function push_row(item)
+		if not list_frame then return end
+		if empty_label then empty_label.Visible = false end
+		
+		local row = Instance.new("Frame")
+		row.BackgroundColor3 = settings_ref.Theme.Main1
+		row.BorderSizePixel  = 0
+		row.Size             = UDim2.new(1, 0, 0, 36)
+		row.ClipsDescendants = true
+		
+		local badge_color = get_color_for_type(item.type)
+		local badge = Instance.new("Frame", row)
+		badge.BackgroundColor3 = badge_color
+		badge.BorderSizePixel  = 0
+		badge.Size             = UDim2.new(0, 3, 1, 0)
+		
+		local expand_lbl = Instance.new("TextLabel", row)
+		expand_lbl.BackgroundTransparency = 1
+		expand_lbl.Position = UDim2.new(0, 6, 0, 0)
+		expand_lbl.Size = UDim2.new(0, 12, 1, 0)
+		expand_lbl.Font = Enum.Font.Code
+		expand_lbl.TextSize = 11
+		expand_lbl.TextColor3 = settings_ref.Theme.PlaceholderText
+		expand_lbl.Text = (item.type == "table" or item.type == "function" or item.type == "virtual_folder" or item.tag == "gc_item") and ">" or "-"
+		
+		local name_lbl = Instance.new("TextLabel", row)
+		name_lbl.BackgroundTransparency = 1
+		name_lbl.Position  = UDim2.new(0, 20, 0, 2)
+		name_lbl.Size      = UDim2.new(1, -26, 0, 16)
+		name_lbl.Font      = get_theme() and get_theme().MapFont(Enum.Font.SourceSansBold) or Enum.Font.SourceSansBold
+		name_lbl.TextSize  = 13
+		name_lbl.TextColor3 = settings_ref.Theme.Text
+		name_lbl.TextXAlignment = Enum.TextXAlignment.Left
+		name_lbl.TextTruncate = Enum.TextTruncate.AtEnd
+		
+		if item.name then
+			name_lbl.Text = safe_tostring(item.key) .. " (" .. item.name .. ")"
+		else
+			name_lbl.Text = safe_tostring(item.key)
+		end
+		
+		local val_lbl = Instance.new("TextLabel", row)
+		val_lbl.BackgroundTransparency = 1
+		val_lbl.Position  = UDim2.new(0, 20, 0, 18)
+		val_lbl.Size      = UDim2.new(1, -26, 0, 16)
+		val_lbl.Font      = Enum.Font.Code
+		val_lbl.TextSize  = 10
+		val_lbl.TextColor3 = badge_color
+		val_lbl.TextXAlignment = Enum.TextXAlignment.Left
+		val_lbl.TextTruncate = Enum.TextTruncate.AtEnd
+		
+		if item.preview then
+			val_lbl.Text = item.preview
+		else
+			val_lbl.Text = safe_string(item.value)
+		end
+		
+		local separator = Instance.new("Frame", row)
+		separator.BackgroundColor3 = settings_ref.Theme.Outline1
+		separator.BorderSizePixel = 0
+		separator.Size = UDim2.new(1, 0, 0, 1)
+		separator.Position = UDim2.new(0, 0, 1, -1)
+		
+		row.InputBegan:Connect(function(i)
+			if i.UserInputType == Enum.UserInputType.MouseMovement then
+				row.BackgroundColor3 = selected_key == item.key and settings_ref.Theme.ListSelection or settings_ref.Theme.ButtonHover
+			elseif i.UserInputType == Enum.UserInputType.MouseButton1 then
+				selected_key = item.key
+				update_details(item.key, item.value, item.type, item.tag)
+				rebuild_list_highlights()
+			end
+		end)
+		
+		-- Double click or click arrow to expand
+		row.InputBegan:Connect(function(i)
+			if i.UserInputType == Enum.UserInputType.MouseButton1 then
+				local now = tick()
+				if row:GetAttribute("LastClick") and now - row:GetAttribute("LastClick") < 0.35 then
+					-- Expand table or function
+					if item.type == "table" then
+						table.insert(history, { target = current_target, name = current_target_name, view_type = current_view_type })
+						current_target = item.value
+						current_target_name = safe_tostring(item.key)
+						current_view_type = "table"
+						selected_key = nil
+						selected_val = nil
+						rebuild_list()
+					elseif item.type == "function" then
+						table.insert(history, { target = current_target, name = current_target_name, view_type = current_view_type })
+						current_target = item.value
+						current_target_name = safe_tostring(item.key) .. "()"
+						current_view_type = "function_inspect"
+						selected_key = nil
+						selected_val = nil
+						rebuild_list()
+					elseif item.type == "virtual_folder" then
+						table.insert(history, { target = current_target, name = current_target_name, view_type = current_view_type })
+						-- Target remains function, type changes to upvalues/constants
+						current_view_type = item.tag
+						current_target_name = item.tag:sub(1,1):upper() .. item.tag:sub(2)
+						selected_key = nil
+						selected_val = nil
+						rebuild_list()
+					elseif item.tag == "gc_item" then
+						table.insert(history, { target = current_target, name = current_target_name, view_type = current_view_type })
+						current_target = item.value
+						current_target_name = (typeof(item.value) == "table") and safe_tostring(item.value) or (debug.info(item.value, "n") or "anonymous") .. "()"
+						current_view_type = (typeof(item.value) == "table") and "table" or "function_inspect"
+						selected_key = nil
+						selected_val = nil
+						rebuild_list()
+					end
+				end
+				row:SetAttribute("LastClick", now)
+			end
+		end)
+
+		row.InputEnded:Connect(function(i)
+			if i.UserInputType == Enum.UserInputType.MouseMovement then
+				row.BackgroundColor3 = selected_key == item.key and settings_ref.Theme.ListSelection or settings_ref.Theme.Main1
+			end
+		end)
+		
+		row.LayoutOrder = #log_frames + 1
+		row.Parent = list_frame
+		table.insert(log_frames, row)
+		row_key_map[row] = item.key
+	end
+
+	rebuild_list = function()
+		for _, f in ipairs(log_frames) do f:Destroy() end
+		log_frames = {}
+		table_clear(row_key_map)
+		
+		build_keys()
+		rebuild_breadcrumbs()
+		
+		for _, item in ipairs(keys_list) do
+			push_row(item)
+		end
+		
+		if empty_label then
+			empty_label.Visible = #keys_list == 0
+			if current_view_type == "gc_list" then
+				empty_label.Text = "Type in search filter to scan GC..."
+			else
+				empty_label.Text = "Table is empty or matches no filters"
+			end
+		end
+		
+		if status_label then
+			status_label.Text = #keys_list .. " keys found"
+		end
+		
+		update_scroll()
+		rebuild_list_highlights()
+		update_details(selected_key, selected_val, selected_key and typeof(selected_val) or "", selected_key and "details" or nil)
+	end
+
+	local function open_edit_overlay()
+		if not selected_key then return end
+		edit_title.Text = "Edit: " .. safe_tostring(selected_key)
+		edit_error.Text = ""
+		
+		local t = typeof(selected_val)
+		if t == "boolean" then
+			edit_cast_type = "boolean"
+			edit_input.Visible = false
+			edit_check.Visible = true
+			edit_check.Text = selected_val and "True" or "False"
+			edit_check.BackgroundColor3 = selected_val and Color3.fromRGB(34, 197, 94) or Color3.fromRGB(239, 68, 68)
+		elseif t == "nil" then
+			edit_cast_type = "nil"
+			edit_input.Visible = true
+			edit_input.Text = "nil"
+			edit_check.Visible = false
+		elseif t == "number" then
+			edit_cast_type = "number"
+			edit_input.Visible = true
+			edit_input.Text = safe_tostring(selected_val)
+			edit_check.Visible = false
+		elseif t == "string" then
+			edit_cast_type = "string"
+			edit_input.Visible = true
+			edit_input.Text = selected_val
+			edit_check.Visible = false
+		else
+			-- fallback to json for tables
+			edit_cast_type = "JSON"
+			edit_input.Visible = true
+			edit_input.Text = "{}"
+			edit_check.Visible = false
+		end
+		
+		edit_type_btn.Text = "Cast: " .. edit_cast_type:upper()
+		edit_overlay.Visible = true
+	end
+
+	local function save_edit()
+		local raw_input = edit_input.Text
+		if edit_cast_type == "boolean" then
+			raw_input = (edit_check.Text == "True") and "true" or "false"
+		end
+		
+		local parsed_value
+		if edit_cast_type == "nil" then
+			parsed_value = nil
+		elseif edit_cast_type == "boolean" then
+			parsed_value = (raw_input == "true")
+		elseif edit_cast_type == "number" then
+			parsed_value = tonumber(raw_input)
+			if not parsed_value then
+				edit_error.Text = "Invalid number format"
+				return
+			end
+		elseif edit_cast_type == "string" then
+			parsed_value = tostring(raw_input)
+		elseif edit_cast_type == "JSON" then
+			local hs = service.HttpService
+			local ok, decoded = pcall(function() return hs:JSONDecode(raw_input) end)
+			if not ok then
+				edit_error.Text = "Invalid JSON structure"
+				return
+			end
+			parsed_value = decoded
+		end
+		
+		local success, err
+		if current_view_type == "table" then
+			success, err = pcall(function()
+				current_target[selected_key] = parsed_value
+			end)
+		elseif current_view_type == "upvalues" then
+			if debug_setupvalue then
+				success, err = pcall(debug_setupvalue, current_target, selected_key, parsed_value)
+			else
+				success, err = false, "debug.setupvalue not supported"
+			end
+		elseif current_view_type == "constants" then
+			if debug_setconstant then
+				success, err = pcall(debug_setconstant, current_target, selected_key, parsed_value)
+			else
+				success, err = false, "debug.setconstant not supported"
+			end
+		end
+		
+		if success then
+			edit_overlay.Visible = false
+			-- Update local value in list
+			for _, item in ipairs(keys_list) do
+				if item.key == selected_key then
+					item.value = parsed_value
+					item.type = typeof(parsed_value)
+					break
+				end
+			end
+			selected_val = parsed_value
+			rebuild_list()
+		else
+			edit_error.Text = "Write Error:\n" .. safe_tostring(err)
+		end
+	end
+
+	local function open_call_overlay()
+		if typeof(selected_val) ~= "function" then return end
+		local name = debug.info(selected_val, "n") or safe_tostring(selected_key)
+		call_func_name.Text = "Call: " .. name .. "()"
+		call_input.Text = ""
+		call_output.Text = "Return results will appear here."
+		call_overlay.Visible = true
+	end
+
+	local function execute_call()
+		local input_args_str = call_input.Text
+		local parsed_args = {}
+		
+		if input_args_str ~= "" then
+			local loader = env.loadstring or loadstring
+			if not loader then
+				call_output.Text = "Error: executor loadstring is missing"
+				return
+			end
+			local ok, func = pcall(loader, "return {" .. input_args_str .. "}")
+			if ok and type(func) == "function" then
+				local ok2, args = pcall(func)
+				if ok2 and typeof(args) == "table" then
+					parsed_args = args
+				else
+					call_output.Text = "Error compiling args: " .. safe_tostring(args)
+					return
+				end
+			else
+				call_output.Text = "Error parsing args. Check syntax (e.g. 1, 'text', workspace.Part)"
+				return
+			end
+		end
+		
+		call_output.Text = "Calling function..."
+		task.spawn(function()
+			local results = table_pack(pcall(selected_val, table.unpack(parsed_args)))
+			if results[1] == true then
+				local out = {}
+				for i = 2, results.n do
+					table.insert(out, "Return " .. (i - 1) .. ": " .. safe_tostring(results[i]))
+				end
+				call_output.Text = #out == 0 and "Call finished successfully (no returns)" or table.concat(out, "\n")
+			else
+				call_output.Text = "Call Execution Failed:\n" .. safe_tostring(results[2])
+			end
+		end)
+	end
+
+	local function make_btn(parent, text, x, y, w, h)
+		local btn = Instance.new("TextButton")
+		btn.BorderSizePixel  = 0
+		btn.Font             = Enum.Font.SourceSans
+		btn.TextSize         = 13
+		btn.Text             = text
+		btn.AutoButtonColor  = false
+		btn.Size             = UDim2.new(0, w, 0, h)
+		btn.Position         = UDim2.new(0, x, 0, y)
+		btn.Parent           = parent
+		if get_theme() then
+			get_theme().StyleButton(btn)
+		else
+			btn.BackgroundColor3 = settings_ref.Theme.Button
+			btn.TextColor3       = settings_ref.Theme.Text
+			local c = Instance.new("UICorner", btn)
+			c.CornerRadius = UDim.new(0, 3)
+		end
+		return btn
+	end
+
+	editor.LoadTable = function(tbl, name)
+		current_target = tbl
+		current_target_name = name or "Loaded Table"
+		current_view_type = (typeof(tbl) == "table") and "table" or "function_inspect"
+		table.clear(history)
+		selected_key = nil
+		selected_val = nil
+		if selected_source ~= "expression" then
+			selected_source = "expression"
+			if expr_frame then expr_frame.Visible = true end
+		end
+		if expr_box then expr_box.Text = "(Required Module Return)" end
+		rebuild_list()
+	end
+
+	editor.Init = function()
+		window = lib_ref.Window.new()
+		window:SetTitle("Table Editor")
+		window:Resize(760, 460)
+		editor.Window = window
+
+		local toolbar = Instance.new("Frame")
+		toolbar.BackgroundColor3 = settings_ref.Theme.Menu
+		toolbar.BorderSizePixel  = 0
+		toolbar.Size             = UDim2.new(1, 0, 0, 26)
+		toolbar.Parent           = window.GuiElems.Content
+
+		-- Source Selector Dropdown simulation
+		local source_btn = make_btn(toolbar, "Source: _G", 4, 4, 110, 18)
+		
+		local source_menu = Instance.new("Frame", toolbar)
+		source_menu.BackgroundColor3 = settings_ref.Theme.Main1
+		source_menu.BorderSizePixel = 1
+		source_menu.BorderColor3 = settings_ref.Theme.Outline2
+		source_menu.Size = UDim2.new(0, 110, 0, 130)
+		source_menu.Position = UDim2.new(0, 4, 0, 24)
+		source_menu.Visible = false
+		source_menu.ZIndex = 50
+		
+		local menu_layout = Instance.new("UIListLayout", source_menu)
+		menu_layout.SortOrder = Enum.SortOrder.LayoutOrder
+		
+		local function add_source_option(name, target, view_type)
+			local opt = Instance.new("TextButton", source_menu)
+			opt.Size = UDim2.new(1, 0, 0, 20)
+			opt.BorderSizePixel = 0
+			opt.Font = Enum.Font.SourceSans
+			opt.TextSize = 12
+			opt.TextColor3 = settings_ref.Theme.Text
+			opt.BackgroundColor3 = settings_ref.Theme.Main2
+			opt.Text = name
+			opt.ZIndex = 50
+			
+			opt.MouseEnter:Connect(function() opt.BackgroundColor3 = settings_ref.Theme.ButtonHover end)
+			opt.MouseLeave:Connect(function() opt.BackgroundColor3 = settings_ref.Theme.Main2 end)
+			opt.MouseButton1Click:Connect(function()
+				source_btn.Text = "Source: " .. name
+				selected_source = name
+				source_menu.Visible = false
+				
+				current_target = target
+				current_target_name = name
+				current_view_type = view_type
+				table.clear(history)
+				selected_key = nil
+				selected_val = nil
+				
+				expr_frame.Visible = (name == "expression")
+				rebuild_list()
+			end)
+		end
+		
+		add_source_option("_G", _G, "table")
+		add_source_option("shared", shared, "table")
+		add_source_option("getgenv()", getgenv and getgenv() or {}, "table")
+		add_source_option("getreg()", getreg and getreg() or {}, "table")
+		add_source_option("getgc()", nil, "gc_list")
+		add_source_option("expression", nil, "table")
+		
+		source_btn.MouseButton1Click:Connect(function()
+			source_menu.Visible = not source_menu.Visible
+		end)
+
+		status_label = Instance.new("TextLabel")
+		status_label.BackgroundTransparency = 1
+		status_label.Font       = get_theme() and get_theme().MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans
+		status_label.TextSize   = 12
+		status_label.TextColor3 = settings_ref.Theme.PlaceholderText
+		status_label.TextXAlignment = Enum.TextXAlignment.Right
+		status_label.Size       = UDim2.new(1, -130, 1, 0)
+		status_label.Position   = UDim2.new(0, 120, 0, 0)
+		status_label.Text       = "0 keys"
+		status_label.Parent     = toolbar
+
+		-- Custom Expression frame
+		expr_frame = Instance.new("Frame")
+		expr_frame.BackgroundColor3 = settings_ref.Theme.Main1
+		expr_frame.BorderSizePixel = 0
+		expr_frame.Position = UDim2.new(0, 0, 0, 26)
+		expr_frame.Size = UDim2.new(1, 0, 0, 26)
+		expr_frame.Visible = false
+		expr_frame.Parent = window.GuiElems.Content
+		
+		expr_box = Instance.new("TextBox", expr_frame)
+		expr_box.BackgroundTransparency = 1
+		expr_box.Position = UDim2.new(0, 8, 0, 0)
+		expr_box.Size = UDim2.new(1, -78, 1, 0)
+		expr_box.Font = Enum.Font.Code
+		expr_box.TextSize = 12
+		expr_box.TextColor3 = settings_ref.Theme.Text
+		expr_box.PlaceholderText = "Type Luau expression (e.g. game.Workspace)"
+		expr_box.PlaceholderColor3 = settings_ref.Theme.PlaceholderText
+		expr_box.Text = ""
+		expr_box.TextXAlignment = Enum.TextXAlignment.Left
+		expr_box.ClearTextOnFocus = false
+		
+		local load_expr_btn = make_btn(expr_frame, "Load", 692, 4, 60, 18)
+		load_expr_btn.MouseButton1Click:Connect(function()
+			local loader = env.loadstring or loadstring
+			if not loader then return end
+			local code = expr_box.Text
+			local ok, f = pcall(loader, "return " .. code)
+			if ok and type(f) == "function" then
+				local ok2, val = pcall(f)
+				if ok2 then
+					current_target = val
+					current_target_name = code
+					current_view_type = (typeof(val) == "table") and "table" or "function_inspect"
+					table.clear(history)
+					selected_key = nil
+					selected_val = nil
+					rebuild_list()
+				end
+			end
+		end)
+
+		-- Breadcrumbs navigation bar
+		local breadcrumb_bar = Instance.new("Frame")
+		breadcrumb_bar.BackgroundColor3 = settings_ref.Theme.Main1
+		breadcrumb_bar.BorderSizePixel  = 0
+		breadcrumb_bar.Size             = UDim2.new(1, 0, 0, 26)
+		breadcrumb_bar.Position         = UDim2.new(0, 0, 0, 26)
+		breadcrumb_bar.Parent           = window.GuiElems.Content
+		
+		breadcrumb_scroll = Instance.new("ScrollingFrame", breadcrumb_bar)
+		breadcrumb_scroll.BackgroundTransparency = 1
+		breadcrumb_scroll.BorderSizePixel = 0
+		breadcrumb_scroll.Position = UDim2.new(0, 8, 0, 0)
+		breadcrumb_scroll.Size = UDim2.new(1, -16, 1, 0)
+		breadcrumb_scroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+		breadcrumb_scroll.ScrollBarThickness = 0
+		breadcrumb_scroll.AutomaticCanvasSize = Enum.AutomaticSize.X
+		breadcrumb_scroll.ScrollingDirection = Enum.ScrollingDirection.X
+		
+		local breadcrumb_layout = Instance.new("UIListLayout", breadcrumb_scroll)
+		breadcrumb_layout.FillDirection = Enum.FillDirection.Horizontal
+		breadcrumb_layout.SortOrder = Enum.SortOrder.LayoutOrder
+		breadcrumb_layout.Padding = UDim.new(0, 6)
+
+		-- Search Bar / Search Box (re-positioned lower)
+		local search_bar = Instance.new("Frame")
+		search_bar.BackgroundColor3 = settings_ref.Theme.Main2
+		search_bar.BorderSizePixel  = 0
+		search_bar.Size             = UDim2.new(1, 0, 0, 26)
+		search_bar.Position         = UDim2.new(0, 0, 0, 52)
+		search_bar.Parent           = window.GuiElems.Content
+
+		local search_box = Instance.new("TextBox", search_bar)
+		search_box.BackgroundTransparency = 1
+		search_box.PlaceholderText  = "Search keys (or GC items)..."
+		search_box.PlaceholderColor3 = settings_ref.Theme.PlaceholderText
+		search_box.Text             = ""
+		search_box.Font             = Enum.Font.Code
+		search_box.TextSize         = 13
+		search_box.TextColor3       = settings_ref.Theme.Text
+		search_box.TextXAlignment   = Enum.TextXAlignment.Left
+		search_box.ClearTextOnFocus = false
+		search_box.Size             = UDim2.new(1, -14, 1, 0)
+		search_box.Position         = UDim2.new(0, 8, 0, 0)
+		search_box:GetPropertyChangedSignal("Text"):Connect(function()
+			filter_text = search_box.Text
+			rebuild_list()
+		end)
+
+		local body = Instance.new("Frame")
+		body.BackgroundColor3 = settings_ref.Theme.Main2
+		body.BorderSizePixel = 0
+		body.Position = UDim2.new(0, 0, 0, 78)
+		body.Size = UDim2.new(1, 0, 1, -78)
+		body.Parent = window.GuiElems.Content
+
+		local left_panel = Instance.new("Frame")
+		left_panel.BackgroundColor3 = settings_ref.Theme.Main1
+		left_panel.BorderSizePixel = 0
+		left_panel.Size = UDim2.new(0, 400, 1, 0)
+		left_panel.Parent = body
+
+		local list_container = Instance.new("Frame")
+		list_container.BackgroundColor3 = settings_ref.Theme.Main2
+		list_container.BorderSizePixel  = 0
+		list_container.Size             = UDim2.new(1, -16, 1, 0)
+		list_container.ClipsDescendants = true
+		list_container.Parent           = left_panel
+
+		list_frame = Instance.new("Frame")
+		list_frame.BackgroundTransparency = 1
+		list_frame.Size         = UDim2.new(1, 0, 0, 0)
+		list_frame.AutomaticSize = Enum.AutomaticSize.Y
+		list_frame.Parent       = list_container
+
+		local layout = Instance.new("UIListLayout", list_frame)
+		layout.SortOrder = Enum.SortOrder.LayoutOrder
+		layout.Padding   = UDim.new(0, 1)
+
+		empty_label = Instance.new("TextLabel", list_container)
+		empty_label.BackgroundTransparency = 1
+		empty_label.Size = UDim2.new(1, 0, 0, 48)
+		empty_label.Position = UDim2.new(0, 0, 0.5, -24)
+		empty_label.Font = get_theme() and get_theme().MapFont(Enum.Font.SourceSans) or Enum.Font.SourceSans
+		empty_label.TextSize = 14
+		empty_label.TextColor3 = settings_ref.Theme.PlaceholderText
+		empty_label.Text = "Table is empty or matches no filters"
+		empty_label.Visible = true
+
+		scroll_v = lib_ref.ScrollBar.new()
+		scroll_v.WheelIncrement  = 3
+		scroll_v.Gui.Position    = UDim2.new(1, -16, 0, 0)
+		scroll_v.Gui.Size        = UDim2.new(0, 16, 1, 0)
+		scroll_v.Gui.Parent      = left_panel
+		scroll_v:SetScrollFrame(list_container)
+		scroll_v.Scrolled:Connect(function()
+			list_frame.Position = UDim2.new(0, 0, 0, -scroll_v.Index * 37)
+		end)
+
+		local split_line = Instance.new("Frame", body)
+		split_line.BackgroundColor3 = settings_ref.Theme.Outline1
+		split_line.BorderSizePixel = 0
+		split_line.Position = UDim2.new(0, 400, 0, 0)
+		split_line.Size = UDim2.new(0, 1, 1, 0)
+
+		local right_panel = Instance.new("Frame")
+		right_panel.BackgroundColor3 = settings_ref.Theme.Main2
+		right_panel.BorderSizePixel = 0
+		right_panel.Position = UDim2.new(0, 401, 0, 0)
+		right_panel.Size = UDim2.new(1, -401, 1, 0)
+		right_panel.Parent = body
+
+		detail_title = Instance.new("TextLabel", right_panel)
+		detail_title.BackgroundTransparency = 1
+		detail_title.Position = UDim2.new(0, 10, 0, 10)
+		detail_title.Size = UDim2.new(1, -20, 0, 20)
+		detail_title.Font = get_theme() and get_theme().MapFont(Enum.Font.SourceSansBold) or Enum.Font.SourceSansBold
+		detail_title.TextSize = 14
+		detail_title.TextColor3 = settings_ref.Theme.Text
+		detail_title.TextXAlignment = Enum.TextXAlignment.Left
+		detail_title.TextTruncate = Enum.TextTruncate.AtEnd
+		detail_title.Text = "Select an item"
+
+		detail_type = Instance.new("TextLabel", right_panel)
+		detail_type.BackgroundTransparency = 1
+		detail_type.Position = UDim2.new(0, 10, 0, 30)
+		detail_type.Size = UDim2.new(1, -20, 0, 16)
+		detail_type.Font = Enum.Font.SourceSans
+		detail_type.TextSize = 12
+		detail_type.TextColor3 = settings_ref.Theme.PlaceholderText
+		detail_type.TextXAlignment = Enum.TextXAlignment.Left
+		detail_type.Text = ""
+
+		detail_box = Instance.new("TextBox", right_panel)
+		detail_box.BackgroundColor3 = settings_ref.Theme.Main1
+		detail_box.BorderSizePixel = 0
+		detail_box.Position = UDim2.new(0, 10, 0, 50)
+		detail_box.Size = UDim2.new(1, -20, 0, 120)
+		detail_box.Font = Enum.Font.Code
+		detail_box.TextSize = 11
+		detail_box.TextColor3 = settings_ref.Theme.Text
+		detail_box.TextEditable = false
+		detail_box.ClearTextOnFocus = false
+		detail_box.MultiLine = true
+		detail_box.TextWrapped = true
+		detail_box.Text = ""
+		detail_box.TextXAlignment = Enum.TextXAlignment.Left
+		detail_box.TextYAlignment = Enum.TextYAlignment.Top
+		local pad_box = Instance.new("UIPadding", detail_box)
+		pad_box.PaddingLeft = UDim.new(0, 6)
+		pad_box.PaddingRight = UDim.new(0, 6)
+		pad_box.PaddingTop = UDim.new(0, 6)
+		pad_box.PaddingBottom = UDim.new(0, 6)
+		if get_theme() then get_theme().ApplyRounding(detail_box, 4) end
+
+		local function make_detail_btn(text, y, h)
+			local btn = Instance.new("TextButton", right_panel)
+			btn.BorderSizePixel = 0
+			btn.Font = Enum.Font.SourceSans
+			btn.TextSize = 13
+			btn.Text = text
+			btn.AutoButtonColor = false
+			btn.Size = UDim2.new(1, -20, 0, h)
+			btn.Position = UDim2.new(0, 10, 0, y)
+			btn.Active = false
+			if get_theme() then
+				get_theme().StyleButton(btn)
+			else
+				btn.BackgroundColor3 = settings_ref.Theme.Main1
+				btn.TextColor3 = settings_ref.Theme.Text
+			end
+			return btn
+		end
+
+		edit_btn      = make_detail_btn("Edit Value", 180, 26)
+		call_btn      = make_detail_btn("Call Function", 212, 26)
+		explore_btn   = make_detail_btn("View in Explorer", 244, 26)
+		decompile_btn = make_detail_btn("Decompile Script", 276, 26)
+		copy_btn      = make_detail_btn("Copy Value to Clipboard", 308, 26)
+
+		-- Value Editor Overlay
+		edit_overlay = Instance.new("Frame", window.GuiElems.Content)
+		edit_overlay.BackgroundColor3 = settings_ref.Theme.Main2
+		edit_overlay.BorderSizePixel = 1
+		edit_overlay.BorderColor3 = settings_ref.Theme.Outline2
+		edit_overlay.Size = UDim2.new(0, 300, 0, 200)
+		edit_overlay.Position = UDim2.new(0.5, -150, 0.5, -100)
+		edit_overlay.Visible = false
+		edit_overlay.ZIndex = 100
+		if get_theme() then get_theme().ApplyRounding(edit_overlay, 8) end
+
+		edit_title = Instance.new("TextLabel", edit_overlay)
+		edit_title.BackgroundTransparency = 1
+		edit_title.Position = UDim2.new(0, 15, 0, 10)
+		edit_title.Size = UDim2.new(1, -30, 0, 20)
+		edit_title.Font = get_theme() and get_theme().MapFont(Enum.Font.SourceSansBold) or Enum.Font.SourceSansBold
+		edit_title.TextSize = 14
+		edit_title.TextColor3 = settings_ref.Theme.Text
+		edit_title.TextXAlignment = Enum.TextXAlignment.Left
+
+		-- Cast type button toggle
+		edit_type_btn = make_btn(edit_overlay, "Cast: STRING", 15, 40, 120, 20)
+		edit_type_btn.ZIndex = 100
+		
+		local cast_menu = Instance.new("Frame", edit_overlay)
+		cast_menu.BackgroundColor3 = settings_ref.Theme.Main1
+		cast_menu.BorderSizePixel = 1
+		cast_menu.BorderColor3 = settings_ref.Theme.Outline3
+		cast_menu.Size = UDim2.new(0, 120, 0, 100)
+		cast_menu.Position = UDim2.new(0, 15, 0, 62)
+		cast_menu.Visible = false
+		cast_menu.ZIndex = 105
+		Instance.new("UIListLayout", cast_menu)
+		
+		local function add_cast_option(name)
+			local opt = Instance.new("TextButton", cast_menu)
+			opt.Size = UDim2.new(1, 0, 0, 20)
+			opt.BorderSizePixel = 0
+			opt.Font = Enum.Font.SourceSans
+			opt.TextSize = 12
+			opt.TextColor3 = settings_ref.Theme.Text
+			opt.BackgroundColor3 = settings_ref.Theme.Main2
+			opt.Text = name
+			opt.ZIndex = 105
+			
+			opt.MouseEnter:Connect(function() opt.BackgroundColor3 = settings_ref.Theme.ButtonHover end)
+			opt.MouseLeave:Connect(function() opt.BackgroundColor3 = settings_ref.Theme.Main2 end)
+			opt.MouseButton1Click:Connect(function()
+				edit_cast_type = name
+				edit_type_btn.Text = "Cast: " .. name:upper()
+				cast_menu.Visible = false
+				
+				if name == "boolean" then
+					edit_input.Visible = false
+					edit_check.Visible = true
+				else
+					edit_input.Visible = true
+					edit_check.Visible = false
+					if name == "nil" then edit_input.Text = "nil" end
+				end
+			end)
+		end
+		
+		add_cast_option("string")
+		add_cast_option("number")
+		add_cast_option("boolean")
+		add_cast_option("nil")
+		add_cast_option("JSON")
+		
+		edit_type_btn.MouseButton1Click:Connect(function()
+			cast_menu.Visible = not cast_menu.Visible
+		end)
+
+		edit_input = Instance.new("TextBox", edit_overlay)
+		edit_input.BackgroundColor3 = settings_ref.Theme.Main1
+		edit_input.BorderSizePixel = 0
+		edit_input.Position = UDim2.new(0, 15, 0, 70)
+		edit_input.Size = UDim2.new(1, -30, 0, 48)
+		edit_input.Font = Enum.Font.Code
+		edit_input.TextSize = 12
+		edit_input.TextColor3 = settings_ref.Theme.Text
+		edit_input.MultiLine = true
+		edit_input.TextWrapped = true
+		edit_input.Text = ""
+		edit_input.ClearTextOnFocus = false
+		edit_input.ZIndex = 100
+		local pad_ei = Instance.new("UIPadding", edit_input)
+		pad_ei.PaddingLeft = UDim.new(0, 6)
+		pad_ei.PaddingTop = UDim.new(0, 4)
+		if get_theme() then get_theme().ApplyRounding(edit_input, 4) end
+
+		edit_check = Instance.new("TextButton", edit_overlay)
+		edit_check.BorderSizePixel = 0
+		edit_check.Font = Enum.Font.SourceSansBold
+		edit_check.TextSize = 14
+		edit_check.TextColor3 = Color3.new(1, 1, 1)
+		edit_check.Position = UDim2.new(0, 15, 0, 70)
+		edit_check.Size = UDim2.new(1, -30, 0, 32)
+		edit_check.Visible = false
+		edit_check.ZIndex = 100
+		if get_theme() then get_theme().ApplyRounding(edit_check, 4) end
+		
+		edit_check.MouseButton1Click:Connect(function()
+			if edit_check.Text == "True" then
+				edit_check.Text = "False"
+				edit_check.BackgroundColor3 = Color3.fromRGB(239, 68, 68)
+			else
+				edit_check.Text = "True"
+				edit_check.BackgroundColor3 = Color3.fromRGB(34, 197, 94)
+			end
+		end)
+
+		edit_error = Instance.new("TextLabel", edit_overlay)
+		edit_error.BackgroundTransparency = 1
+		edit_error.Position = UDim2.new(0, 15, 0, 122)
+		edit_error.Size = UDim2.new(1, -30, 0, 30)
+		edit_error.Font = Enum.Font.SourceSans
+		edit_error.TextSize = 11
+		edit_error.TextColor3 = Color3.fromRGB(239, 68, 68)
+		edit_error.TextWrapped = true
+		edit_error.Text = ""
+		edit_error.ZIndex = 100
+
+		local save_btn = make_btn(edit_overlay, "Save", 15, 160, 120, 24)
+		save_btn.ZIndex = 100
+		save_btn.MouseButton1Click:Connect(save_edit)
+
+		local cancel_btn = make_btn(edit_overlay, "Cancel", 165, 160, 120, 24)
+		cancel_btn.ZIndex = 100
+		cancel_btn.MouseButton1Click:Connect(function()
+			edit_overlay.Visible = false
+		end)
+
+		-- Call Function Overlay
+		call_overlay = Instance.new("Frame", window.GuiElems.Content)
+		call_overlay.BackgroundColor3 = settings_ref.Theme.Main2
+		call_overlay.BorderSizePixel = 1
+		call_overlay.BorderColor3 = settings_ref.Theme.Outline2
+		call_overlay.Size = UDim2.new(0, 320, 0, 250)
+		call_overlay.Position = UDim2.new(0.5, -160, 0.5, -125)
+		call_overlay.Visible = false
+		call_overlay.ZIndex = 100
+		if get_theme() then get_theme().ApplyRounding(call_overlay, 8) end
+
+		call_func_name = Instance.new("TextLabel", call_overlay)
+		call_func_name.BackgroundTransparency = 1
+		call_func_name.Position = UDim2.new(0, 15, 0, 10)
+		call_func_name.Size = UDim2.new(1, -30, 0, 20)
+		call_func_name.Font = get_theme() and get_theme().MapFont(Enum.Font.SourceSansBold) or Enum.Font.SourceSansBold
+		call_func_name.TextSize = 14
+		call_func_name.TextColor3 = settings_ref.Theme.Text
+		call_func_name.TextXAlignment = Enum.TextXAlignment.Left
+		call_func_name.ZIndex = 100
+
+		local arg_desc = Instance.new("TextLabel", call_overlay)
+		arg_desc.BackgroundTransparency = 1
+		arg_desc.Position = UDim2.new(0, 15, 0, 30)
+		arg_desc.Size = UDim2.new(1, -30, 0, 16)
+		arg_desc.Font = Enum.Font.SourceSans
+		arg_desc.TextSize = 12
+		arg_desc.TextColor3 = settings_ref.Theme.PlaceholderText
+		arg_desc.Text = "Arguments (comma-separated expression: e.g. 1, 'text', workspace):"
+		arg_desc.TextXAlignment = Enum.TextXAlignment.Left
+		arg_desc.ZIndex = 100
+
+		call_input = Instance.new("TextBox", call_overlay)
+		call_input.BackgroundColor3 = settings_ref.Theme.Main1
+		call_input.BorderSizePixel = 0
+		call_input.Position = UDim2.new(0, 15, 0, 48)
+		call_input.Size = UDim2.new(1, -30, 0, 28)
+		call_input.Font = Enum.Font.Code
+		call_input.TextSize = 11
+		call_input.TextColor3 = settings_ref.Theme.Text
+		call_input.Text = ""
+		call_input.ClearTextOnFocus = false
+		call_input.ZIndex = 100
+		local pad_ci = Instance.new("UIPadding", call_input)
+		pad_ci.PaddingLeft = UDim.new(0, 6)
+		if get_theme() then get_theme().ApplyRounding(call_input, 4) end
+
+		call_output = Instance.new("TextBox", call_overlay)
+		call_output.BackgroundColor3 = settings_ref.Theme.Main1
+		call_output.BorderSizePixel = 0
+		call_output.Position = UDim2.new(0, 15, 0, 82)
+		call_output.Size = UDim2.new(1, -30, 0, 120)
+		call_output.Font = Enum.Font.Code
+		call_output.TextSize = 11
+		call_output.TextColor3 = settings_ref.Theme.Text
+		call_output.TextEditable = false
+		call_output.ClearTextOnFocus = false
+		call_output.MultiLine = true
+		call_output.TextWrapped = true
+		call_output.Text = ""
+		call_output.TextXAlignment = Enum.TextXAlignment.Left
+		call_output.TextYAlignment = Enum.TextYAlignment.Top
+		call_output.ZIndex = 100
+		local pad_co = Instance.new("UIPadding", call_output)
+		pad_co.PaddingLeft = UDim.new(0, 6)
+		pad_co.PaddingTop = UDim.new(0, 4)
+		if get_theme() then get_theme().ApplyRounding(call_output, 4) end
+
+		call_exec_btn = make_btn(call_overlay, "Execute", 15, 210, 130, 26)
+		call_exec_btn.ZIndex = 100
+		call_exec_btn.MouseButton1Click:Connect(execute_call)
+
+		local call_close_btn = make_btn(call_overlay, "Close", 175, 210, 130, 26)
+		call_close_btn.ZIndex = 100
+		call_close_btn.MouseButton1Click:Connect(function()
+			call_overlay.Visible = false
+		end)
+
+		-- Detail panel button connections
+		edit_btn.MouseButton1Click:Connect(open_edit_overlay)
+		call_btn.MouseButton1Click:Connect(open_call_overlay)
+
+		explore_btn.MouseButton1Click:Connect(function()
+			if not explore_btn.Active or not selected_key or typeof(selected_val) ~= "Instance" then return end
+			local exp = apps_ref.Explorer
+			if exp and exp.Nodes and exp.Selection then
+				local node = exp.Nodes[selected_val]
+				if node then
+					exp.MakeNodeVisible(node, true)
+					exp.Selection:Set(node)
+					exp.ViewNode(node)
+				end
+			end
+		end)
+
+		decompile_btn.MouseButton1Click:Connect(function()
+			if not decompile_btn.Active or not selected_key or typeof(selected_val) ~= "Instance" or not selected_val:IsA("LuaSourceContainer") then return end
+			local sv = apps_ref.ScriptViewer
+			if sv and sv.ViewScript then
+				task.spawn(function()
+					sv.ViewScript(selected_val)
+					sv.Window:Show()
+				end)
+			end
+		end)
+
+		copy_btn.MouseButton1Click:Connect(function()
+			if not selected_key or not setclipboard then return end
+			setclipboard(safe_string(selected_val))
+			copy_btn.Text = "Copied!"
+			task.delay(1, function() copy_btn.Text = "Copy Value to Clipboard" end)
+		end)
+
+		rebuild_list()
+		update_details(nil)
+
+		window.OnActivate:Connect(function()
+			if scroll_v then
+				scroll_v.TotalSpace   = #log_frames
+				scroll_v.VisibleSpace = math.floor(list_container.AbsoluteSize.Y / 37)
+				scroll_v:Update()
+			end
+		end)
+	end
+
+	return editor
+end
+
 return {
 	InitDeps      = initDeps,
 	InitAfterMain = initAfterMain,

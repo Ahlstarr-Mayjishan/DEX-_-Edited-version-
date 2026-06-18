@@ -2791,6 +2791,7 @@ return search]==]
 		selection.ShiftSet = {}
 		selection.Changed:Connect(Properties.ShowExplorerProps)
 		Explorer.Selection = selection
+		Explorer.Nodes = nodes
 
 		Explorer.InitRightClick()
 		Explorer.InitInsertObject()

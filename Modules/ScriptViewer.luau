@@ -43,11 +43,15 @@ elseif game:GetService("RunService"):IsStudio() then
 end
 
 local function getPath(obj)
-	if obj.Parent == nil then
-		return "Nil parented"
-	else
-		return Explorer.GetInstancePath(obj)
-	end
+    if Main and Main.SafeGetInstancePath then
+        return Main.SafeGetInstancePath(obj)
+    end
+    if not obj then return "?" end
+    if obj.Parent == nil then return "Nil parented" end
+    local ok, fullName = pcall(function()
+        return obj:GetFullName()
+    end)
+    return ok and fullName or tostring(obj)
 end
 
 local function main()

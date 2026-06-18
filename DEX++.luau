@@ -53,7 +53,7 @@ local EmbeddedModules = {
 local isFsSupported = readfile and writefile and isfile and isfolder and listfiles and delfile and delfolder
 
 -- Main vars
-local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, ClientIndex, ActivityMap, DependencyGraph, SmartSearch, RuntimeInspector, ClientIntelligence, TaskRouter, Theme, SmartDecompiler, SecurityAuditor, RemoteFuzzer, PropertyTracker, InstanceSerializer, ThreadManager--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
+local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, ClientIndex, ActivityMap, DependencyGraph, SmartSearch, RuntimeInspector, ClientIntelligence, InspectorHub, TaskRouter, Theme, SmartDecompiler, SecurityAuditor, RemoteFuzzer, PropertyTracker, InstanceSerializer, ThreadManager--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
 local API, RMD
 
 -- Default Settings
@@ -213,7 +213,7 @@ end
 Main = (function()
 	local Main = {}
 
-	Main.ModuleList = {"Theme","SmartDecompiler","Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap","ObjectLinks","ImageViewer","ClientIndex","ActivityMap","DependencyGraph","SmartSearch","RuntimeInspector","ClientIntelligence","TaskRouter","SecurityAuditor","RemoteFuzzer","PropertyTracker","InstanceSerializer","ThreadManager"}
+	Main.ModuleList = {"Theme","SmartDecompiler","Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap","ObjectLinks","ImageViewer","ClientIndex","ActivityMap","DependencyGraph","SmartSearch","RuntimeInspector","ClientIntelligence","InspectorHub","TaskRouter","SecurityAuditor","RemoteFuzzer","PropertyTracker","InstanceSerializer","ThreadManager"}
 	Main.Elevated = false
 	Main.AllowDraggableOnMobile = true
 	Main.MissingEnv = {}
@@ -363,6 +363,49 @@ Main = (function()
 		}
 	end
 
+	Main.SafeGetInstancePath = function(obj)
+		if not obj then
+			return "?"
+		end
+
+		local explorerApp = Apps and Apps.Explorer
+		if explorerApp and explorerApp.GetInstancePath then
+			local ok, path = pcall(explorerApp.GetInstancePath, obj)
+			if ok and path ~= nil then
+				return tostring(path)
+			end
+		end
+
+		local okFullName, fullName = pcall(function()
+			return obj:GetFullName()
+		end)
+		if okFullName and fullName and fullName ~= "" then
+			return tostring(fullName)
+		end
+
+		local okManual, manualPath = pcall(function()
+			if typeof(obj) ~= "Instance" then
+				return tostring(obj)
+			end
+
+			local parts = {}
+			local cur = obj
+			while cur and cur ~= game do
+				table.insert(parts, 1, tostring(cur.Name))
+				cur = cur.Parent
+			end
+			if cur == game then
+				table.insert(parts, 1, "game")
+			end
+			return #parts > 0 and table.concat(parts, ".") or tostring(obj)
+		end)
+		if okManual and manualPath and manualPath ~= "" then
+			return tostring(manualPath)
+		end
+
+		return tostring(obj)
+	end
+
 	Main.Error = function(str)
 		if rconsoleprint then
 			rconsoleprint("DEX ERROR: "..tostring(str).."\n")
@@ -375,6 +418,31 @@ Main = (function()
 	Main.LoadModule = function(name)
 		if Main.Elevated then -- If you don't have filesystem api then ur outta luck tbh
 			local control
+			local usedLocalOverride = false
+
+			local function loadEmbeddedControl()
+				if not EmbeddedModules then return nil end
+				if not EmbeddedModules[name] then Main.Error("Missing Embedded Module: "..name) end
+				if gethsfuncs then _G.moduleData = nil end
+				local embeddedControl = EmbeddedModules[name]()
+
+				-- TODO: Remove when open source
+				if gethsfuncs then
+					embeddedControl = _G.moduleData
+				end
+
+				if not embeddedControl then Main.Error("Missing Embedded Module: "..name) end
+				return embeddedControl
+			end
+
+			local function activateControl(selectedControl)
+				Main.AppControls[name] = selectedControl
+				selectedControl.InitDeps(Main.GetInitDeps())
+
+				local moduleData = selectedControl.Main()
+				Apps[name] = moduleData
+				return moduleData
+			end
 
 			-- Developer Mode: Load directly from local file if exists
 			local localPath = 'dex/Modules/' .. name .. '.luau'
@@ -388,59 +456,61 @@ Main = (function()
 						control = _G.moduleData
 					end
 				end)
+				if s and control then
+					usedLocalOverride = true
+				end
 				if not s then
 					warn('Failed to load local module ' .. name .. ': ' .. tostring(err))
 				end
 			end
 
-			if not control and EmbeddedModules then -- Offline Modules
-				if not EmbeddedModules[name] then Main.Error("Missing Embedded Module: "..name) end
-				if gethsfuncs then _G.moduleData = nil end
-				control = EmbeddedModules[name]()
-
-				-- TODO: Remove when open source
-				if gethsfuncs then
-					control = _G.moduleData
-				end
-
-				if not control then Main.Error("Missing Embedded Module: "..name) end
-			else
-				-- Get hash data
-				local hashs = Main.ModuleHashData
-				if not hashs then
-					local s,hashDataStr = pcall(oldgame.HttpGet, game, "https://api.github.com/repos/"..Main.GitRepoName.."/ModuleHashs.dat")
-					if not s then Main.Error("Failed to get module hashs") end
-
-					local s,hashData = pcall(service.HttpService.JSONDecode,service.HttpService,hashDataStr)
-					if not s then Main.Error("Failed to decode module hash JSON") end
-
-					hashs = hashData
-					Main.ModuleHashData = hashs
-				end
-
-				-- Check if local copy exists with matching hashs
-				local hashfunc = (syn and syn.crypt.hash) or function() return "" end
-				local filePath = "dex/ModuleCache/"..name..".lua"
-				local s,moduleStr = pcall(env.readfile,filePath)
-
-				if s and hashfunc(moduleStr) == hashs[name] then
-					control = loadstring(moduleStr)()
+			if not control then
+				if EmbeddedModules then -- Offline Modules
+					control = loadEmbeddedControl()
 				else
-					-- Download and cache
-					local s,moduleStr = pcall(oldgame.HttpGet, game, "https://api.github.com/repos/"..Main.GitRepoName.."/Modules/"..name..".lua")
-					if not s then Main.Error("Failed to get external module data of "..name) end
+					-- Get hash data
+					local hashs = Main.ModuleHashData
+					if not hashs then
+						local s,hashDataStr = pcall(oldgame.HttpGet, game, "https://api.github.com/repos/"..Main.GitRepoName.."/ModuleHashs.dat")
+						if not s then Main.Error("Failed to get module hashs") end
 
-					env.writefile(filePath,moduleStr)
-					control = loadstring(moduleStr)()
+						local s,hashData = pcall(service.HttpService.JSONDecode,service.HttpService,hashDataStr)
+						if not s then Main.Error("Failed to decode module hash JSON") end
+
+						hashs = hashData
+						Main.ModuleHashData = hashs
+					end
+
+					-- Check if local copy exists with matching hashs
+					local hashfunc = (syn and syn.crypt.hash) or function() return "" end
+					local filePath = "dex/ModuleCache/"..name..".lua"
+					local s,moduleStr = pcall(env.readfile,filePath)
+
+					if s and hashfunc(moduleStr) == hashs[name] then
+						control = loadstring(moduleStr)()
+					else
+						-- Download and cache
+						local s,moduleStr = pcall(oldgame.HttpGet, game, "https://api.github.com/repos/"..Main.GitRepoName.."/Modules/"..name..".lua")
+						if not s then Main.Error("Failed to get external module data of "..name) end
+
+						env.writefile(filePath,moduleStr)
+						control = loadstring(moduleStr)()
+					end
 				end
 			end
 
-			Main.AppControls[name] = control
-			control.InitDeps(Main.GetInitDeps())
+			if usedLocalOverride then
+				local ok, moduleData = pcall(activateControl, control)
+				if ok then
+					return moduleData
+				end
+				warn("Local module " .. name .. " failed during init; falling back to embedded: " .. tostring(moduleData))
+				Main.AppControls[name] = nil
+				Apps[name] = nil
+				control = loadEmbeddedControl()
+			end
 
-			local moduleData = control.Main()
-			Apps[name] = moduleData
-			return moduleData
+			return activateControl(control)
 		else
 			local module = script:WaitForChild("Modules"):WaitForChild(name,2)
 			if not module then Main.Error("CANNOT FIND MODULE "..name) end
@@ -505,6 +575,7 @@ Main = (function()
 		SmartSearch = Apps.SmartSearch
 		RuntimeInspector = Apps.RuntimeInspector
 		ClientIntelligence = Apps.ClientIntelligence
+		InspectorHub = Apps.InspectorHub
 		TaskRouter = Apps.TaskRouter
 		Theme = Apps.Theme
 		SmartDecompiler = Apps.SmartDecompiler
@@ -538,6 +609,7 @@ Main = (function()
 			SmartSearch = SmartSearch,
 			RuntimeInspector = RuntimeInspector,
 			ClientIntelligence = ClientIntelligence,
+			InspectorHub = InspectorHub,
 			TaskRouter = TaskRouter,
 			SecurityAuditor = SecurityAuditor,
 			RemoteFuzzer = RemoteFuzzer,
@@ -2369,6 +2441,8 @@ Main = (function()
 
 		Main.CreateApp({Name = "Client Intelligence", IconMap = Main.LargeIcons, Icon = "Output", Window = ClientIntelligence.Window})
 
+		Main.CreateApp({Name = "Inspector Hub", IconMap = Main.LargeIcons, Icon = "Watcher", Window = InspectorHub.Window})
+
 		Main.CreateApp({Name = "Task Router", IconMap = Main.LargeIcons, Icon = "ScriptEdit", Window = TaskRouter.Window})
 
 		Main.CreateApp({Name = "Security Auditor", IconMap = Main.LargeIcons, Icon = "Watcher", Window = SecurityAuditor.Window})
@@ -2528,6 +2602,7 @@ Main = (function()
 		SmartSearch.Init()
 		RuntimeInspector.Init()
 		ClientIntelligence.Init()
+		InspectorHub.Init()
 		TaskRouter.Init()
 		SecurityAuditor.Init()
 		--SecretServicePanel.Init()

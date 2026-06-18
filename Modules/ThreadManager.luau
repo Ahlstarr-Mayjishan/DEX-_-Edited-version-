@@ -198,7 +198,7 @@ local function main()
 				end)
 				
 				button(row, "Select", UDim2.new(0.6, 142, 0, 6), UDim2.new(0, 50, 0, 24), function()
-					if Explorer and nodes[scr] then
+                    if Explorer and Explorer.Selection and Explorer.ViewNode and nodes[scr] then
 						Explorer.Selection:Set(nodes[scr])
 						Explorer.ViewNode(nodes[scr])
 					end

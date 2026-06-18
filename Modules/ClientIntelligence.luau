@@ -4,7 +4,7 @@
 	Aggregates client-side snapshots, dependency hints, smart queries, timeline, and perf hints.
 ]]
 local Main,Lib,Apps,Settings
-local Explorer, ScriptViewer, RuntimeInspector, ClientIntelligence
+local Explorer, ScriptViewer, RuntimeInspector, ClientIntelligence, InspectorHub
 local API,RMD,env,service,plr,create,createSimple
 
 local function initDeps(data)
@@ -18,6 +18,7 @@ local function initAfterMain()
 	ScriptViewer = Apps.ScriptViewer
 	RuntimeInspector = Apps.RuntimeInspector
 	ClientIntelligence = Apps.ClientIntelligence
+	InspectorHub = Apps.InspectorHub
 end
 
 local function main()
@@ -28,6 +29,7 @@ local function main()
 
 	local function setStatus(text) if statusLabel then statusLabel.Text = text end end
 	local function getPath(obj)
+        if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(obj) end
 		local ok, path = pcall(function()
 			if Explorer and Explorer.GetInstancePath then return Explorer.GetInstancePath(obj) end
 			return obj:GetFullName()
@@ -307,6 +309,14 @@ local function main()
 		setStatus("Performance summary ready.")
 		window:Show()
 	end
+	local function showHub()
+		if InspectorHub and InspectorHub.ShowSnapshot then
+			InspectorHub.ShowSnapshot()
+			setStatus("Opened Inspector Hub snapshot.")
+		else
+			setStatus("Inspector Hub is unavailable.")
+		end
+	end
 	local function makeButton(parent, text, x, w, callback)
 		local b = createSimple("TextButton",{AutoButtonColor=false, BackgroundColor3=Settings.Theme.Button, BorderColor3=Settings.Theme.Outline2, Font=Enum.Font.SourceSans, Position=UDim2.new(0,x,0,4), Size=UDim2.new(0,w,0,22), Text=text, TextColor3=Settings.Theme.Text, TextSize=14, Parent=parent})
 		b.MouseButton1Click:Connect(callback)
@@ -326,7 +336,8 @@ local function main()
 		makeButton(toolbar,"Timeline",204,72,showTimeline)
 		makeButton(toolbar,"Perf",282,50,showPerf)
 		makeButton(toolbar,"Index",338,52,showIndexHealth)
-		statusLabel = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSans, Position=UDim2.new(0,398,0,4), Size=UDim2.new(1,-404,0,22), Text="Client-side intelligence dashboard.", TextColor3=Settings.Theme.PlaceholderText, TextSize=14, TextTruncate=Enum.TextTruncate.AtEnd, TextXAlignment=Enum.TextXAlignment.Left, Parent=toolbar})
+		makeButton(toolbar,"Hub",396,46,showHub)
+		statusLabel = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSans, Position=UDim2.new(0,450,0,4), Size=UDim2.new(1,-456,0,22), Text="Client-side intelligence dashboard.", TextColor3=Settings.Theme.PlaceholderText, TextSize=14, TextTruncate=Enum.TextTruncate.AtEnd, TextXAlignment=Enum.TextXAlignment.Left, Parent=toolbar})
 		listFrame = createSimple("ScrollingFrame",{Active=true, AutomaticCanvasSize=Enum.AutomaticSize.Y, BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, BottomImage="", CanvasSize=UDim2.new(0,0,0,0), Position=UDim2.new(0,0,0,60), ScrollBarImageColor3=Color3.fromRGB(70,70,70), ScrollBarThickness=10, Size=UDim2.new(1,0,1,-60), TopImage="", Parent=content})
 		local layout = Instance.new("UIListLayout")
 		layout.Padding = UDim.new(0,4)

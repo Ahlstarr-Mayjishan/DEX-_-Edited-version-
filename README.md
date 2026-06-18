@@ -78,6 +78,17 @@ When `DEX_Helper.exe` is running, `Code Search > Index Scripts` now delegates ex
 
 The helper loads `dex_helper_index.dat` on startup. Running `Index Scripts` refreshes entries and saves the updated helper index automatically.
 
+## Inspector Hub
+
+`Inspector Hub` centralizes DEX/inspector signals into one action view:
+
+- snapshot of live client surface, cache coverage, service size, scripts, remotes, parts, and UI objects;
+- hot/risky remotes ranked by runtime call activity, class, and suspicious names;
+- quick risk queue from remote names and cached script-source signals;
+- copyable inspector brief for AI handoff or debugging notes.
+
+`Client Intelligence` includes a `Hub` shortcut that opens the Inspector Hub snapshot.
+
 ## Task Router
 
 `Task Router` assigns work to the best layer for the job:
@@ -93,7 +104,11 @@ The build scripts now bundle every `.lua`/`.luau` file under `Plugins/` into `de
 
 Current bundled plugins:
 
+- `HttpSpy.lua`
+- `LoadedModuleSpy.lua`
+- `MetatableHookManager.lua`
 - `RemoteSpy.lua`
+- `TableEditor.lua`
 - `TaskRouterLab.lua`
 
 ## Copy to AI + helper analysis

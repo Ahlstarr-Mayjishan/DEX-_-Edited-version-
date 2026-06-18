@@ -311,6 +311,7 @@ local function main()
 		if not okSource or type(source) ~= "string" then return false end
 
 		local okPath, path = pcall(function()
+            if Main and Main.SafeGetInstancePath then return Main.SafeGetInstancePath(scriptInstance) end
 			if Explorer and Explorer.GetInstancePath then return Explorer.GetInstancePath(scriptInstance) end
 			return scriptInstance:GetFullName()
 		end)
