@@ -56,6 +56,13 @@ local function main()
 		end
 	end
 
+	local function reportTool(state)
+		if Main and Main.ReportToolState then
+			state.StatusText = statusLabel and statusLabel.Text or state.StatusText
+			pcall(Main.ReportToolState, "Code Search", state)
+		end
+	end
+
 	local function beginOperation()
 		operationId += 1
 		cancelRequested = false
@@ -756,16 +763,24 @@ local function main()
 	CodeSearch.IndexScripts = function()
 		if indexing then
 			setStatus("Indexing is already running.")
+			reportTool({State = "indexing", Load = "high"})
 			return
 		end
 
 		if not canUseCache() then
 			setStatus("Filesystem cache APIs are unavailable.")
+			reportTool({State = "unavailable", Load = "off"})
 			return
 		end
 
 		indexing = true
 		local token = beginOperation()
+		reportTool({
+			State = "indexing",
+			Load = isLowImpactIndex() and "medium" or "high",
+			LowImpact = isLowImpactIndex(),
+			Progress = 0
+		})
 		task.spawn(function()
 			local scripts = collectScripts()
 			local total = #scripts
@@ -780,6 +795,7 @@ local function main()
 			if total == 0 then
 				indexing = false
 				setStatus("No decompilable scripts found.")
+				reportTool({State = "idle", Load = "low", Progress = 1, Total = 0})
 				return
 			end
 
@@ -787,6 +803,17 @@ local function main()
 				if not indexing or shouldCancel(token) then
 					indexing = false
 					setStatus(("Index stopped: %d cached, %d decompiled, %d failed, %d helper."):format(cached, decompiled, failed, helperIndexed))
+					reportTool({
+						State = "stopped",
+						Load = "low",
+						Progress = total > 0 and (i / total) or 0,
+						Total = total,
+						Cached = cached,
+						Decompiled = decompiled,
+						Failed = failed,
+						HelperIndexed = helperIndexed,
+						Skipped = skipped
+					})
 					rebuildScriptLookup()
 					return
 				end
@@ -797,6 +824,18 @@ local function main()
 				if i % 20 == 0 or i == total then
 					local mode = lowImpact and "Low impact" or "Full"
 					setStatus(("%s indexing: %d / %d (%.1f%%) | cached %d | new %d | skipped %d | failed %d"):format(mode, i, total, percent, cached, decompiled, skipped, failed))
+					reportTool({
+						State = "indexing",
+						Load = lowImpact and "medium" or "high",
+						LowImpact = lowImpact,
+						Progress = i / total,
+						Total = total,
+						Cached = cached,
+						Decompiled = decompiled,
+						Failed = failed,
+						HelperIndexed = helperIndexed,
+						Skipped = skipped
+					})
 				end
 
 				local key = getScriptKey(scriptInstance)
@@ -850,6 +889,17 @@ local function main()
 			indexing = false
 			if shouldCancel(token) then
 				setStatus(("Index stopped: %d cached, %d decompiled, %d failed, %d helper."):format(cached, decompiled, failed, helperIndexed))
+				reportTool({
+					State = "stopped",
+					Load = "low",
+					Progress = 1,
+					Total = total,
+					Cached = cached,
+					Decompiled = decompiled,
+					Failed = failed,
+					HelperIndexed = helperIndexed,
+					Skipped = skipped
+				})
 				rebuildScriptLookup()
 				return
 			end
@@ -863,12 +913,24 @@ local function main()
 			else
 				setStatus(("Index complete: %d cached, %d decompiled, %d skipped, %d failed, %d helper."):format(cached, decompiled, skipped, failed, helperIndexed))
 			end
+			reportTool({
+				State = "idle",
+				Load = "low",
+				Progress = 1,
+				Total = total,
+				Cached = cached,
+				Decompiled = decompiled,
+				Failed = failed,
+				HelperIndexed = helperIndexed,
+				Skipped = skipped
+			})
 		end)
 	end
 
 	CodeSearch.Stop = function()
 		if not indexing and not searching then
 			setStatus("Nothing to stop.")
+			reportTool({State = "idle", Load = "low"})
 			return
 		end
 		cancelRequested = true
@@ -876,6 +938,7 @@ local function main()
 		indexing = false
 		searching = false
 		setStatus("Stopping current Code Search task...")
+		reportTool({State = "stopping", Load = "low"})
 	end
 
 	CodeSearch.Init = function()
@@ -919,6 +982,7 @@ local function main()
 		statusLabel.Position = UDim2.new(0,6,0,32)
 		statusLabel.Size = UDim2.new(1,-94,0,20)
 		statusLabel.Text = "Low Impact is ON: Index uses cache/helper and skips new decompile."
+		reportTool({State = "idle", Load = "low", LowImpact = isLowImpactIndex()})
 		statusLabel.TextColor3 = Settings.Theme.PlaceholderText
 		statusLabel.TextSize = 14
 		statusLabel.TextTruncate = Enum.TextTruncate.AtEnd

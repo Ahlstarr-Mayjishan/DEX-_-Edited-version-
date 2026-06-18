@@ -43,6 +43,38 @@ local function main()
 		CanCollide = true, PlaybackState = true, Volume = true, SoundId = true
 	}
 
+	local function countTracked()
+		local instances = 0
+		local props = 0
+		for _, data in pairs(trackedInstances) do
+			instances += 1
+			for _ in pairs(data.ActiveProps) do
+				props += 1
+			end
+		end
+		return instances, props
+	end
+
+	local function reportTool(extra)
+		if not Main or not Main.ReportToolState then return end
+		local instances, props = countTracked()
+		local state = {
+			State = instances > 0 and "tracking" or "idle",
+			Load = Settings.Decompiler and Settings.Decompiler.HelperLogChanges == true and "medium" or "low",
+			Tracked = instances,
+			Properties = props,
+			Logs = #logs,
+			HelperLogging = Settings.Decompiler and Settings.Decompiler.HelperLogChanges == true or false,
+			HelperLogRateLimit = Settings.Decompiler and Settings.Decompiler.HelperLogRateLimit or 0
+		}
+		if extra then
+			for k, v in pairs(extra) do
+				state[k] = v
+			end
+		end
+		pcall(Main.ReportToolState, "Property Tracker", state)
+	end
+
 	-- Retrieves all readable/writable properties of an instance
 	local function getProperties(obj: Instance)
 		local propsList = {}
@@ -83,6 +115,7 @@ local function main()
 		if #logs > 500 then
 			table.remove(logs, 501)
 		end
+		reportTool({LastChange = instPath .. "." .. propName})
 		
 		PropertyTracker.RenderLogs()
 
@@ -149,6 +182,7 @@ local function main()
 		end
 		data.ActiveProps[propName] = nil
 		data.LastValues[propName] = nil
+		reportTool()
 	end
 
 	local function startTrackingProp(inst: Instance, propName: string)
@@ -177,6 +211,7 @@ local function main()
 		
 		if ok and con then
 			data.Connections[propName] = con
+			reportTool()
 		else
 			data.ActiveProps[propName] = nil
 			data.LastValues[propName] = nil
@@ -337,6 +372,7 @@ local function main()
 			PropertyTracker.RenderInstances()
 			PropertyTracker.RenderProperties()
 		end
+		reportTool()
 	end
 
 	PropertyTracker.UntrackInstance = function(inst: Instance)
@@ -350,6 +386,7 @@ local function main()
 		if selectedInstance == inst then
 			selectedInstance = nil
 		end
+		reportTool()
 		PropertyTracker.RenderInstances()
 		PropertyTracker.RenderProperties()
 	end
@@ -548,6 +585,7 @@ local function main()
 
 		PropertyTracker.RenderInstances()
 		PropertyTracker.RenderLogs()
+		reportTool()
 	end
 
 	return PropertyTracker

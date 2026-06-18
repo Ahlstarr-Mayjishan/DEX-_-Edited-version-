@@ -126,6 +126,28 @@ local function main()
 	local window, list_frame, tree_frame, scroll_v, status_label, detail_label, empty_label
 	local rebuild_list
 
+	local function report_tool(extra)
+		if not main_ref or not main_ref.ReportToolState then return end
+		local state = {
+			State = active and (paused and "paused" or "capturing") or "idle",
+			Load = active and "variable" or "low",
+			Logs = #logs,
+			Remotes = 0,
+			Dropped = dropped_logs,
+			PendingRows = #pending_rows,
+			MaxLogsPerSecond = max_logs_per_second
+		}
+		for _ in pairs(remote_stats) do
+			state.Remotes += 1
+		end
+		if extra then
+			for k, v in pairs(extra) do
+				state[k] = v
+			end
+		end
+		pcall(main_ref.ReportToolState, "Remote Spy", state)
+	end
+
 	local function update_scroll()
 		if scroll_v then
 			scroll_v.TotalSpace = #log_frames
@@ -514,6 +536,7 @@ local function main()
 		if status_label and now - last_status_update > 0.25 then
 			last_status_update = now
 			status_label.Text = #logs .. " logs" .. (dropped_logs > 0 and (" | dropped " .. dropped_logs) or "")
+			report_tool()
 		end
 		if created_remote or now - last_tree_rebuild > 1 then
 			last_tree_rebuild = now
@@ -582,6 +605,7 @@ local function main()
 		dropped_logs = 0
 		rate_window_start = os.clock()
 		rate_window_count = 0
+		report_tool({State = "starting", Load = "medium"})
 
 		if hookmetamethod and not namecall_orig then
 			local ok, orig = pcall(hookmetamethod, game, "__namecall", function(self, ...)
@@ -621,6 +645,7 @@ local function main()
 		end
 		rebuild_tree()
 		update_detail()
+		report_tool()
 
 		local da_con = game.DescendantAdded:Connect(function(inst)
 			if active then
@@ -637,6 +662,7 @@ local function main()
 	local function stop()
 		if not active then return end
 		active = false
+		report_tool({State = "stopping", Load = "low"})
 
 		for _, con in ipairs(hook_cons) do
 			pcall(function() con:Disconnect() end)
@@ -645,6 +671,7 @@ local function main()
 
 		seen = {}
 		setmetatable(seen, { __mode = "k" })
+		report_tool()
 	end
 
 	local function make_btn(parent, text, x, w)
@@ -899,12 +926,14 @@ local function main()
 			rebuild_tree()
 			rebuild_list()
 			update_detail()
+			report_tool()
 		end)
 
 		pause_btn.MouseButton1Click:Connect(function()
 			if active then
 				paused = not paused
 				update_button_states()
+				report_tool()
 			end
 		end)
 
@@ -928,6 +957,7 @@ local function main()
 		rebuild_tree()
 		update_detail()
 		rebuild_list()
+		report_tool()
 
 		window.OnActivate:Connect(function()
 			if scroll_v then

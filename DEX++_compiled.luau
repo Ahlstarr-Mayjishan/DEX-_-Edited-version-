@@ -15451,6 +15451,13 @@ end,
 		end
 	end
 
+	local function reportTool(state)
+		if Main and Main.ReportToolState then
+			state.StatusText = statusLabel and statusLabel.Text or state.StatusText
+			pcall(Main.ReportToolState, "Code Search", state)
+		end
+	end
+
 	local function beginOperation()
 		operationId += 1
 		cancelRequested = false
@@ -16151,16 +16158,24 @@ end,
 	CodeSearch.IndexScripts = function()
 		if indexing then
 			setStatus("Indexing is already running.")
+			reportTool({State = "indexing", Load = "high"})
 			return
 		end
 
 		if not canUseCache() then
 			setStatus("Filesystem cache APIs are unavailable.")
+			reportTool({State = "unavailable", Load = "off"})
 			return
 		end
 
 		indexing = true
 		local token = beginOperation()
+		reportTool({
+			State = "indexing",
+			Load = isLowImpactIndex() and "medium" or "high",
+			LowImpact = isLowImpactIndex(),
+			Progress = 0
+		})
 		task.spawn(function()
 			local scripts = collectScripts()
 			local total = #scripts
@@ -16175,6 +16190,7 @@ end,
 			if total == 0 then
 				indexing = false
 				setStatus("No decompilable scripts found.")
+				reportTool({State = "idle", Load = "low", Progress = 1, Total = 0})
 				return
 			end
 
@@ -16182,6 +16198,17 @@ end,
 				if not indexing or shouldCancel(token) then
 					indexing = false
 					setStatus(("Index stopped: %d cached, %d decompiled, %d failed, %d helper."):format(cached, decompiled, failed, helperIndexed))
+					reportTool({
+						State = "stopped",
+						Load = "low",
+						Progress = total > 0 and (i / total) or 0,
+						Total = total,
+						Cached = cached,
+						Decompiled = decompiled,
+						Failed = failed,
+						HelperIndexed = helperIndexed,
+						Skipped = skipped
+					})
 					rebuildScriptLookup()
 					return
 				end
@@ -16192,6 +16219,18 @@ end,
 				if i % 20 == 0 or i == total then
 					local mode = lowImpact and "Low impact" or "Full"
 					setStatus(("%s indexing: %d / %d (%.1f%%) | cached %d | new %d | skipped %d | failed %d"):format(mode, i, total, percent, cached, decompiled, skipped, failed))
+					reportTool({
+						State = "indexing",
+						Load = lowImpact and "medium" or "high",
+						LowImpact = lowImpact,
+						Progress = i / total,
+						Total = total,
+						Cached = cached,
+						Decompiled = decompiled,
+						Failed = failed,
+						HelperIndexed = helperIndexed,
+						Skipped = skipped
+					})
 				end
 
 				local key = getScriptKey(scriptInstance)
@@ -16245,6 +16284,17 @@ end,
 			indexing = false
 			if shouldCancel(token) then
 				setStatus(("Index stopped: %d cached, %d decompiled, %d failed, %d helper."):format(cached, decompiled, failed, helperIndexed))
+				reportTool({
+					State = "stopped",
+					Load = "low",
+					Progress = 1,
+					Total = total,
+					Cached = cached,
+					Decompiled = decompiled,
+					Failed = failed,
+					HelperIndexed = helperIndexed,
+					Skipped = skipped
+				})
 				rebuildScriptLookup()
 				return
 			end
@@ -16258,12 +16308,24 @@ end,
 			else
 				setStatus(("Index complete: %d cached, %d decompiled, %d skipped, %d failed, %d helper."):format(cached, decompiled, skipped, failed, helperIndexed))
 			end
+			reportTool({
+				State = "idle",
+				Load = "low",
+				Progress = 1,
+				Total = total,
+				Cached = cached,
+				Decompiled = decompiled,
+				Failed = failed,
+				HelperIndexed = helperIndexed,
+				Skipped = skipped
+			})
 		end)
 	end
 
 	CodeSearch.Stop = function()
 		if not indexing and not searching then
 			setStatus("Nothing to stop.")
+			reportTool({State = "idle", Load = "low"})
 			return
 		end
 		cancelRequested = true
@@ -16271,6 +16333,7 @@ end,
 		indexing = false
 		searching = false
 		setStatus("Stopping current Code Search task...")
+		reportTool({State = "stopping", Load = "low"})
 	end
 
 	CodeSearch.Init = function()
@@ -16314,6 +16377,7 @@ end,
 		statusLabel.Position = UDim2.new(0,6,0,32)
 		statusLabel.Size = UDim2.new(1,-94,0,20)
 		statusLabel.Text = "Low Impact is ON: Index uses cache/helper and skips new decompile."
+		reportTool({State = "idle", Load = "low", LowImpact = isLowImpactIndex()})
 		statusLabel.TextColor3 = Settings.Theme.PlaceholderText
 		statusLabel.TextSize = 14
 		statusLabel.TextTruncate = Enum.TextTruncate.AtEnd
@@ -20441,6 +20505,20 @@ end,
 		return helperStatus
 	end
 
+	local function toolState(name)
+		if not Main or not Main.GetToolStates then return {} end
+		local ok, states = pcall(Main.GetToolStates)
+		if not ok or type(states) ~= "table" then return {} end
+		return states[name] or {}
+	end
+
+	local function percentText(value)
+		local n = tonumber(value)
+		if not n then return "" end
+		n = math.max(0, math.min(1, n))
+		return tostring(math.floor(n * 100 + 0.5)) .. "%"
+	end
+
 	local function openTool(name)
 		local control = Main.MenuApps and Main.MenuApps[name]
 		if control and control.Enable then
@@ -20550,11 +20628,30 @@ end,
 	local function renderModules()
 		clear(modulesFrame)
 		local helper = refreshHelperStatus(false)
-		addModuleRow(modulesFrame, 8, "Code Search", Settings.Decompiler.CodeSearchLowImpact ~= false and "guarded" or "full", Settings.Decompiler.CodeSearchLowImpact ~= false and "low" or "high", "Index mode controls decompile pressure.", "Code Search")
-		addModuleRow(modulesFrame, 48, "Property Tracker", Settings.Decompiler.HelperLogChanges == true and "logging" or "local", Settings.Decompiler.HelperLogChanges == true and "medium" or "low", "Helper log cap: " .. tostring(Settings.Decompiler.HelperLogRateLimit or 5) .. "/s", "Property Tracker")
+		local code = toolState("Code Search")
+		local tracker = toolState("Property Tracker")
+		local threads = toolState("Thread Manager")
+		local spy = toolState("Remote Spy")
+		local codeDetail = "Index mode controls decompile pressure."
+		if code.Total then
+			codeDetail = (percentText(code.Progress) ~= "" and (percentText(code.Progress) .. " | ") or "") ..
+				tostring(code.Cached or 0) .. " cached | " ..
+				tostring(code.Decompiled or 0) .. " new | " ..
+				tostring(code.Skipped or 0) .. " skipped"
+		end
+		local trackerDetail = tostring(tracker.Tracked or 0) .. " objects | " ..
+			tostring(tracker.Properties or 0) .. " props | " ..
+			tostring(tracker.Logs or 0) .. " logs"
+		local threadDetail = tostring(threads.Scripts or 0) .. " scripts | " ..
+			tostring(threads.Threads or 0) .. " threads"
+		local spyDetail = tostring(spy.Remotes or 0) .. " remotes | " ..
+			tostring(spy.Logs or 0) .. " logs | " ..
+			tostring(spy.Dropped or 0) .. " dropped"
+		addModuleRow(modulesFrame, 8, "Code Search", code.State or (Settings.Decompiler.CodeSearchLowImpact ~= false and "guarded" or "full"), code.Load or (Settings.Decompiler.CodeSearchLowImpact ~= false and "low" or "high"), codeDetail, "Code Search")
+		addModuleRow(modulesFrame, 48, "Property Tracker", tracker.State or (Settings.Decompiler.HelperLogChanges == true and "logging" or "local"), tracker.Load or (Settings.Decompiler.HelperLogChanges == true and "medium" or "low"), trackerDetail, "Property Tracker")
 		addModuleRow(modulesFrame, 88, "Helper Server", helper.Status, helper.Status == "active" and "low" or "off", tostring(helper.Indexed) .. " indexed | " .. helper.File, "Task Router")
-		addModuleRow(modulesFrame, 128, "Thread Manager", Apps.ThreadManager and "available" or "missing", "low", "Open for coroutine/thread inspection.", "Thread Manager")
-		addModuleRow(modulesFrame, 168, "Remote Spy", Apps.RemoteSpy and "available" or "plugin", "variable", "Use Stop/Pause inside the spy while playing.", "Remote Spy")
+		addModuleRow(modulesFrame, 128, "Thread Manager", threads.State or (Apps.ThreadManager and "available" or "missing"), threads.Load or "low", threadDetail, "Thread Manager")
+		addModuleRow(modulesFrame, 168, "Remote Spy", spy.State or (Apps.RemoteSpy and "available" or "plugin"), spy.Load or "variable", spyDetail, "Remote Spy")
 		addModuleRow(modulesFrame, 208, "Runtime Inspector", Apps.RuntimeInspector and "available" or "missing", "variable", "Prefer snapshots over continuous deep scans.", "Runtime Inspector")
 	end
 
@@ -20830,6 +20927,38 @@ end,
 		CanCollide = true, PlaybackState = true, Volume = true, SoundId = true
 	}
 
+	local function countTracked()
+		local instances = 0
+		local props = 0
+		for _, data in pairs(trackedInstances) do
+			instances += 1
+			for _ in pairs(data.ActiveProps) do
+				props += 1
+			end
+		end
+		return instances, props
+	end
+
+	local function reportTool(extra)
+		if not Main or not Main.ReportToolState then return end
+		local instances, props = countTracked()
+		local state = {
+			State = instances > 0 and "tracking" or "idle",
+			Load = Settings.Decompiler and Settings.Decompiler.HelperLogChanges == true and "medium" or "low",
+			Tracked = instances,
+			Properties = props,
+			Logs = #logs,
+			HelperLogging = Settings.Decompiler and Settings.Decompiler.HelperLogChanges == true or false,
+			HelperLogRateLimit = Settings.Decompiler and Settings.Decompiler.HelperLogRateLimit or 0
+		}
+		if extra then
+			for k, v in pairs(extra) do
+				state[k] = v
+			end
+		end
+		pcall(Main.ReportToolState, "Property Tracker", state)
+	end
+
 	-- Retrieves all readable/writable properties of an instance
 	local function getProperties(obj: Instance)
 		local propsList = {}
@@ -20870,6 +20999,7 @@ end,
 		if #logs > 500 then
 			table.remove(logs, 501)
 		end
+		reportTool({LastChange = instPath .. "." .. propName})
 
 		PropertyTracker.RenderLogs()
 
@@ -20936,6 +21066,7 @@ end,
 		end
 		data.ActiveProps[propName] = nil
 		data.LastValues[propName] = nil
+		reportTool()
 	end
 
 	local function startTrackingProp(inst: Instance, propName: string)
@@ -20964,6 +21095,7 @@ end,
 
 		if ok and con then
 			data.Connections[propName] = con
+			reportTool()
 		else
 			data.ActiveProps[propName] = nil
 			data.LastValues[propName] = nil
@@ -21124,6 +21256,7 @@ end,
 			PropertyTracker.RenderInstances()
 			PropertyTracker.RenderProperties()
 		end
+		reportTool()
 	end
 
 	PropertyTracker.UntrackInstance = function(inst: Instance)
@@ -21137,6 +21270,7 @@ end,
 		if selectedInstance == inst then
 			selectedInstance = nil
 		end
+		reportTool()
 		PropertyTracker.RenderInstances()
 		PropertyTracker.RenderProperties()
 	end
@@ -21335,6 +21469,7 @@ end,
 
 		PropertyTracker.RenderInstances()
 		PropertyTracker.RenderLogs()
+		reportTool()
 	end
 
 	return PropertyTracker
@@ -21575,10 +21710,28 @@ end,
 	local toolbar, listFrame, statusLabel
 	local searchBox
 	local searchText = ""
+	local scanningThreads = false
 
 	local scriptList = {}
 	local threadList = {}
 	local threadDetails = {} -- Cache of thread details: [thread] = { Source, Line, Name, Status }
+
+	local function reportTool(extra)
+		if not Main or not Main.ReportToolState then return end
+		local state = {
+			State = scanningThreads and "scanning" or "idle",
+			Load = scanningThreads and "medium" or "low",
+			Tab = activeTab,
+			Scripts = #scriptList,
+			Threads = #threadList
+		}
+		if extra then
+			for k, v in pairs(extra) do
+				state[k] = v
+			end
+		end
+		pcall(Main.ReportToolState, "Thread Manager", state)
+	end
 
 	local function clearRows()
 		for _, child in ipairs(listFrame:GetChildren()) do
@@ -21628,17 +21781,28 @@ end,
 				end
 			end
 		end
+		reportTool({State = "idle", Load = "low"})
 	end
 
 	-- Retrieve coroutines from registry asynchronously to prevent client hang
 	local function refreshThreadsAsync()
+		scanningThreads = true
+		reportTool({State = "scanning", Load = "medium"})
 		threadList = {}
 		threadDetails = {}
 		local getRegistry = env and env.getreg or getreg
-		if not getRegistry then return end
+		if not getRegistry then
+			scanningThreads = false
+			reportTool({State = "unavailable", Load = "off"})
+			return
+		end
 
 		local ok, reg = pcall(getRegistry)
-		if not ok or type(reg) ~= "table" then return end
+		if not ok or type(reg) ~= "table" then
+			scanningThreads = false
+			reportTool({State = "unavailable", Load = "off"})
+			return
+		end
 
 		local yieldCounter = 0
 		for _, v in pairs(reg) do
@@ -21670,8 +21834,11 @@ end,
 			yieldCounter = yieldCounter + 1
 			if yieldCounter % 150 == 0 then
 				task.wait()
+				reportTool({State = "scanning", Load = "medium"})
 			end
 		end
+		scanningThreads = false
+		reportTool({State = "idle", Load = "low"})
 	end
 
 	ThreadManager.Render = function()
@@ -21797,6 +21964,7 @@ end,
 					end
 					table.remove(threadList, table.find(threadList, th))
 					threadDetails[th] = nil
+					reportTool()
 					ThreadManager.Render()
 				end)
 
@@ -21916,6 +22084,7 @@ end,
 		-- Initial Load
 		refreshScripts()
 		ThreadManager.Render()
+		reportTool()
 	end
 
 	return ThreadManager
@@ -27492,6 +27661,28 @@ local function main()
 	local window, list_frame, tree_frame, scroll_v, status_label, detail_label, empty_label
 	local rebuild_list
 
+	local function report_tool(extra)
+		if not main_ref or not main_ref.ReportToolState then return end
+		local state = {
+			State = active and (paused and "paused" or "capturing") or "idle",
+			Load = active and "variable" or "low",
+			Logs = #logs,
+			Remotes = 0,
+			Dropped = dropped_logs,
+			PendingRows = #pending_rows,
+			MaxLogsPerSecond = max_logs_per_second
+		}
+		for _ in pairs(remote_stats) do
+			state.Remotes += 1
+		end
+		if extra then
+			for k, v in pairs(extra) do
+				state[k] = v
+			end
+		end
+		pcall(main_ref.ReportToolState, "Remote Spy", state)
+	end
+
 	local function update_scroll()
 		if scroll_v then
 			scroll_v.TotalSpace = #log_frames
@@ -27880,6 +28071,7 @@ local function main()
 		if status_label and now - last_status_update > 0.25 then
 			last_status_update = now
 			status_label.Text = #logs .. " logs" .. (dropped_logs > 0 and (" | dropped " .. dropped_logs) or "")
+			report_tool()
 		end
 		if created_remote or now - last_tree_rebuild > 1 then
 			last_tree_rebuild = now
@@ -27948,6 +28140,7 @@ local function main()
 		dropped_logs = 0
 		rate_window_start = os.clock()
 		rate_window_count = 0
+		report_tool({State = "starting", Load = "medium"})
 
 		if hookmetamethod and not namecall_orig then
 			local ok, orig = pcall(hookmetamethod, game, "__namecall", function(self, ...)
@@ -27987,6 +28180,7 @@ local function main()
 		end
 		rebuild_tree()
 		update_detail()
+		report_tool()
 
 		local da_con = game.DescendantAdded:Connect(function(inst)
 			if active then
@@ -28003,6 +28197,7 @@ local function main()
 	local function stop()
 		if not active then return end
 		active = false
+		report_tool({State = "stopping", Load = "low"})
 
 		for _, con in ipairs(hook_cons) do
 			pcall(function() con:Disconnect() end)
@@ -28011,6 +28206,7 @@ local function main()
 
 		seen = {}
 		setmetatable(seen, { __mode = "k" })
+		report_tool()
 	end
 
 	local function make_btn(parent, text, x, w)
@@ -28265,12 +28461,14 @@ local function main()
 			rebuild_tree()
 			rebuild_list()
 			update_detail()
+			report_tool()
 		end)
 
 		pause_btn.MouseButton1Click:Connect(function()
 			if active then
 				paused = not paused
 				update_button_states()
+				report_tool()
 			end
 		end)
 
@@ -28294,6 +28492,7 @@ local function main()
 		rebuild_tree()
 		update_detail()
 		rebuild_list()
+		report_tool()
 
 		window.OnActivate:Connect(function()
 			if scroll_v then

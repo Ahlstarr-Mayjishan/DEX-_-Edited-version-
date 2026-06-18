@@ -156,6 +156,20 @@ local function main()
 		return helperStatus
 	end
 
+	local function toolState(name)
+		if not Main or not Main.GetToolStates then return {} end
+		local ok, states = pcall(Main.GetToolStates)
+		if not ok or type(states) ~= "table" then return {} end
+		return states[name] or {}
+	end
+
+	local function percentText(value)
+		local n = tonumber(value)
+		if not n then return "" end
+		n = math.max(0, math.min(1, n))
+		return tostring(math.floor(n * 100 + 0.5)) .. "%"
+	end
+
 	local function openTool(name)
 		local control = Main.MenuApps and Main.MenuApps[name]
 		if control and control.Enable then
@@ -265,11 +279,30 @@ local function main()
 	local function renderModules()
 		clear(modulesFrame)
 		local helper = refreshHelperStatus(false)
-		addModuleRow(modulesFrame, 8, "Code Search", Settings.Decompiler.CodeSearchLowImpact ~= false and "guarded" or "full", Settings.Decompiler.CodeSearchLowImpact ~= false and "low" or "high", "Index mode controls decompile pressure.", "Code Search")
-		addModuleRow(modulesFrame, 48, "Property Tracker", Settings.Decompiler.HelperLogChanges == true and "logging" or "local", Settings.Decompiler.HelperLogChanges == true and "medium" or "low", "Helper log cap: " .. tostring(Settings.Decompiler.HelperLogRateLimit or 5) .. "/s", "Property Tracker")
+		local code = toolState("Code Search")
+		local tracker = toolState("Property Tracker")
+		local threads = toolState("Thread Manager")
+		local spy = toolState("Remote Spy")
+		local codeDetail = "Index mode controls decompile pressure."
+		if code.Total then
+			codeDetail = (percentText(code.Progress) ~= "" and (percentText(code.Progress) .. " | ") or "") ..
+				tostring(code.Cached or 0) .. " cached | " ..
+				tostring(code.Decompiled or 0) .. " new | " ..
+				tostring(code.Skipped or 0) .. " skipped"
+		end
+		local trackerDetail = tostring(tracker.Tracked or 0) .. " objects | " ..
+			tostring(tracker.Properties or 0) .. " props | " ..
+			tostring(tracker.Logs or 0) .. " logs"
+		local threadDetail = tostring(threads.Scripts or 0) .. " scripts | " ..
+			tostring(threads.Threads or 0) .. " threads"
+		local spyDetail = tostring(spy.Remotes or 0) .. " remotes | " ..
+			tostring(spy.Logs or 0) .. " logs | " ..
+			tostring(spy.Dropped or 0) .. " dropped"
+		addModuleRow(modulesFrame, 8, "Code Search", code.State or (Settings.Decompiler.CodeSearchLowImpact ~= false and "guarded" or "full"), code.Load or (Settings.Decompiler.CodeSearchLowImpact ~= false and "low" or "high"), codeDetail, "Code Search")
+		addModuleRow(modulesFrame, 48, "Property Tracker", tracker.State or (Settings.Decompiler.HelperLogChanges == true and "logging" or "local"), tracker.Load or (Settings.Decompiler.HelperLogChanges == true and "medium" or "low"), trackerDetail, "Property Tracker")
 		addModuleRow(modulesFrame, 88, "Helper Server", helper.Status, helper.Status == "active" and "low" or "off", tostring(helper.Indexed) .. " indexed | " .. helper.File, "Task Router")
-		addModuleRow(modulesFrame, 128, "Thread Manager", Apps.ThreadManager and "available" or "missing", "low", "Open for coroutine/thread inspection.", "Thread Manager")
-		addModuleRow(modulesFrame, 168, "Remote Spy", Apps.RemoteSpy and "available" or "plugin", "variable", "Use Stop/Pause inside the spy while playing.", "Remote Spy")
+		addModuleRow(modulesFrame, 128, "Thread Manager", threads.State or (Apps.ThreadManager and "available" or "missing"), threads.Load or "low", threadDetail, "Thread Manager")
+		addModuleRow(modulesFrame, 168, "Remote Spy", spy.State or (Apps.RemoteSpy and "available" or "plugin"), spy.Load or "variable", spyDetail, "Remote Spy")
 		addModuleRow(modulesFrame, 208, "Runtime Inspector", Apps.RuntimeInspector and "available" or "missing", "variable", "Prefer snapshots over continuous deep scans.", "Runtime Inspector")
 	end
 

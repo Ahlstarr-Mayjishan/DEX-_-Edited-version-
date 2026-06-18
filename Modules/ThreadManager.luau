@@ -26,10 +26,28 @@ local function main()
 	local toolbar, listFrame, statusLabel
 	local searchBox
 	local searchText = ""
+	local scanningThreads = false
 	
 	local scriptList = {}
 	local threadList = {}
 	local threadDetails = {} -- Cache of thread details: [thread] = { Source, Line, Name, Status }
+
+	local function reportTool(extra)
+		if not Main or not Main.ReportToolState then return end
+		local state = {
+			State = scanningThreads and "scanning" or "idle",
+			Load = scanningThreads and "medium" or "low",
+			Tab = activeTab,
+			Scripts = #scriptList,
+			Threads = #threadList
+		}
+		if extra then
+			for k, v in pairs(extra) do
+				state[k] = v
+			end
+		end
+		pcall(Main.ReportToolState, "Thread Manager", state)
+	end
 
 	local function clearRows()
 		for _, child in ipairs(listFrame:GetChildren()) do
@@ -79,17 +97,28 @@ local function main()
 				end
 			end
 		end
+		reportTool({State = "idle", Load = "low"})
 	end
 
 	-- Retrieve coroutines from registry asynchronously to prevent client hang
 	local function refreshThreadsAsync()
+		scanningThreads = true
+		reportTool({State = "scanning", Load = "medium"})
 		threadList = {}
 		threadDetails = {}
 		local getRegistry = env and env.getreg or getreg
-		if not getRegistry then return end
+		if not getRegistry then
+			scanningThreads = false
+			reportTool({State = "unavailable", Load = "off"})
+			return
+		end
 		
 		local ok, reg = pcall(getRegistry)
-		if not ok or type(reg) ~= "table" then return end
+		if not ok or type(reg) ~= "table" then
+			scanningThreads = false
+			reportTool({State = "unavailable", Load = "off"})
+			return
+		end
 		
 		local yieldCounter = 0
 		for _, v in pairs(reg) do
@@ -121,8 +150,11 @@ local function main()
 			yieldCounter = yieldCounter + 1
 			if yieldCounter % 150 == 0 then
 				task.wait()
+				reportTool({State = "scanning", Load = "medium"})
 			end
 		end
+		scanningThreads = false
+		reportTool({State = "idle", Load = "low"})
 	end
 
 	ThreadManager.Render = function()
@@ -248,6 +280,7 @@ local function main()
 					end
 					table.remove(threadList, table.find(threadList, th))
 					threadDetails[th] = nil
+					reportTool()
 					ThreadManager.Render()
 				end)
 				
@@ -367,6 +400,7 @@ local function main()
 		-- Initial Load
 		refreshScripts()
 		ThreadManager.Render()
+		reportTool()
 	end
 
 	return ThreadManager
