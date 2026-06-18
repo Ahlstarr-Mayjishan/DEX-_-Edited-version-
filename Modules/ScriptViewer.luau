@@ -58,6 +58,7 @@ local function main()
 	local ScriptViewer = {}
 	local window, codeFrame
 	local searchBox, searchStatus
+	local selectionToolbar, selectedTextLabel
 	local searchMatches = {}
 	local searchIndex = 0
 	
@@ -213,6 +214,86 @@ local function main()
 		setSearchStatus(searchIndex .. "/" .. #searchMatches)
 	end
 
+	local function getSelectionText()
+		if not codeFrame or not codeFrame.GetSelectionText then return "" end
+		local ok, text = pcall(function()
+			return codeFrame:GetSelectionText()
+		end)
+		return ok and tostring(text or "") or ""
+	end
+
+	local function copySelected()
+		local text = getSelectionText()
+		if text == "" then return end
+		if env.setclipboard then
+			env.setclipboard(text)
+			if selectedTextLabel then selectedTextLabel.Text = "Copied " .. #text .. " chars" end
+		end
+	end
+
+	local function searchSelected()
+		local text = getSelectionText()
+		if text == "" or not searchBox then return end
+		local oneLine = text:gsub("[\r\n]+", " ")
+		if #oneLine > 120 then oneLine = oneLine:sub(1, 120) end
+		searchBox.Text = oneLine
+		rebuildSearch()
+		jumpSearch(0)
+	end
+
+	local function copySelectedAI()
+		local text = getSelectionText()
+		if text == "" or not env.setclipboard then return end
+		local lines = {
+			"DEX++ selected code context",
+			"Script: " .. (PreviousScr and getPath(PreviousScr) or "Generated/Notepad source"),
+			"",
+			"Selected code:",
+			text,
+			"",
+			"Task for AI:",
+			"Explain this selected block, identify important calls/remotes/services, and suggest what I should inspect next.",
+		}
+		env.setclipboard(table.concat(lines, "\n"))
+		if selectedTextLabel then selectedTextLabel.Text = "Copied AI context" end
+	end
+
+	local function saveSelected()
+		local text = getSelectionText()
+		if text == "" then return end
+		Lib.SaveAsPrompt("Selected_Code_" .. os.time() .. ".luau", text)
+	end
+
+	local function updateSelectionToolbar(text)
+		if not selectionToolbar then return end
+		text = tostring(text or "")
+		local hasSelection = #text > 0
+		selectionToolbar.Visible = hasSelection
+		if selectedTextLabel then
+			local preview = text:gsub("[\r\n\t]+", " ")
+			if #preview > 42 then preview = preview:sub(1, 42) .. "..." end
+			selectedTextLabel.Text = hasSelection and (#text .. " chars | " .. preview) or ""
+		end
+	end
+
+	local function makeSelectionButton(parent, text, x, callback)
+		local btn = Instance.new("TextButton")
+		btn.AutoButtonColor = false
+		btn.BackgroundColor3 = Settings.Theme.Button
+		btn.BorderSizePixel = 0
+		btn.Font = Enum.Font.SourceSansBold
+		btn.Position = UDim2.new(0, x, 0, 4)
+		btn.Size = UDim2.new(0, 58, 0, 20)
+		btn.Text = text
+		btn.TextColor3 = Settings.Theme.Text
+		btn.TextSize = 12
+		btn.Parent = parent
+		btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Settings.Theme.ButtonHover end)
+		btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Settings.Theme.Button end)
+		btn.MouseButton1Click:Connect(callback)
+		return btn
+	end
+
 	ScriptViewer.Init = function()
 		window = Lib.Window.new()
 		window:SetTitle("Notepad")
@@ -223,6 +304,37 @@ local function main()
 		codeFrame.Frame.Position = UDim2.new(0,0,0,44)
 		codeFrame.Frame.Size = UDim2.new(1,0,1,-64)
 		codeFrame.Frame.Parent = window.GuiElems.Content
+
+		selectionToolbar = Instance.new("Frame")
+		selectionToolbar.BackgroundColor3 = Settings.Theme.Main1
+		selectionToolbar.BorderColor3 = Settings.Theme.Outline1
+		selectionToolbar.Position = UDim2.new(1, -468, 0, 46)
+		selectionToolbar.Size = UDim2.new(0, 462, 0, 28)
+		selectionToolbar.Visible = false
+		selectionToolbar.ZIndex = 8
+		selectionToolbar.Parent = window.GuiElems.Content
+
+		selectedTextLabel = Instance.new("TextLabel")
+		selectedTextLabel.BackgroundTransparency = 1
+		selectedTextLabel.Font = Enum.Font.SourceSans
+		selectedTextLabel.Position = UDim2.new(0, 8, 0, 0)
+		selectedTextLabel.Size = UDim2.new(1, -260, 1, 0)
+		selectedTextLabel.Text = ""
+		selectedTextLabel.TextColor3 = Settings.Theme.PlaceholderText
+		selectedTextLabel.TextSize = 12
+		selectedTextLabel.TextTruncate = Enum.TextTruncate.AtEnd
+		selectedTextLabel.TextXAlignment = Enum.TextXAlignment.Left
+		selectedTextLabel.ZIndex = 9
+		selectedTextLabel.Parent = selectionToolbar
+
+		makeSelectionButton(selectionToolbar, "Copy", 204, copySelected).ZIndex = 9
+		makeSelectionButton(selectionToolbar, "Search", 266, searchSelected).ZIndex = 9
+		makeSelectionButton(selectionToolbar, "Copy AI", 328, copySelectedAI).ZIndex = 9
+		makeSelectionButton(selectionToolbar, "Save", 390, saveSelected).ZIndex = 9
+
+		if codeFrame.OnSelectionChanged then
+			codeFrame.OnSelectionChanged:Connect(updateSelectionToolbar)
+		end
 		
 		local copy = Instance.new("TextButton",window.GuiElems.Content)
 		copy.BackgroundTransparency = 1

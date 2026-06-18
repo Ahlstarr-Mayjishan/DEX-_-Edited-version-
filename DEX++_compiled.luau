@@ -2237,6 +2237,14 @@ end,
 		Explorer.ViewNode(nodes[obj])
 	end
 
+	Explorer.SelectObject = function(obj)
+		local node = nodes[obj]
+		if not node then return false end
+		selection:Set(node)
+		Explorer.ViewNode(node)
+		return true
+	end
+
 	Explorer.MakeNodeVisible = function(node,expandRoot)
 		if not node then return end
 
@@ -6452,6 +6460,7 @@ end,
 				if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
 					local dir = self.Horizontal and "X" or "Y"
 					local lastThumbPos = nil
+					self.Dragging = true
 					thumbPress = true
 					scrollThumb.BackgroundTransparency = 0
 					local mouseOffset = mouse[dir] - scrollThumb.AbsolutePosition[dir]
@@ -6464,6 +6473,7 @@ end,
 							if mouseEvent then mouseEvent:Disconnect() end
 							scrollThumb.BackgroundTransparency = 0.2
 							thumbPress = false
+							self.Dragging = false
 						end
 					end)
 
@@ -6610,11 +6620,48 @@ end,
 			self.Markers[ind] = color or Color3.new(0,0,0)
 		end
 		funcs.ScrollTo = function(self, ind, nocallback)
-			self.Index = ind
-			self:Update()
-			if not nocallback then
-				self.Scrolled:Fire()
+			local maxIndex = math.max(0, self.TotalSpace - self.VisibleSpace)
+			local target = math.clamp(ind, 0, maxIndex)
+			if nocallback or self.Dragging or self.SmoothScrolling == false then
+				self.Index = target
+				self:Update()
+				if not nocallback then
+					self.Scrolled:Fire()
+				end
+				return
 			end
+
+			self.ScrollTarget = target
+			self.ScrollTweenId = (self.ScrollTweenId or 0) + 1
+			local tweenId = self.ScrollTweenId
+			local startIndex = self.Index
+			local delta = target - startIndex
+			local duration = self.ScrollDuration or 0.14
+
+			if math.abs(delta) < 0.01 or duration <= 0 then
+				self.Index = target
+				self:Update()
+				self.Scrolled:Fire()
+				return
+			end
+
+			task.spawn(function()
+				local started = os.clock()
+				while self.ScrollTweenId == tweenId do
+					local alpha = math.clamp((os.clock() - started) / duration, 0, 1)
+					local eased = 1 - (1 - alpha) * (1 - alpha)
+					self.Index = startIndex + delta * eased
+					self:Update()
+					self.Scrolled:Fire()
+					if alpha >= 1 then break end
+					task.wait()
+				end
+				if self.ScrollTweenId == tweenId then
+					self.Index = target
+					self:Update()
+					self.Scrolled:Fire()
+				end
+			end)
 		end
 		funcs.ScrollUp = function(self)
 			self.Index = self.Index - self.Increment
@@ -6691,6 +6738,8 @@ end,
 				TotalSpace = 0,
 				Increment = 1,
 				WheelIncrement = 1,
+				SmoothScrolling = true,
+				ScrollDuration = 0.14,
 				Markers = {},
 				GuiElems = {},
 				Horizontal = hor,
@@ -8372,6 +8421,7 @@ end,
 					selX = math.min(#relativeLine, selX + obj:TabAdjust(selX,selY))
 
 					obj.SelectionRange = {{-1,-1},{-1,-1}}
+					if obj.OnSelectionChanged then obj.OnSelectionChanged:Fire("") end
 					obj:MoveCursor(selX,selY)
 					obj.FloatCursorX = selX
 
@@ -8393,6 +8443,7 @@ end,
 
 						obj:MoveCursor(sel2X,sel2Y)
 						obj.FloatCursorX = sel2X
+						if obj.OnSelectionChanged then obj.OnSelectionChanged:Fire(obj:GetSelectionText()) end
 						obj:Refresh()
 					end
 
@@ -8402,6 +8453,7 @@ end,
 							mouseEvent:Disconnect()
 							scrollEvent:Disconnect()
 							obj:SetCopyableSelection()
+							if obj.OnSelectionChanged then obj.OnSelectionChanged:Fire(obj:GetSelectionText()) end
 							--updateSelection()
 						end
 					end)
@@ -8477,7 +8529,15 @@ end,
 			local editBox = Instance.new("TextBox")
 			editBox.Name = "EditBox"
 			editBox.MultiLine = true
-			editBox.Visible = false
+			editBox.Visible = true
+			editBox.BackgroundTransparency = 1
+			editBox.TextTransparency = 1
+			editBox.TextColor3 = Color3.new(1,1,1)
+			editBox.BorderSizePixel = 0
+			editBox.ClearTextOnFocus = false
+			editBox.Position = UDim2.new(0,0,0,0)
+			editBox.Size = UDim2.new(0,1,0,1)
+			editBox.ZIndex = 0
 			editBox.Parent = frame
 
 			lineTweens.Invis = tweenService:Create(cursor,TweenInfo.new(0.4,Enum.EasingStyle.Quart,Enum.EasingDirection.Out),{BackgroundTransparency = 1})
@@ -8540,7 +8600,11 @@ end,
 			editBox.Text = text
 			editBox.SelectionStart = 1
 			editBox.CursorPosition = #editBox.Text + 1
+			if #text > 0 then
+				editBox:CaptureFocus()
+			end
 			self.EditBoxCopying = false
+			if self.OnSelectionChanged then self.OnSelectionChanged:Fire(text) end
 		end
 
 		funcs.ConnectEditBoxEvent = function(self)
@@ -8678,6 +8742,7 @@ end,
 
 		funcs.ResetSelection = function(self,norefresh)
 			self.SelectionRange = {{-1,-1},{-1,-1}}
+			if self.OnSelectionChanged then self.OnSelectionChanged:Fire("") end
 			if not norefresh then self:Refresh() end
 		end
 
@@ -8711,7 +8776,11 @@ end,
 				remove(lines,selY+2)
 			end
 
-			if range == self.SelectionRange then self.SelectionRange = {{-1,-1},{-1,-1}} end
+			local deletingSelection = range == self.SelectionRange
+			if deletingSelection then
+				self.SelectionRange = {{-1,-1},{-1,-1}}
+				if self.OnSelectionChanged then self.OnSelectionChanged:Fire("") end
+			end
 			if updatemouse then
 				self.CursorX = selX
 				self.CursorY = selY
@@ -9357,6 +9426,8 @@ end,
 			txt = self:ConvertText(txt,true) -- Tab Convert
 			local lines = self.Lines
 			table.clear(lines)
+			self.SelectionRange = {{-1,-1},{-1,-1}}
+			if self.OnSelectionChanged then self.OnSelectionChanged:Fire("") end
 			local count = 1
 
 			for line in txt:gmatch("([^\n\r]*)[\n\r]?") do
@@ -9414,7 +9485,8 @@ end,
 				FrameOffsets = Vector2.new(0,0),
 				MaxTextCols = 0,
 				ScrollV = scrollV,
-				ScrollH = scrollH
+				ScrollH = scrollH,
+				OnSelectionChanged = Lib.Signal.new()
 			},mt)
 
 			scrollV.WheelIncrement = 3
@@ -14268,6 +14340,7 @@ end,
 	local ScriptViewer = {}
 	local window, codeFrame
 	local searchBox, searchStatus
+	local selectionToolbar, selectedTextLabel
 	local searchMatches = {}
 	local searchIndex = 0
 
@@ -14423,6 +14496,86 @@ end,
 		setSearchStatus(searchIndex .. "/" .. #searchMatches)
 	end
 
+	local function getSelectionText()
+		if not codeFrame or not codeFrame.GetSelectionText then return "" end
+		local ok, text = pcall(function()
+			return codeFrame:GetSelectionText()
+		end)
+		return ok and tostring(text or "") or ""
+	end
+
+	local function copySelected()
+		local text = getSelectionText()
+		if text == "" then return end
+		if env.setclipboard then
+			env.setclipboard(text)
+			if selectedTextLabel then selectedTextLabel.Text = "Copied " .. #text .. " chars" end
+		end
+	end
+
+	local function searchSelected()
+		local text = getSelectionText()
+		if text == "" or not searchBox then return end
+		local oneLine = text:gsub("[\r\n]+", " ")
+		if #oneLine > 120 then oneLine = oneLine:sub(1, 120) end
+		searchBox.Text = oneLine
+		rebuildSearch()
+		jumpSearch(0)
+	end
+
+	local function copySelectedAI()
+		local text = getSelectionText()
+		if text == "" or not env.setclipboard then return end
+		local lines = {
+			"DEX++ selected code context",
+			"Script: " .. (PreviousScr and getPath(PreviousScr) or "Generated/Notepad source"),
+			"",
+			"Selected code:",
+			text,
+			"",
+			"Task for AI:",
+			"Explain this selected block, identify important calls/remotes/services, and suggest what I should inspect next.",
+		}
+		env.setclipboard(table.concat(lines, "\n"))
+		if selectedTextLabel then selectedTextLabel.Text = "Copied AI context" end
+	end
+
+	local function saveSelected()
+		local text = getSelectionText()
+		if text == "" then return end
+		Lib.SaveAsPrompt("Selected_Code_" .. os.time() .. ".luau", text)
+	end
+
+	local function updateSelectionToolbar(text)
+		if not selectionToolbar then return end
+		text = tostring(text or "")
+		local hasSelection = #text > 0
+		selectionToolbar.Visible = hasSelection
+		if selectedTextLabel then
+			local preview = text:gsub("[\r\n\t]+", " ")
+			if #preview > 42 then preview = preview:sub(1, 42) .. "..." end
+			selectedTextLabel.Text = hasSelection and (#text .. " chars | " .. preview) or ""
+		end
+	end
+
+	local function makeSelectionButton(parent, text, x, callback)
+		local btn = Instance.new("TextButton")
+		btn.AutoButtonColor = false
+		btn.BackgroundColor3 = Settings.Theme.Button
+		btn.BorderSizePixel = 0
+		btn.Font = Enum.Font.SourceSansBold
+		btn.Position = UDim2.new(0, x, 0, 4)
+		btn.Size = UDim2.new(0, 58, 0, 20)
+		btn.Text = text
+		btn.TextColor3 = Settings.Theme.Text
+		btn.TextSize = 12
+		btn.Parent = parent
+		btn.MouseEnter:Connect(function() btn.BackgroundColor3 = Settings.Theme.ButtonHover end)
+		btn.MouseLeave:Connect(function() btn.BackgroundColor3 = Settings.Theme.Button end)
+		btn.MouseButton1Click:Connect(callback)
+		return btn
+	end
+
 	ScriptViewer.Init = function()
 		window = Lib.Window.new()
 		window:SetTitle("Notepad")
@@ -14433,6 +14586,37 @@ end,
 		codeFrame.Frame.Position = UDim2.new(0,0,0,44)
 		codeFrame.Frame.Size = UDim2.new(1,0,1,-64)
 		codeFrame.Frame.Parent = window.GuiElems.Content
+
+		selectionToolbar = Instance.new("Frame")
+		selectionToolbar.BackgroundColor3 = Settings.Theme.Main1
+		selectionToolbar.BorderColor3 = Settings.Theme.Outline1
+		selectionToolbar.Position = UDim2.new(1, -468, 0, 46)
+		selectionToolbar.Size = UDim2.new(0, 462, 0, 28)
+		selectionToolbar.Visible = false
+		selectionToolbar.ZIndex = 8
+		selectionToolbar.Parent = window.GuiElems.Content
+
+		selectedTextLabel = Instance.new("TextLabel")
+		selectedTextLabel.BackgroundTransparency = 1
+		selectedTextLabel.Font = Enum.Font.SourceSans
+		selectedTextLabel.Position = UDim2.new(0, 8, 0, 0)
+		selectedTextLabel.Size = UDim2.new(1, -260, 1, 0)
+		selectedTextLabel.Text = ""
+		selectedTextLabel.TextColor3 = Settings.Theme.PlaceholderText
+		selectedTextLabel.TextSize = 12
+		selectedTextLabel.TextTruncate = Enum.TextTruncate.AtEnd
+		selectedTextLabel.TextXAlignment = Enum.TextXAlignment.Left
+		selectedTextLabel.ZIndex = 9
+		selectedTextLabel.Parent = selectionToolbar
+
+		makeSelectionButton(selectionToolbar, "Copy", 204, copySelected).ZIndex = 9
+		makeSelectionButton(selectionToolbar, "Search", 266, searchSelected).ZIndex = 9
+		makeSelectionButton(selectionToolbar, "Copy AI", 328, copySelectedAI).ZIndex = 9
+		makeSelectionButton(selectionToolbar, "Save", 390, saveSelected).ZIndex = 9
+
+		if codeFrame.OnSelectionChanged then
+			codeFrame.OnSelectionChanged:Connect(updateSelectionToolbar)
+		end
 
 		local copy = Instance.new("TextButton",window.GuiElems.Content)
 		copy.BackgroundTransparency = 1
@@ -15102,6 +15286,21 @@ end,
 		helperLogChanges.OnInput:Connect(function()
 			Settings.Decompiler.HelperLogChanges = helperLogChanges.Toggled == true
 		end)
+		AddText("Keep property helper logging OFF during normal play. It is rate-limited, but noisy properties can still cost FPS.")
+		local HelperLogLimit = AddTextbox("Helper Property Log Limit/s", tostring(Settings.Decompiler.HelperLogRateLimit or 5), 50)
+		HelperLogLimit.FocusLost:Connect(function()
+			local limitInput = tonumber(HelperLogLimit.Text)
+			if not limitInput then
+				HelperLogLimit.Text = tostring(Settings.Decompiler.HelperLogRateLimit or 5)
+			else
+				Settings.Decompiler.HelperLogRateLimit = math.clamp(math.floor(limitInput), 0, 100)
+				HelperLogLimit.Text = tostring(Settings.Decompiler.HelperLogRateLimit)
+			end
+		end)
+		local lowImpactIndex = AddCheckbox("Code Search Low Impact Index", Settings.Decompiler.CodeSearchLowImpact ~= false)
+		lowImpactIndex.OnInput:Connect(function()
+			Settings.Decompiler.CodeSearchLowImpact = lowImpactIndex.Toggled == true
+		end)
 		local decompilerOption = {"Executor (Native)", "Konstant", "AdvancedDecompiler", "Shiny"}
 		local initialSelected = "Executor (Native)"
 		if Settings.Decompiler.PreferDecompilerFallback then
@@ -15231,12 +15430,18 @@ end,
 
     local function main()
 	local CodeSearch = {}
-	local window, searchBox, statusLabel, resultsFrame
+	local window, searchBox, statusLabel, resultsFrame, sidePanel, sideTitle, sidePath, sideMeta, sidePreview, sideBadges, lowImpactButton
 	local indexing = false
 	local searching = false
 	local cancelRequested = false
 	local operationId = 0
 	local currentScriptsByKey = {}
+	local resultRecords = {}
+	local resultRows = {}
+	local selectedRecord = nil
+	local selectedRow = nil
+	local pinnedKeys = {}
+	local reviewedKeys = {}
 	local indexedKeys = {}
 	local helperIndexedKeys = {}
 
@@ -15258,6 +15463,21 @@ end,
 
 	local function canUseCache()
 		return env.DecompileCache and env.DecompileCache.IsReady and env.DecompileCache.IsReady()
+	end
+
+	local function isLowImpactIndex()
+		return not Settings.Decompiler or Settings.Decompiler.CodeSearchLowImpact ~= false
+	end
+
+	local function updateLowImpactButton()
+		if not lowImpactButton then return end
+		if isLowImpactIndex() then
+			lowImpactButton.Text = "Low ON"
+			lowImpactButton.BackgroundColor3 = Color3.fromRGB(34, 197, 94)
+		else
+			lowImpactButton.Text = "Full"
+			lowImpactButton.BackgroundColor3 = Color3.fromRGB(234, 179, 8)
+		end
 	end
 
 	local function decodeJson(body)
@@ -15351,6 +15571,11 @@ end,
 				child:Destroy()
 			end
 		end
+		table.clear(resultRecords)
+		table.clear(resultRows)
+		selectedRecord = nil
+		selectedRow = nil
+		updateInspector(nil)
 	end
 
 	local function makeButton(parent, text, position, size)
@@ -15367,6 +15592,156 @@ end,
 		button.Parent = parent
 		Lib.ButtonAnim(button,{Mode = 2, StartColor = Settings.Theme.Button, HoverColor = Settings.Theme.ButtonHover, PressColor = Settings.Theme.ButtonPress, OutlineColor = Settings.Theme.Outline2})
 		return button
+	end
+
+	local function ensureTool(tool)
+		if not tool then return false end
+		if tool.EnsureInit then
+			return tool.EnsureInit()
+		end
+		return true
+	end
+
+	local function sanitizeFilePart(text)
+		text = tostring(text or "script")
+		text = text:gsub("[\r\n\t]", " "):gsub("[<>:\"/\\|%?%*]", "_"):gsub("%s+", "_")
+		if #text > 90 then text = text:sub(#text - 89) end
+		if text == "" then text = "script" end
+		return text
+	end
+
+	local function ensureFolder(path)
+		if not env.makefolder or not env.isfolder then return false end
+		local cur = ""
+		for part in tostring(path):gmatch("[^/]+") do
+			cur = cur == "" and part or (cur .. "/" .. part)
+			if not env.isfolder(cur) then
+				pcall(env.makefolder, cur)
+			end
+		end
+		return true
+	end
+
+	local function resolveScript(record)
+		if not record then return nil end
+		return currentScriptsByKey[record.Key]
+	end
+
+	local function getRecordPath(record)
+		local inst = resolveScript(record)
+		if inst and Main and Main.SafeGetInstancePath then
+			local ok, path = pcall(Main.SafeGetInstancePath, inst)
+			if ok and path then return tostring(path) end
+		end
+		if inst and Explorer and Explorer.GetInstancePath then
+			local ok, path = pcall(Explorer.GetInstancePath, inst)
+			if ok and path then return tostring(path) end
+		end
+		if record and record.Entry then
+			return tostring(record.Entry.Path or record.Entry.Name or record.Key)
+		end
+		return "?"
+	end
+
+	local function readRecordSource(record)
+		if not record then return nil end
+		local inst = resolveScript(record)
+		if inst and env.DecompileCache and env.DecompileCache.Read then
+			local ok, source = pcall(env.DecompileCache.Read, inst)
+			if ok and type(source) == "string" then return source end
+		end
+		if record.Source and record.Source ~= "" then return record.Source end
+		if env.DecompileCache and env.DecompileCache.GetEntries and env.readfile and env.isfile then
+			local entries, cacheDir = env.DecompileCache.GetEntries()
+			local entry = entries and entries[record.Key]
+			local file = entry and entry.File
+			if file then
+				local path = cacheDir .. "/" .. tostring(file)
+				if env.isfile(path) then
+					local ok, source = pcall(env.readfile, path)
+					if ok and type(source) == "string" then return source end
+				end
+			end
+		end
+		return nil
+	end
+
+	local function copyText(text, okMessage)
+		if not env.setclipboard then
+			setStatus("Clipboard API is unavailable.")
+			return false
+		end
+		env.setclipboard(tostring(text or ""))
+		setStatus(okMessage or "Copied to clipboard.")
+		return true
+	end
+
+	local function buildAIContext(record)
+		local source = readRecordSource(record) or "-- source unavailable"
+		local path = getRecordPath(record)
+		local entry = record.Entry or {}
+		local query = tostring(record.Query or searchBox.Text or "")
+		local lines = {
+			"DEX++ Code Search context",
+			"Script: " .. path,
+			"Class: " .. tostring(entry.ClassName or "LuaSourceContainer"),
+			"Name: " .. tostring(entry.Name or path:match("[^%.%[%]]+$") or record.Key),
+			"Search query: " .. query,
+			"Matched snippet:",
+			tostring(record.Snippet or ""),
+			"",
+			"Task for AI:",
+			"Explain what this script likely does, why this match matters, and what other scripts/remotes I should inspect next.",
+			"",
+			"Source:",
+			source,
+		}
+		return table.concat(lines, "\n")
+	end
+
+	local function analyzeSource(source)
+		source = tostring(source or "")
+		local checks = {
+			{"Remote", "FireServer%(", "InvokeServer%(", "OnClientEvent"},
+			{"Require", "require%s*%("},
+			{"HTTP", "HttpGet", "HttpPost", "request%s*%("},
+			{"Dynamic", "loadstring", "getfenv", "setfenv"},
+			{"Hook", "hookmetamethod", "hookfunction", "getrawmetatable"},
+			{"FS", "writefile", "readfile", "appendfile"},
+			{"GC", "getgc", "getconnections"},
+		}
+		local badges = {}
+		for _, check in ipairs(checks) do
+			for i = 2, #check do
+				if source:find(check[i]) then
+					badges[#badges + 1] = check[1]
+					break
+				end
+			end
+		end
+		return badges
+	end
+
+	local function saveRecordToFile(record)
+		if not env.writefile or not env.makefolder then
+			setStatus("writefile/makefolder is unavailable.")
+			return nil
+		end
+		local source = readRecordSource(record)
+		if not source then
+			setStatus("Source is unavailable for this result.")
+			return nil
+		end
+		ensureFolder("dex/code_search")
+		local path = getRecordPath(record)
+		local filePath = "dex/code_search/" .. sanitizeFilePart(path) .. ".luau"
+		local ok, err = pcall(env.writefile, filePath, source)
+		if not ok then
+			setStatus("Save failed: " .. tostring(err))
+			return nil
+		end
+		setStatus("Saved source to " .. filePath)
+		return filePath
 	end
 
 	local function formatAge(epoch)
@@ -15415,6 +15790,153 @@ end,
 		return table.concat(parts, " | ")
 	end
 
+	local function updateRowState(row, record)
+		if not row or not record then return end
+		local selected = selectedRecord == record
+		row.BackgroundColor3 = selected and Settings.Theme.ButtonHover or Settings.Theme.Main1
+		local marker = row:FindFirstChild("Marker")
+		if marker then
+			marker.Visible = selected or pinnedKeys[record.Key] == true or reviewedKeys[record.Key] == true
+			if selected then
+				marker.BackgroundColor3 = Settings.Theme.Highlight
+			elseif pinnedKeys[record.Key] then
+				marker.BackgroundColor3 = Color3.fromRGB(234, 179, 8)
+			else
+				marker.BackgroundColor3 = Color3.fromRGB(34, 197, 94)
+			end
+		end
+	end
+
+	local function updateInspector(record)
+		if not sidePanel then return end
+		if not record then
+			sideTitle.Text = "Result inspector"
+			sidePath.Text = "Right-click a result to inspect actions."
+			sideMeta.Text = "No result selected."
+			sidePreview.Text = ""
+			sideBadges.Text = ""
+			return
+		end
+
+		local entry = record.Entry or {}
+		local path = getRecordPath(record)
+		local source = readRecordSource(record)
+		local badges = analyzeSource(source or "")
+		local badgeText = #badges > 0 and table.concat(badges, "  ") or "No risk badges"
+
+		sideTitle.Text = tostring(entry.Name or path:match("[^%.%[%]]+$") or "Script")
+		sidePath.Text = path
+		sideMeta.Text = tostring(entry.ClassName or "LuaSourceContainer") .. " | key " .. tostring(record.Key)
+			.. (pinnedKeys[record.Key] and " | pinned" or "")
+			.. (reviewedKeys[record.Key] and " | reviewed" or "")
+		sideBadges.Text = badgeText
+		sidePreview.Text = tostring(record.Snippet or "") .. (source and ("\n\n" .. source:sub(1, 1600)) or "\n\nSource unavailable.")
+	end
+
+	local function selectRecord(record, row)
+		if selectedRow and selectedRecord then
+			updateRowState(selectedRow, selectedRecord)
+		end
+		selectedRecord = record
+		selectedRow = row
+		updateRowState(row, record)
+		updateInspector(record)
+	end
+
+	local function openScript(record)
+		local scriptInstance = resolveScript(record)
+		if scriptInstance and ScriptViewer and ScriptViewer.ViewScript then
+			ScriptViewer.ViewScript(scriptInstance)
+			setStatus("Opened in Script Viewer.")
+		else
+			setStatus("Live script instance is unavailable.")
+		end
+	end
+
+	local function showInExplorer(record)
+		local scriptInstance = resolveScript(record)
+		if not scriptInstance or not Explorer then
+			setStatus("Live script instance is unavailable.")
+			return
+		end
+		local ok = false
+		if Explorer.SelectObject then
+			ok = Explorer.SelectObject(scriptInstance)
+		elseif Explorer.ViewObj then
+			Explorer.ViewObj(scriptInstance)
+			ok = true
+		end
+		setStatus(ok and "Focused result in Explorer." or "Explorer node is unavailable.")
+	end
+
+	local function findReferences(record)
+		local path = getRecordPath(record)
+		local name = tostring((record.Entry and record.Entry.Name) or path:match("[^%.%[%]]+$") or "")
+		searchBox.Text = name ~= "" and name or path
+		CodeSearch.Search()
+	end
+
+	local function openRelations(record)
+		local scriptInstance = resolveScript(record)
+		local relations = Apps.ScriptRelations
+		if scriptInstance and relations and ensureTool(relations) and relations.ShowForScript then
+			relations.ShowForScript(scriptInstance)
+		else
+			setStatus("Script Relations is unavailable for this result.")
+		end
+	end
+
+	local function openDependencyGraph()
+		local graph = Apps.DependencyGraph
+		if graph and ensureTool(graph) then
+			if graph.Window then graph.Window:Show() end
+			if graph.Scan then graph.Scan() end
+			setStatus("Dependency Graph opened.")
+		else
+			setStatus("Dependency Graph is unavailable.")
+		end
+	end
+
+	local function inspectModuleReturn(record)
+		local scriptInstance = resolveScript(record)
+		if not scriptInstance or not scriptInstance:IsA("ModuleScript") then
+			setStatus("Selected result is not a live ModuleScript.")
+			return
+		end
+		local ok, value = pcall(require, scriptInstance)
+		if not ok then
+			setStatus("require() failed: " .. tostring(value))
+			return
+		end
+		local editor = Apps.TableEditor
+		if editor and ensureTool(editor) and editor.LoadTable then
+			editor.LoadTable(value, getRecordPath(record))
+			if editor.Window then editor.Window:Show() end
+			setStatus("Module return loaded into Table Editor.")
+		else
+			copyText(tostring(value), "Table Editor unavailable; copied return tostring().")
+		end
+	end
+
+	local function exportAllResults()
+		if not env.writefile or not env.makefolder then
+			setStatus("writefile/makefolder is unavailable.")
+			return
+		end
+		ensureFolder("dex/code_search")
+		local lines = {"# DEX++ Code Search Results", "", "Query: `" .. tostring(searchBox.Text or "") .. "`", ""}
+		for _, record in pairs(resultRecords) do
+			lines[#lines + 1] = "## " .. getRecordPath(record)
+			lines[#lines + 1] = "- Class: " .. tostring(record.Entry and record.Entry.ClassName or "?")
+			lines[#lines + 1] = "- Key: `" .. tostring(record.Key) .. "`"
+			lines[#lines + 1] = "- Snippet: `" .. tostring(record.Snippet or "") .. "`"
+			lines[#lines + 1] = ""
+		end
+		local filePath = "dex/code_search/results_" .. tostring(os.time()) .. ".md"
+		local ok, err = pcall(env.writefile, filePath, table.concat(lines, "\n"))
+		setStatus(ok and ("Exported results to " .. filePath) or ("Export failed: " .. tostring(err)))
+	end
+
 	local function addResult(entryKey, entry, query, source, snippetOverride, metadata)
 		local row = Instance.new("TextButton")
 		row.AutoButtonColor = false
@@ -15424,11 +15946,20 @@ end,
 		row.Text = ""
 		row.Parent = resultsFrame
 
+		local marker = Instance.new("Frame")
+		marker.Name = "Marker"
+		marker.BackgroundColor3 = Settings.Theme.Highlight
+		marker.BorderSizePixel = 0
+		marker.Position = UDim2.new(0,0,0,0)
+		marker.Size = UDim2.new(0,3,1,0)
+		marker.Visible = false
+		marker.Parent = row
+
 		local name = Instance.new("TextLabel")
 		name.BackgroundTransparency = 1
 		name.Font = Enum.Font.SourceSans
-		name.Position = UDim2.new(0,8,0,3)
-		name.Size = UDim2.new(1,-16,0,18)
+		name.Position = UDim2.new(0,10,0,3)
+		name.Size = UDim2.new(1,-18,0,18)
 		name.Text = tostring(entry.Path or entry.Name or entryKey)
 		name.TextColor3 = Settings.Theme.Text
 		name.TextSize = 14
@@ -15452,8 +15983,8 @@ end,
 		local detail = Instance.new("TextLabel")
 		detail.BackgroundTransparency = 1
 		detail.Font = Enum.Font.SourceSans
-		detail.Position = UDim2.new(0,8,0,22)
-		detail.Size = UDim2.new(1,-16,0,18)
+		detail.Position = UDim2.new(0,10,0,22)
+		detail.Size = UDim2.new(1,-18,0,18)
 		detail.Text = snippet
 		detail.TextColor3 = Settings.Theme.PlaceholderText
 		detail.TextSize = 13
@@ -15463,13 +15994,25 @@ end,
 
 		Lib.ButtonAnim(row,{Mode = 2, StartColor = Settings.Theme.Main1, HoverColor = Settings.Theme.ButtonHover, PressColor = Settings.Theme.ButtonPress, OutlineColor = Settings.Theme.Outline1})
 
+		local record = {
+			Key = entryKey,
+			Entry = entry,
+			Query = query,
+			Source = source,
+			Snippet = snippet,
+			Metadata = metadata,
+		}
+		resultRecords[entryKey] = record
+		resultRows[entryKey] = row
+		updateRowState(row, record)
+
 		row.MouseButton1Click:Connect(function()
-			local scriptInstance = currentScriptsByKey[entryKey]
-			if scriptInstance and ScriptViewer and ScriptViewer.ViewScript then
-				ScriptViewer.ViewScript(scriptInstance)
-			else
-				setStatus("Cached result found, but the live script instance is unavailable.")
-			end
+			selectRecord(record, row)
+			openScript(record)
+		end)
+		row.MouseButton2Click:Connect(function()
+			selectRecord(record, row)
+			if sidePanel then sidePanel.Visible = true end
 		end)
 	end
 
@@ -15625,7 +16168,9 @@ end,
 			local cached = 0
 			local failed = 0
 			local helperIndexed = 0
+			local skipped = 0
 			local batchCount = 0
+			local lowImpact = isLowImpactIndex()
 
 			if total == 0 then
 				indexing = false
@@ -15645,7 +16190,8 @@ end,
 
 				-- Throttle UI updates to prevent layout/redraw stutters
 				if i % 20 == 0 or i == total then
-					setStatus(("Indexing: %d / %d (%.1f%%) | cached %d | new %d | failed %d"):format(i, total, percent, cached, decompiled, failed))
+					local mode = lowImpact and "Low impact" or "Full"
+					setStatus(("%s indexing: %d / %d (%.1f%%) | cached %d | new %d | skipped %d | failed %d"):format(mode, i, total, percent, cached, decompiled, skipped, failed))
 				end
 
 				local key = getScriptKey(scriptInstance)
@@ -15666,6 +16212,15 @@ end,
 					batchCount += 1
 					if batchCount % 100 == 0 then
 						task.wait()
+					end
+					continue
+				end
+
+				if lowImpact then
+					skipped += 1
+					batchCount += 1
+					if batchCount % 20 == 0 then
+						task.wait(0.03)
 					end
 					continue
 				end
@@ -15699,9 +16254,9 @@ end,
 			rebuildScriptLookup()
 			if env.GetClientSurfaceCoverage then
 				local coverage = env.GetClientSurfaceCoverage()
-				setStatus(("Index complete: %d cached, %d decompiled, %d failed, %d helper. Surface: %d scripts, %d remotes."):format(cached, decompiled, failed, helperIndexed, coverage.AllScripts, coverage.Remotes))
+				setStatus(("Index complete: %d cached, %d decompiled, %d skipped, %d failed, %d helper. Surface: %d scripts, %d remotes."):format(cached, decompiled, skipped, failed, helperIndexed, coverage.AllScripts, coverage.Remotes))
 			else
-				setStatus(("Index complete: %d cached, %d decompiled, %d failed, %d helper."):format(cached, decompiled, failed, helperIndexed))
+				setStatus(("Index complete: %d cached, %d decompiled, %d skipped, %d failed, %d helper."):format(cached, decompiled, skipped, failed, helperIndexed))
 			end
 		end)
 	end
@@ -15721,7 +16276,7 @@ end,
 	CodeSearch.Init = function()
 		window = Lib.Window.new()
 		window:SetTitle("Code Search")
-		window:Resize(520,360)
+		window:Resize(780,460)
 		CodeSearch.Window = window
 
 		local content = window.GuiElems.Content
@@ -15751,13 +16306,14 @@ end,
 		local indexButton = makeButton(toolbar, "Index", UDim2.new(1,-234,0,6), UDim2.new(0,86,0,22))
 		local searchButton = makeButton(toolbar, "Search", UDim2.new(1,-144,0,6), UDim2.new(0,66,0,22))
 		local stopButton = makeButton(toolbar, "Stop", UDim2.new(1,-74,0,6), UDim2.new(0,68,0,22))
+		lowImpactButton = makeButton(toolbar, "Low ON", UDim2.new(1,-82,0,32), UDim2.new(0,76,0,20))
 
 		statusLabel = Instance.new("TextLabel")
 		statusLabel.BackgroundTransparency = 1
 		statusLabel.Font = Enum.Font.SourceSans
 		statusLabel.Position = UDim2.new(0,6,0,32)
-		statusLabel.Size = UDim2.new(1,-12,0,20)
-		statusLabel.Text = "Index scripts to populate the decompile cache."
+		statusLabel.Size = UDim2.new(1,-94,0,20)
+		statusLabel.Text = "Low Impact is ON: Index uses cache/helper and skips new decompile."
 		statusLabel.TextColor3 = Settings.Theme.PlaceholderText
 		statusLabel.TextSize = 14
 		statusLabel.TextTruncate = Enum.TextTruncate.AtEnd
@@ -15774,7 +16330,7 @@ end,
 		resultsFrame.Position = UDim2.new(0,0,0,58)
 		resultsFrame.ScrollBarImageColor3 = Color3.fromRGB(70,70,70)
 		resultsFrame.ScrollBarThickness = 10
-		resultsFrame.Size = UDim2.new(1,0,1,-58)
+		resultsFrame.Size = UDim2.new(1,-260,1,-58)
 		resultsFrame.TopImage = ""
 		resultsFrame.Parent = content
 
@@ -15790,9 +16346,153 @@ end,
 		padding.PaddingTop = UDim.new(0,4)
 		padding.Parent = resultsFrame
 
+		sidePanel = Instance.new("Frame")
+		sidePanel.BackgroundColor3 = Settings.Theme.Main1
+		sidePanel.BorderColor3 = Settings.Theme.Outline1
+		sidePanel.Position = UDim2.new(1,-260,0,58)
+		sidePanel.Size = UDim2.new(0,260,1,-58)
+		sidePanel.Parent = content
+
+		local sidePad = Instance.new("UIPadding")
+		sidePad.PaddingLeft = UDim.new(0,8)
+		sidePad.PaddingRight = UDim.new(0,8)
+		sidePad.PaddingTop = UDim.new(0,8)
+		sidePad.PaddingBottom = UDim.new(0,8)
+		sidePad.Parent = sidePanel
+
+		sideTitle = Instance.new("TextLabel")
+		sideTitle.BackgroundTransparency = 1
+		sideTitle.Font = Enum.Font.SourceSansBold
+		sideTitle.Position = UDim2.new(0,0,0,0)
+		sideTitle.Size = UDim2.new(1,0,0,20)
+		sideTitle.Text = "Result inspector"
+		sideTitle.TextColor3 = Settings.Theme.Text
+		sideTitle.TextSize = 15
+		sideTitle.TextTruncate = Enum.TextTruncate.AtEnd
+		sideTitle.TextXAlignment = Enum.TextXAlignment.Left
+		sideTitle.Parent = sidePanel
+
+		sidePath = Instance.new("TextLabel")
+		sidePath.BackgroundTransparency = 1
+		sidePath.Font = Enum.Font.Code
+		sidePath.Position = UDim2.new(0,0,0,22)
+		sidePath.Size = UDim2.new(1,0,0,34)
+		sidePath.Text = "Right-click a result to inspect actions."
+		sidePath.TextColor3 = Settings.Theme.PlaceholderText
+		sidePath.TextSize = 11
+		sidePath.TextWrapped = true
+		sidePath.TextXAlignment = Enum.TextXAlignment.Left
+		sidePath.TextYAlignment = Enum.TextYAlignment.Top
+		sidePath.Parent = sidePanel
+
+		sideMeta = Instance.new("TextLabel")
+		sideMeta.BackgroundTransparency = 1
+		sideMeta.Font = Enum.Font.SourceSans
+		sideMeta.Position = UDim2.new(0,0,0,58)
+		sideMeta.Size = UDim2.new(1,0,0,18)
+		sideMeta.Text = "No result selected."
+		sideMeta.TextColor3 = Settings.Theme.PlaceholderText
+		sideMeta.TextSize = 12
+		sideMeta.TextTruncate = Enum.TextTruncate.AtEnd
+		sideMeta.TextXAlignment = Enum.TextXAlignment.Left
+		sideMeta.Parent = sidePanel
+
+		sideBadges = Instance.new("TextLabel")
+		sideBadges.BackgroundTransparency = 1
+		sideBadges.Font = Enum.Font.SourceSansBold
+		sideBadges.Position = UDim2.new(0,0,0,78)
+		sideBadges.Size = UDim2.new(1,0,0,18)
+		sideBadges.Text = ""
+		sideBadges.TextColor3 = Settings.Theme.Highlight
+		sideBadges.TextSize = 12
+		sideBadges.TextTruncate = Enum.TextTruncate.AtEnd
+		sideBadges.TextXAlignment = Enum.TextXAlignment.Left
+		sideBadges.Parent = sidePanel
+
+		local function actionButton(text, col, row, callback)
+			local x = col == 1 and 0 or 122
+			local button = makeButton(sidePanel, text, UDim2.new(0,x,0,102 + row * 26), UDim2.new(0,116,0,22))
+			button.TextSize = 12
+			button.MouseButton1Click:Connect(function()
+				if text ~= "Export All" and not selectedRecord then
+					setStatus("Select a search result first.")
+					return
+				end
+				callback(selectedRecord)
+				if selectedRow and selectedRecord then updateRowState(selectedRow, selectedRecord) end
+				updateInspector(selectedRecord)
+			end)
+			return button
+		end
+
+		actionButton("Open", 1, 0, openScript)
+		actionButton("Explorer", 2, 0, showInExplorer)
+		actionButton("Copy Path", 1, 1, function(record) copyText(getRecordPath(record), "Copied path.") end)
+		actionButton("Copy Source", 2, 1, function(record)
+			local source = readRecordSource(record)
+			if source then copyText(source, "Copied source.") else setStatus("Source is unavailable.") end
+		end)
+		actionButton("Copy AI", 1, 2, function(record) copyText(buildAIContext(record), "Copied AI context.") end)
+		actionButton("Save File", 2, 2, saveRecordToFile)
+		actionButton("Direct File", 1, 3, function(record)
+			local filePath = saveRecordToFile(record)
+			if filePath then copyText(filePath, "Saved and copied file path.") end
+		end)
+		actionButton("References", 2, 3, findReferences)
+		actionButton("Relations", 1, 4, openRelations)
+		actionButton("Dep Graph", 2, 4, function() openDependencyGraph() end)
+		actionButton("Inspect Return", 1, 5, inspectModuleReturn)
+		actionButton("Pin", 2, 5, function(record)
+			pinnedKeys[record.Key] = not pinnedKeys[record.Key]
+			setStatus(pinnedKeys[record.Key] and "Pinned result." or "Unpinned result.")
+		end)
+		actionButton("Reviewed", 1, 6, function(record)
+			reviewedKeys[record.Key] = not reviewedKeys[record.Key]
+			setStatus(reviewedKeys[record.Key] and "Marked as reviewed." or "Marked as not reviewed.")
+		end)
+		actionButton("Export All", 2, 6, function() exportAllResults() end)
+
+		local previewFrame = Instance.new("ScrollingFrame")
+		previewFrame.Active = true
+		previewFrame.AutomaticCanvasSize = Enum.AutomaticSize.Y
+		previewFrame.BackgroundColor3 = Settings.Theme.Main2
+		previewFrame.BorderColor3 = Settings.Theme.Outline1
+		previewFrame.BottomImage = ""
+		previewFrame.CanvasSize = UDim2.new(0,0,0,0)
+		previewFrame.Position = UDim2.new(0,0,0,294)
+		previewFrame.ScrollBarImageColor3 = Color3.fromRGB(70,70,70)
+		previewFrame.ScrollBarThickness = 6
+		previewFrame.Size = UDim2.new(1,0,1,-294)
+		previewFrame.TopImage = ""
+		previewFrame.Parent = sidePanel
+
+		sidePreview = Instance.new("TextLabel")
+		sidePreview.AutomaticSize = Enum.AutomaticSize.Y
+		sidePreview.BackgroundTransparency = 1
+		sidePreview.Font = Enum.Font.Code
+		sidePreview.Position = UDim2.new(0,6,0,6)
+		sidePreview.Size = UDim2.new(1,-18,0,0)
+		sidePreview.Text = ""
+		sidePreview.TextColor3 = Settings.Theme.Text
+		sidePreview.TextSize = 11
+		sidePreview.TextWrapped = true
+		sidePreview.TextXAlignment = Enum.TextXAlignment.Left
+		sidePreview.TextYAlignment = Enum.TextYAlignment.Top
+		sidePreview.Parent = previewFrame
+
 		indexButton.MouseButton1Click:Connect(CodeSearch.IndexScripts)
 		searchButton.MouseButton1Click:Connect(CodeSearch.Search)
 		stopButton.MouseButton1Click:Connect(CodeSearch.Stop)
+		lowImpactButton.MouseButton1Click:Connect(function()
+			Settings.Decompiler.CodeSearchLowImpact = not isLowImpactIndex()
+			updateLowImpactButton()
+			if isLowImpactIndex() then
+				setStatus("Low Impact is ON: Index skips new decompile to reduce client stutter.")
+			else
+				setStatus("Full index is ON: Index may decompile uncached scripts and cause lag.")
+			end
+		end)
+		updateLowImpactButton()
 		searchBox.FocusLost:Connect(function(enterPressed)
 			if enterPressed then
 				CodeSearch.Search()
@@ -19806,7 +20506,8 @@ end,
 			helperLogCount = 0
 		end
 		helperLogCount += 1
-		if helperLogCount > 5 then
+		local helperLimit = tonumber(Settings.Decompiler.HelperLogRateLimit or 5) or 5
+		if helperLogCount > math.max(0, helperLimit) then
 			return
 		end
 
@@ -20943,7 +21644,9 @@ DefaultSettings = (function()
 			HelperServerPort = 8080,
 			UseLocalHelper = false,
 			HelperLogChanges = false,
+			HelperLogRateLimit = 5,
 			HelperRequestTimeout = 2,
+			CodeSearchLowImpact = true,
 		},
 		AutoCheckUpdate = true,
 		AutoUpdateRef = "v3.1",
@@ -23098,6 +23801,44 @@ Main = (function()
 		Main.UpdateMenuCanvas()
 	end
 
+	Main.SmoothScrollingFrame = function(frame, step)
+		local targetY = 0
+		local tween
+		local disabledNativeScroll = pcall(function()
+			frame.ScrollingEnabled = false
+		end)
+		if not disabledNativeScroll then
+			return
+		end
+
+		local function clampTarget()
+			local maxY = math.max(0, frame.AbsoluteCanvasSize.Y - frame.AbsoluteWindowSize.Y)
+			targetY = math.clamp(targetY, 0, maxY)
+			return maxY
+		end
+
+		frame:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+			local currentY = frame.CanvasPosition.Y
+			if math.abs(currentY - targetY) > 2 and (not tween or tween.PlaybackState ~= Enum.PlaybackState.Playing) then
+				targetY = currentY
+				clampTarget()
+			end
+		end)
+
+		frame.InputChanged:Connect(function(input)
+			if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
+			targetY = frame.CanvasPosition.Y
+			local direction = input.Position.Z > 0 and -1 or 1
+			targetY = targetY + direction * (step or 96)
+			clampTarget()
+			if tween then tween:Cancel() end
+			tween = service.TweenService:Create(frame, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				CanvasPosition = Vector2.new(frame.CanvasPosition.X, targetY)
+			})
+			tween:Play()
+		end)
+	end
+
 	Main.CreateApp = function(data)
 		if Main.MenuApps[data.Name] then return end -- TODO: Handle conflict
 		local control = {}
@@ -23351,6 +24092,7 @@ Main = (function()
 			Main.ApplyMenuFilter()
 		end)
 		Main.AppsContainerGrid:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(Main.UpdateMenuCanvas)
+		Main.SmoothScrollingFrame(Main.AppsFrame, 104)
 		openButton.MouseButton1Click:Connect(function()
 			Main.SetMainGuiOpen(not Main.MainGuiOpen)
 		end)

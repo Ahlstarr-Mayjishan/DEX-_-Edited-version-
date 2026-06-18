@@ -143,7 +143,9 @@ DefaultSettings = (function()
 			HelperServerPort = 8080,
 			UseLocalHelper = false,
 			HelperLogChanges = false,
+			HelperLogRateLimit = 5,
 			HelperRequestTimeout = 2,
+			CodeSearchLowImpact = true,
 		},
 		AutoCheckUpdate = true,
 		AutoUpdateRef = "v3.1",
@@ -2298,6 +2300,44 @@ Main = (function()
 		Main.UpdateMenuCanvas()
 	end
 
+	Main.SmoothScrollingFrame = function(frame, step)
+		local targetY = 0
+		local tween
+		local disabledNativeScroll = pcall(function()
+			frame.ScrollingEnabled = false
+		end)
+		if not disabledNativeScroll then
+			return
+		end
+
+		local function clampTarget()
+			local maxY = math.max(0, frame.AbsoluteCanvasSize.Y - frame.AbsoluteWindowSize.Y)
+			targetY = math.clamp(targetY, 0, maxY)
+			return maxY
+		end
+
+		frame:GetPropertyChangedSignal("CanvasPosition"):Connect(function()
+			local currentY = frame.CanvasPosition.Y
+			if math.abs(currentY - targetY) > 2 and (not tween or tween.PlaybackState ~= Enum.PlaybackState.Playing) then
+				targetY = currentY
+				clampTarget()
+			end
+		end)
+
+		frame.InputChanged:Connect(function(input)
+			if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
+			targetY = frame.CanvasPosition.Y
+			local direction = input.Position.Z > 0 and -1 or 1
+			targetY = targetY + direction * (step or 96)
+			clampTarget()
+			if tween then tween:Cancel() end
+			tween = service.TweenService:Create(frame, TweenInfo.new(0.16, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+				CanvasPosition = Vector2.new(frame.CanvasPosition.X, targetY)
+			})
+			tween:Play()
+		end)
+	end
+
 	Main.CreateApp = function(data)
 		if Main.MenuApps[data.Name] then return end -- TODO: Handle conflict
 		local control = {}
@@ -2551,6 +2591,7 @@ Main = (function()
 			Main.ApplyMenuFilter()
 		end)
 		Main.AppsContainerGrid:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(Main.UpdateMenuCanvas)
+		Main.SmoothScrollingFrame(Main.AppsFrame, 104)
 		openButton.MouseButton1Click:Connect(function()
 			Main.SetMainGuiOpen(not Main.MainGuiOpen)
 		end)

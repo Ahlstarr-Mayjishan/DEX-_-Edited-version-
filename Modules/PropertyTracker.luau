@@ -97,7 +97,8 @@ local function main()
 			helperLogCount = 0
 		end
 		helperLogCount += 1
-		if helperLogCount > 5 then
+		local helperLimit = tonumber(Settings.Decompiler.HelperLogRateLimit or 5) or 5
+		if helperLogCount > math.max(0, helperLimit) then
 			return
 		end
 

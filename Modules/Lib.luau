@@ -2168,6 +2168,7 @@ local function main()
 				if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) then
 					local dir = self.Horizontal and "X" or "Y"
 					local lastThumbPos = nil
+					self.Dragging = true
 					thumbPress = true
 					scrollThumb.BackgroundTransparency = 0
 					local mouseOffset = mouse[dir] - scrollThumb.AbsolutePosition[dir]
@@ -2180,6 +2181,7 @@ local function main()
 							if mouseEvent then mouseEvent:Disconnect() end
 							scrollThumb.BackgroundTransparency = 0.2
 							thumbPress = false
+							self.Dragging = false
 						end
 					end)
 
@@ -2326,11 +2328,48 @@ local function main()
 			self.Markers[ind] = color or Color3.new(0,0,0)
 		end
 		funcs.ScrollTo = function(self, ind, nocallback)
-			self.Index = ind
-			self:Update()
-			if not nocallback then
-				self.Scrolled:Fire()
+			local maxIndex = math.max(0, self.TotalSpace - self.VisibleSpace)
+			local target = math.clamp(ind, 0, maxIndex)
+			if nocallback or self.Dragging or self.SmoothScrolling == false then
+				self.Index = target
+				self:Update()
+				if not nocallback then
+					self.Scrolled:Fire()
+				end
+				return
 			end
+
+			self.ScrollTarget = target
+			self.ScrollTweenId = (self.ScrollTweenId or 0) + 1
+			local tweenId = self.ScrollTweenId
+			local startIndex = self.Index
+			local delta = target - startIndex
+			local duration = self.ScrollDuration or 0.14
+
+			if math.abs(delta) < 0.01 or duration <= 0 then
+				self.Index = target
+				self:Update()
+				self.Scrolled:Fire()
+				return
+			end
+
+			task.spawn(function()
+				local started = os.clock()
+				while self.ScrollTweenId == tweenId do
+					local alpha = math.clamp((os.clock() - started) / duration, 0, 1)
+					local eased = 1 - (1 - alpha) * (1 - alpha)
+					self.Index = startIndex + delta * eased
+					self:Update()
+					self.Scrolled:Fire()
+					if alpha >= 1 then break end
+					task.wait()
+				end
+				if self.ScrollTweenId == tweenId then
+					self.Index = target
+					self:Update()
+					self.Scrolled:Fire()
+				end
+			end)
 		end
 		funcs.ScrollUp = function(self)
 			self.Index = self.Index - self.Increment
@@ -2407,6 +2446,8 @@ local function main()
 				TotalSpace = 0,
 				Increment = 1,
 				WheelIncrement = 1,
+				SmoothScrolling = true,
+				ScrollDuration = 0.14,
 				Markers = {},
 				GuiElems = {},
 				Horizontal = hor,
@@ -4088,6 +4129,7 @@ local function main()
 					selX = math.min(#relativeLine, selX + obj:TabAdjust(selX,selY))
 
 					obj.SelectionRange = {{-1,-1},{-1,-1}}
+					if obj.OnSelectionChanged then obj.OnSelectionChanged:Fire("") end
 					obj:MoveCursor(selX,selY)
 					obj.FloatCursorX = selX
 
@@ -4109,6 +4151,7 @@ local function main()
 
 						obj:MoveCursor(sel2X,sel2Y)
 						obj.FloatCursorX = sel2X
+						if obj.OnSelectionChanged then obj.OnSelectionChanged:Fire(obj:GetSelectionText()) end
 						obj:Refresh()
 					end
 
@@ -4118,6 +4161,7 @@ local function main()
 							mouseEvent:Disconnect()
 							scrollEvent:Disconnect()
 							obj:SetCopyableSelection()
+							if obj.OnSelectionChanged then obj.OnSelectionChanged:Fire(obj:GetSelectionText()) end
 							--updateSelection()
 						end
 					end)
@@ -4193,7 +4237,15 @@ local function main()
 			local editBox = Instance.new("TextBox")
 			editBox.Name = "EditBox"
 			editBox.MultiLine = true
-			editBox.Visible = false
+			editBox.Visible = true
+			editBox.BackgroundTransparency = 1
+			editBox.TextTransparency = 1
+			editBox.TextColor3 = Color3.new(1,1,1)
+			editBox.BorderSizePixel = 0
+			editBox.ClearTextOnFocus = false
+			editBox.Position = UDim2.new(0,0,0,0)
+			editBox.Size = UDim2.new(0,1,0,1)
+			editBox.ZIndex = 0
 			editBox.Parent = frame
 
 			lineTweens.Invis = tweenService:Create(cursor,TweenInfo.new(0.4,Enum.EasingStyle.Quart,Enum.EasingDirection.Out),{BackgroundTransparency = 1})
@@ -4256,7 +4308,11 @@ local function main()
 			editBox.Text = text
 			editBox.SelectionStart = 1
 			editBox.CursorPosition = #editBox.Text + 1
+			if #text > 0 then
+				editBox:CaptureFocus()
+			end
 			self.EditBoxCopying = false
+			if self.OnSelectionChanged then self.OnSelectionChanged:Fire(text) end
 		end
 
 		funcs.ConnectEditBoxEvent = function(self)
@@ -4394,6 +4450,7 @@ local function main()
 
 		funcs.ResetSelection = function(self,norefresh)
 			self.SelectionRange = {{-1,-1},{-1,-1}}
+			if self.OnSelectionChanged then self.OnSelectionChanged:Fire("") end
 			if not norefresh then self:Refresh() end
 		end
 
@@ -4427,7 +4484,11 @@ local function main()
 				remove(lines,selY+2)
 			end
 
-			if range == self.SelectionRange then self.SelectionRange = {{-1,-1},{-1,-1}} end
+			local deletingSelection = range == self.SelectionRange
+			if deletingSelection then
+				self.SelectionRange = {{-1,-1},{-1,-1}}
+				if self.OnSelectionChanged then self.OnSelectionChanged:Fire("") end
+			end
 			if updatemouse then
 				self.CursorX = selX
 				self.CursorY = selY
@@ -5073,6 +5134,8 @@ local function main()
 			txt = self:ConvertText(txt,true) -- Tab Convert
 			local lines = self.Lines
 			table.clear(lines)
+			self.SelectionRange = {{-1,-1},{-1,-1}}
+			if self.OnSelectionChanged then self.OnSelectionChanged:Fire("") end
 			local count = 1
 
 			for line in txt:gmatch("([^\n\r]*)[\n\r]?") do
@@ -5130,7 +5193,8 @@ local function main()
 				FrameOffsets = Vector2.new(0,0),
 				MaxTextCols = 0,
 				ScrollV = scrollV,
-				ScrollH = scrollH
+				ScrollH = scrollH,
+				OnSelectionChanged = Lib.Signal.new()
 			},mt)
 
 			scrollV.WheelIncrement = 3

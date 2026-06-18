@@ -392,6 +392,21 @@ local function main()
 		helperLogChanges.OnInput:Connect(function()
 			Settings.Decompiler.HelperLogChanges = helperLogChanges.Toggled == true
 		end)
+		AddText("Keep property helper logging OFF during normal play. It is rate-limited, but noisy properties can still cost FPS.")
+		local HelperLogLimit = AddTextbox("Helper Property Log Limit/s", tostring(Settings.Decompiler.HelperLogRateLimit or 5), 50)
+		HelperLogLimit.FocusLost:Connect(function()
+			local limitInput = tonumber(HelperLogLimit.Text)
+			if not limitInput then
+				HelperLogLimit.Text = tostring(Settings.Decompiler.HelperLogRateLimit or 5)
+			else
+				Settings.Decompiler.HelperLogRateLimit = math.clamp(math.floor(limitInput), 0, 100)
+				HelperLogLimit.Text = tostring(Settings.Decompiler.HelperLogRateLimit)
+			end
+		end)
+		local lowImpactIndex = AddCheckbox("Code Search Low Impact Index", Settings.Decompiler.CodeSearchLowImpact ~= false)
+		lowImpactIndex.OnInput:Connect(function()
+			Settings.Decompiler.CodeSearchLowImpact = lowImpactIndex.Toggled == true
+		end)
 		local decompilerOption = {"Executor (Native)", "Konstant", "AdvancedDecompiler", "Shiny"}
 		local initialSelected = "Executor (Native)"
 		if Settings.Decompiler.PreferDecompilerFallback then
