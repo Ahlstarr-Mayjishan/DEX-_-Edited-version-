@@ -53,7 +53,7 @@ local EmbeddedModules = {
 local isFsSupported = readfile and writefile and isfile and isfolder and listfiles and delfile and delfolder
 
 -- Main vars
-local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, ClientIndex, ActivityMap, DependencyGraph, SmartSearch, RuntimeInspector, ClientIntelligence, InspectorHub, TaskRouter, Theme, SmartDecompiler, SecurityAuditor, RemoteFuzzer, PropertyTracker, InstanceSerializer, ThreadManager--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
+local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, ClientIndex, ActivityMap, DependencyGraph, SmartSearch, RuntimeInspector, ClientIntelligence, InspectorHub, TaskRouter, ControlCenter, Theme, SmartDecompiler, SecurityAuditor, RemoteFuzzer, PropertyTracker, InstanceSerializer, ThreadManager--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
 local API, RMD
 
 -- Default Settings
@@ -218,7 +218,7 @@ end
 Main = (function()
 	local Main = {}
 
-	Main.ModuleList = {"Theme","SmartDecompiler","Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap","ObjectLinks","ImageViewer","ClientIndex","ActivityMap","DependencyGraph","SmartSearch","RuntimeInspector","ClientIntelligence","InspectorHub","TaskRouter","SecurityAuditor","RemoteFuzzer","PropertyTracker","InstanceSerializer","ThreadManager"}
+	Main.ModuleList = {"Theme","SmartDecompiler","Explorer","Properties","ScriptViewer","Console","SaveInstance","ModelViewer","SettingsWindow","CodeSearch","ScriptRelations","RemoteUsageMap","ObjectLinks","ImageViewer","ClientIndex","ActivityMap","DependencyGraph","SmartSearch","RuntimeInspector","ClientIntelligence","InspectorHub","TaskRouter","ControlCenter","SecurityAuditor","RemoteFuzzer","PropertyTracker","InstanceSerializer","ThreadManager"}
 	Main.Elevated = false
 	Main.AllowDraggableOnMobile = true
 	Main.MissingEnv = {}
@@ -237,6 +237,7 @@ Main = (function()
 	Main.UpdateScriptURL = nil
 	Main.UpdateCheckStarted = false
 	Main.LatestUpdateSource = nil
+	Main.ToolState = {}
 
 	Main.DisplayOrders = {
 		SideWindow = 8,
@@ -246,6 +247,20 @@ Main = (function()
 	}
 
 	Main.Plugins = {}
+
+	Main.ReportToolState = function(name, state)
+		if type(name) ~= "string" or type(state) ~= "table" then return end
+		local old = Main.ToolState[name] or {}
+		for k, v in pairs(state) do
+			old[k] = v
+		end
+		old.UpdatedAt = os.clock()
+		Main.ToolState[name] = old
+	end
+
+	Main.GetToolStates = function()
+		return Main.ToolState
+	end
 
 	--[[Main.LoadAdonisBypass = function()
 		-- skidded off reddit :pensive:
@@ -584,6 +599,7 @@ Main = (function()
 		ClientIntelligence = Apps.ClientIntelligence
 		InspectorHub = Apps.InspectorHub
 		TaskRouter = Apps.TaskRouter
+		ControlCenter = Apps.ControlCenter
 		Theme = Apps.Theme
 		SmartDecompiler = Apps.SmartDecompiler
 		SecurityAuditor = Apps.SecurityAuditor
@@ -618,6 +634,7 @@ Main = (function()
 			ClientIntelligence = ClientIntelligence,
 			InspectorHub = InspectorHub,
 			TaskRouter = TaskRouter,
+			ControlCenter = ControlCenter,
 			SecurityAuditor = SecurityAuditor,
 			RemoteFuzzer = RemoteFuzzer,
 			PropertyTracker = PropertyTracker,
@@ -2709,6 +2726,7 @@ Main = (function()
 		Main.CreateLazyWindowApp({Name = "Inspector Hub", IconMap = Main.LargeIcons, Icon = "Watcher", Module = InspectorHub})
 
 		Main.CreateLazyWindowApp({Name = "Task Router", IconMap = Main.LargeIcons, Icon = "ScriptEdit", Module = TaskRouter})
+		Main.CreateLazyWindowApp({Name = "Control Center", IconMap = Main.LargeIcons, Icon = "Watcher", Module = ControlCenter})
 
 		Main.CreateLazyWindowApp({Name = "Security Auditor", IconMap = Main.LargeIcons, Icon = "Watcher", Module = SecurityAuditor})
 		Main.CreateLazyWindowApp({Name = "Property Tracker", IconMap = Main.LargeIcons, Icon = "Watcher", Module = PropertyTracker})

@@ -22,7 +22,7 @@ def build():
     # Load module files and format them for insertion
     module_list = [
         "Theme", "SmartDecompiler", "Console", "Explorer", "Lib", "ModelViewer", 
-        "Properties", "SaveInstance", "ScriptViewer", "SettingsWindow", "CodeSearch", "ScriptRelations", "RemoteUsageMap", "ObjectLinks", "ImageViewer", "ClientIndex", "ActivityMap", "DependencyGraph", "SmartSearch", "RuntimeInspector", "SecurityAuditor", "ClientIntelligence", "InspectorHub", "TaskRouter", "RemoteFuzzer", "PropertyTracker", "InstanceSerializer", "ThreadManager"
+        "Properties", "SaveInstance", "ScriptViewer", "SettingsWindow", "CodeSearch", "ScriptRelations", "RemoteUsageMap", "ObjectLinks", "ImageViewer", "ClientIndex", "ActivityMap", "DependencyGraph", "SmartSearch", "RuntimeInspector", "SecurityAuditor", "ClientIntelligence", "InspectorHub", "TaskRouter", "ControlCenter", "RemoteFuzzer", "PropertyTracker", "InstanceSerializer", "ThreadManager"
     ]
     
     embedded_str = ""
