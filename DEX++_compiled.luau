@@ -23166,7 +23166,6 @@ Main = (function()
 					moduleData.PluginData.FriendlyName = pluginFriendlyName
 
 					table.insert(Main.Plugins, moduleData)
-					Main.CreateApp({Name = pluginFriendlyName, IconMap = Explorer.ClassIcons, Icon = "Attachment", Window = moduleData.Window})
 				end
 			end	
 		end
