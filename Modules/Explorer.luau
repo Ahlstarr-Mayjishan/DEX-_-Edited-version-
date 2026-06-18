@@ -1,7 +1,7 @@
 
 --[[
 	Explorer App Module
-	
+
 	The main explorer interface
 ]]
 
@@ -804,7 +804,7 @@ local function main()
 	end
 
 	Explorer.Refresh = function()
-		local maxNodes = math.max(math.ceil((treeFrame.AbsoluteSize.Y) / 20), 0)	
+		local maxNodes = math.max(math.ceil((treeFrame.AbsoluteSize.Y) / 20), 0)
 		local renameNodeVisible = false
 		local isa = game.IsA
 
@@ -1074,34 +1074,34 @@ local function main()
 		if presentClasses["TouchTransmitter"] then context:AddRegistered("FIRE_TOUCHTRANSMITTER", firetouchinterest == nil) end
 		if presentClasses["ClickDetector"] then context:AddRegistered("FIRE_CLICKDETECTOR", fireclickdetector == nil) end
 		if presentClasses["ProximityPrompt"] then context:AddRegistered("FIRE_PROXIMITYPROMPT", fireproximityprompt == nil) end
-		
-		
+
+
 		if presentClasses["RemoteEvent"] then context:AddRegistered("BLOCK_REMOTE", env.hookfunction == nil) end
 		if presentClasses["RemoteEvent"] then context:AddRegistered("UNBLOCK_REMOTE", env.hookfunction == nil) end
-		
+
 		if presentClasses["RemoteFunction"] then context:AddRegistered("BLOCK_REMOTE", env.hookfunction == nil) end
 		if presentClasses["RemoteFunction"] then context:AddRegistered("UNBLOCK_REMOTE", env.hookfunction == nil) end
 
 		if presentClasses["UnreliableRemoteEvent"] then context:AddRegistered("BLOCK_REMOTE", env.hookfunction == nil) end
 		if presentClasses["UnreliableRemoteEvent"] then context:AddRegistered("UNBLOCK_REMOTE", env.hookfunction == nil) end
-		
-		
+
+
 		if presentClasses["BindableEvent"] then context:AddRegistered("BLOCK_REMOTE", env.hookfunction == nil) end
 		if presentClasses["BindableEvent"] then context:AddRegistered("UNBLOCK_REMOTE", env.hookfunction == nil) end
-		
+
 		if presentClasses["BindableFunction"] then context:AddRegistered("BLOCK_REMOTE", env.hookfunction == nil) end
 		if presentClasses["BindableFunction"] then context:AddRegistered("UNBLOCK_REMOTE", env.hookfunction == nil) end
 
 		if presentClasses["RemoteEvent"] or presentClasses["RemoteFunction"] or presentClasses["UnreliableRemoteEvent"] or presentClasses["BindableEvent"] or presentClasses["BindableFunction"] then
 			context:AddRegistered("VIEW_REMOTE_USAGE", #sList ~= 1 or not RemoteUsageMap)
 		end
-		
+
 		if presentClasses["RemoteEvent"] or presentClasses["RemoteFunction"] or presentClasses["UnreliableRemoteEvent"] then
 			context:AddRegistered("FUZZ_REMOTE", #sList ~= 1)
 		end
-		
-		
-		
+
+
+
 		if presentClasses["Player"] then context:AddRegistered("SELECT_CHARACTER")context:AddRegistered("VIEW_PLAYER") end
 		if presentClasses["Players"] then
 			context:AddRegistered("SELECT_LOCAL_PLAYER")
@@ -1128,6 +1128,14 @@ local function main()
 
 	Explorer.InitRightClick = function()
 		local context = Lib.ContextMenu.new()
+
+		local function ensureTool(tool)
+			if not tool then return false end
+			if tool.EnsureInit then
+				return tool.EnsureInit()
+			end
+			return true
+		end
 
 		context:Register("CUT",{Name = "Cut", IconMap = Explorer.MiscIcons, Icon = "Cut", DisabledIcon = "Cut_Disabled", Shortcut = "Ctrl+Z", OnClick = function()
 			local destroy,clone = game.Destroy,game.Clone
@@ -1217,7 +1225,7 @@ local function main()
 			end
 			selection:Clear()
 		end})
-		
+
 		context:Register("DELETE_CHILDREN",{Name = "Delete Children", IconMap = Explorer.MiscIcons, Icon = "Delete", DisabledIcon = "Delete_Disabled", Shortcut = "Shift+Del", OnClick = function()
 			local sList = selection.List
 			for i = 1,#sList do
@@ -1686,14 +1694,14 @@ local function main()
 							RemovePlayerCharacters = false
 						})
 					end)
-					
+
 					task.wait(0.1)
 				end
 			end
 		end})
 
         --[[context:Register("VIEW_CONNECTIONS",{Name = "View Connections", OnClick = function()
-            
+
         end})]]
 		local ClassFire = {
 			RemoteEvent = "FireServer",
@@ -1723,7 +1731,7 @@ local function main()
 				end
 			end
 		end})
-		
+
 		context:Register("UNBLOCK_REMOTE",{Name = "Unblock", IconMap = Explorer.MiscIcons, Icon = "Play", DisabledIcon = "Empty", OnClick = function()
 			local sList = selection.List
 			for i, list in sList do
@@ -1740,17 +1748,17 @@ local function main()
 
 		context:Register("VIEW_REMOTE_USAGE",{Name = "Remote Usage Map", IconMap = Explorer.MiscIcons, Icon = "ExploreData", DisabledIcon = "Empty", OnClick = function()
 			local remote = selection.List[1] and selection.List[1].Obj
-			if remote and RemoteUsageMap then RemoteUsageMap.ShowForRemote(remote) end
+			if remote and ensureTool(RemoteUsageMap) then RemoteUsageMap.ShowForRemote(remote) end
 		end})
 
 		context:Register("FIND_OBJECT_LINKS",{Name = "Find Links / References", IconMap = Explorer.MiscIcons, Icon = "ExploreData", DisabledIcon = "Empty", OnClick = function()
 			local obj = selection.List[1] and selection.List[1].Obj
-			if obj and ObjectLinks then ObjectLinks.ShowForObject(obj) end
+			if obj and ensureTool(ObjectLinks) then ObjectLinks.ShowForObject(obj) end
 		end})
 
 		context:Register("VIEW_IMAGE_ASSETS",{Name = "View Images", IconMap = Explorer.MiscIcons, Icon = "ViewScript", DisabledIcon = "Empty", OnClick = function()
 			local obj = selection.List[1] and selection.List[1].Obj
-			if obj and ImageViewer then ImageViewer.ShowForObject(obj) end
+			if obj and ensureTool(ImageViewer) then ImageViewer.ShowForObject(obj) end
 		end})
 
 		context:Register("COPY_API_PAGE",{Name = "Copy Roblox API Page URL", IconMap = Explorer.MiscIcons, Icon = "Reference", OnClick = function()
@@ -1765,7 +1773,7 @@ local function main()
 		context:Register("3DVIEW_MODEL",{Name = "3D Preview Object", IconMap = Explorer.LegacyClassIcons, Icon = 54, OnClick = function()
 			local sList = selection.List
 			local isa = game.IsA
-			
+
 			if #sList == 1 then
 				if isa(sList[1].Obj,"BasePart") or isa(sList[1].Obj,"Model") then
 					ModelViewer.ViewModel(sList[1].Obj)
@@ -1773,7 +1781,7 @@ local function main()
 				end
 			end
 		end})
-		
+
 		context:Register("VIEW_OBJECT",{Name = "View Object (Right click to reset)", IconMap = Explorer.LegacyClassIcons, Icon = 5, OnClick = function()
 			local sList = selection.List
 			local isa = game.IsA
@@ -1796,7 +1804,7 @@ local function main()
 		end})
 		context:Register("VIEW_SCRIPT_RELATIONS",{Name = "Script Relations", IconMap = Explorer.MiscIcons, Icon = "SelectChildren", DisabledIcon = "Empty", OnClick = function()
 			local scr = selection.List[1] and selection.List[1].Obj
-			if scr and ScriptRelations then ScriptRelations.ShowForScript(scr) end
+			if scr and ensureTool(ScriptRelations) then ScriptRelations.ShowForScript(scr) end
 		end})
 		context:Register("DUMP_FUNCTIONS",{Name = "Dump Functions", IconMap = Explorer.MiscIcons, Icon = "SelectChildren", DisabledIcon = "Empty", OnClick = function()
 			local scr = selection.List[1] and selection.List[1].Obj
@@ -1808,7 +1816,7 @@ local function main()
 		end})
 		context:Register("TRACK_PROPERTIES",{Name = "Track Properties", IconMap = Explorer.MiscIcons, Icon = "CallFunction", DisabledIcon = "Empty", OnClick = function()
 			local obj = selection.List[1] and selection.List[1].Obj
-			if obj and Apps.PropertyTracker then Apps.PropertyTracker.TrackInstance(obj) end
+			if obj and ensureTool(Apps.PropertyTracker) then Apps.PropertyTracker.TrackInstance(obj) end
 		end})
 		context:Register("SERIALIZE_INSTANCE",{Name = "Serialize Instance", IconMap = Explorer.MiscIcons, Icon = "Reference", DisabledIcon = "Empty", OnClick = function()
 			local obj = selection.List[1] and selection.List[1].Obj
@@ -1846,7 +1854,7 @@ local function main()
 					local fileName = ("%s_%s_%i_Source.txt"):format(env.parsefile(v.Obj.Name), v.Obj.ClassName, game.PlaceId)
 					--env.writefile(fileName, source)
 					Lib.SaveAsPrompt(fileName, source)
-					
+
 					task.wait(0.2)
 				end
 			end
@@ -2137,7 +2145,7 @@ local function main()
 				context:AddDivider(category)
 				lastCategory = category
 			end
-			
+
 			local icon
 			if iconData then
 				icon = iconData.Icons[class.Name] or iconData.Icons.Placeholder
@@ -2149,7 +2157,7 @@ local function main()
 
 		Explorer.InsertObjectContext = context
 	end
-	
+
 	--[[
 		Headers, Setups, Predicate, ObjectDefs
 	]]
@@ -2369,7 +2377,7 @@ local function main()
 							processFilter(Explorer.SearchFilters.Default(term))
 						end
 					end
-				end				
+				end
 			end
 
 			if op then
@@ -2399,16 +2407,16 @@ local specResults = specResults
 local service = service
 
 %s
-local function search(root)	
+local function search(root)
 %s
-	
+
 	local expandedpar = false
 	for i = 1,#root do
 		local node = root[i]
 		local obj = node.Obj
-		
+
 %s
-		
+
 		if %s then
 			expandTable[node] = 0
 			searchResults[node] = true
@@ -2422,7 +2430,7 @@ local function search(root)
 				expandedpar = true
 			end
 		end
-		
+
 		if #node > 0 then search(node) end
 	end
 end
@@ -2445,7 +2453,7 @@ return search]==]
 		expanded = (#query == 0 and Explorer.Expanded or Explorer.SearchExpanded)
 		searchFunc = nil
 
-		if #query > 0 then	
+		if #query > 0 then
 			local expandTable = Explorer.SearchExpanded
 			local specFilters
 
@@ -2801,20 +2809,20 @@ return search]==]
 		Explorer.LegacyClassIcons = Lib.IconMap.newLinear("rbxasset://textures/ClassImages.PNG", 16,16)
 		if Settings.ClassIcon ~= nil and Settings.ClassIcon ~= "Old" then
 			iconData = Lib.IconMap.getIconDataFromName(Settings.ClassIcon)
-			
+
 			Explorer.ClassIcons = Lib.IconMap.new("rbxassetid://"..tostring(iconData.MapId), iconData.IconSize * iconData.Witdh, iconData.IconSize * iconData.Height,iconData.IconSize,iconData.IconSize)
 			-- move every value dict 1 behind because SetDict starts at 0 not 1 lol
 			local fixed = {}
 			for i,v in pairs(iconData.Icons) do
 				fixed[i] = v - 1
 			end
-			
+
 			iconData.Icons = fixed
 			Explorer.ClassIcons:SetDict(fixed)
 		else
 			Explorer.ClassIcons = Lib.IconMap.newLinear("rbxasset://textures/ClassImages.PNG", 16,16)
 		end
-		
+
 		Explorer.MiscIcons = Main.MiscIcons
 
 		clipboard = {}
@@ -2859,7 +2867,7 @@ return search]==]
 		Explorer.GuiElems.ToolBar = toolBar
 		Explorer.GuiElems.TreeFrame = treeFrame
 
-		scrollV = Lib.ScrollBar.new()		
+		scrollV = Lib.ScrollBar.new()
 		scrollV.WheelIncrement = 3
 		scrollV.Gui.Position = UDim2.new(1,-16,0,23)
 		scrollV:SetScrollFrame(treeFrame)

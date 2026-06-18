@@ -1,7 +1,7 @@
 --!nocheck
 --[[
 	Auto Security Auditor Module
-	
+
 	Scans the game structure and script contents for security vulnerabilities,
 	exposed RemoteEvents, suspicious require loaders, and obfuscated code.
 ]]
@@ -146,7 +146,7 @@ local function main()
 			Parent = row
 		})
 		Theme.StyleButton(selectBtn, false)
-		
+
 		selectBtn.MouseButton1Click:Connect(function()
 			if Explorer and Explorer.Selection and Explorer.ClassIcons then
 				local node = Explorer.Selection.Map and Explorer.Selection.Map[finding.Object]
@@ -211,6 +211,38 @@ local function main()
 
 		local findings = {}
 		local totalScanned = 0
+		local targetMap = {}
+		for _, srv in ipairs(targetServices) do
+			if srv then targetMap[srv] = true end
+		end
+		local function isInTarget(obj)
+			local cur = obj
+			while cur and cur ~= game do
+				if targetMap[cur] then return true end
+				cur = cur.Parent
+			end
+			return false
+		end
+		local function collectCandidates()
+			if env.RefreshClientSurface then
+				local surface = env.RefreshClientSurface(false, false)
+				local filtered = {}
+				for _, obj in ipairs(surface.AllInstances or {}) do
+					if isInTarget(obj) then filtered[#filtered + 1] = obj end
+				end
+				return filtered
+			end
+			local filtered = {}
+			for _, srv in ipairs(targetServices) do
+				if srv then
+					local ok, descendants = pcall(srv.GetDescendants, srv)
+					if ok then
+						for _, obj in ipairs(descendants) do filtered[#filtered + 1] = obj end
+					end
+				end
+			end
+			return filtered
+		end
 
 		-- Insecure remote keywords
 		local insecureKeywords = {
@@ -222,12 +254,7 @@ local function main()
 			"backdoor", "vaccine", "lag", "anti", "loader", "virus", "weld", "fix", "free", "admin"
 		}
 
-		for _, srv in ipairs(targetServices) do
-			if token ~= scanToken then return end
-			if not srv then continue end
-
-			local descendants = srv:GetDescendants()
-			for _, obj in ipairs(descendants) do
+		for _, obj in ipairs(collectCandidates()) do
 				if token ~= scanToken then return end
 				totalScanned = totalScanned + 1
 
@@ -284,19 +311,14 @@ local function main()
 						})
 					end
 				end
-			end
 		end
 
 		-- 3. Deep script content audit (requires decompile)
 		if deepScanEnabled and env.decompile then
 			local scripts = {}
-			for _, srv in ipairs(targetServices) do
-				if srv then
-					for _, obj in ipairs(srv:GetDescendants()) do
-						if obj:IsA("LuaSourceContainer") then
-							table.insert(scripts, obj)
-						end
-					end
+			for _, obj in ipairs(collectCandidates()) do
+				if obj:IsA("LuaSourceContainer") then
+					table.insert(scripts, obj)
 				end
 			end
 
@@ -306,7 +328,7 @@ local function main()
 			for scriptIndex, scr in ipairs(scripts) do
 				if token ~= scanToken then return end
 				setStatus(string.format("Deep Scan: %d/%d scripts analyzed (%d issues)...", scriptIndex, #scripts, #findings))
-				
+
 				-- Run decompile safely
 				local success, source = pcall(env.decompile, scr)
 				if success and type(source) == "string" and #source > 0 then
@@ -360,7 +382,7 @@ local function main()
 
 		-- Render findings
 		if token ~= scanToken then return end
-		
+
 		-- Sort findings: High, Medium, Low
 		table.sort(findings, function(a, b)
 			local severityWeight = { High = 3, Medium = 2, Low = 1 }

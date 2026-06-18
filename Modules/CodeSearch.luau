@@ -37,6 +37,9 @@ local function main()
 	local CodeSearch = {}
 	local window, searchBox, statusLabel, resultsFrame
 	local indexing = false
+	local searching = false
+	local cancelRequested = false
+	local operationId = 0
 	local currentScriptsByKey = {}
 	local indexedKeys = {}
 	local helperIndexedKeys = {}
@@ -45,6 +48,16 @@ local function main()
 		if statusLabel then
 			statusLabel.Text = text
 		end
+	end
+
+	local function beginOperation()
+		operationId += 1
+		cancelRequested = false
+		return operationId
+	end
+
+	local function shouldCancel(token)
+		return cancelRequested or token ~= operationId
 	end
 
 	local function canUseCache()
@@ -330,20 +343,32 @@ local function main()
 	end
 
 	CodeSearch.Search = function()
+		if indexing then
+			setStatus("Indexing is running. Press Stop before searching.")
+			return
+		end
+		if searching then
+			setStatus("Search is already running.")
+			return
+		end
 		if not canUseCache() then
 			clearResults()
 			setStatus("Filesystem cache APIs are unavailable.")
 			return
 		end
 
+		searching = true
+		local token = beginOperation()
 		local query = tostring(searchBox.Text or ""):lower()
 		clearResults()
 		if query == "" then
 			setStatus("Enter a keyword to search cached code.")
+			searching = false
 			return
 		end
 
 		if searchWithHelper(query) then
+			searching = false
 			return
 		end
 
@@ -354,6 +379,11 @@ local function main()
 		local scanned = 0
 
 		for key, entry in pairs(entries) do
+			if shouldCancel(token) then
+				searching = false
+				setStatus(("Search stopped after scanning %d cached script(s)."):format(scanned))
+				return
+			end
 			local file = entry.File
 			if file then
 				local path = cacheDir .. "/" .. tostring(file)
@@ -375,6 +405,7 @@ local function main()
 			end
 		end
 
+		searching = false
 		setStatus(("Found %d result(s) in %d cached script(s)."):format(found, scanned))
 	end
 
@@ -390,6 +421,7 @@ local function main()
 		end
 
 		indexing = true
+		local token = beginOperation()
 		task.spawn(function()
 			local scripts = collectScripts()
 			local total = #scripts
@@ -406,10 +438,15 @@ local function main()
 			end
 
 			for i, scriptInstance in ipairs(scripts) do
-				if not indexing then break end
+				if not indexing or shouldCancel(token) then
+					indexing = false
+					setStatus(("Index stopped: %d cached, %d decompiled, %d failed, %d helper."):format(cached, decompiled, failed, helperIndexed))
+					rebuildScriptLookup()
+					return
+				end
 
 				local percent = math.floor((i / total) * 1000) / 10
-				
+
 				-- Throttle UI updates to prevent layout/redraw stutters
 				if i % 20 == 0 or i == total then
 					setStatus(("Indexing: %d / %d (%.1f%%) | cached %d | new %d | failed %d"):format(i, total, percent, cached, decompiled, failed))
@@ -455,6 +492,11 @@ local function main()
 			end
 
 			indexing = false
+			if shouldCancel(token) then
+				setStatus(("Index stopped: %d cached, %d decompiled, %d failed, %d helper."):format(cached, decompiled, failed, helperIndexed))
+				rebuildScriptLookup()
+				return
+			end
 			if helperIndexed > 0 and env.HelperServer and env.HelperServer.SaveSourceIndex then
 				pcall(env.HelperServer.SaveSourceIndex)
 			end
@@ -466,6 +508,18 @@ local function main()
 				setStatus(("Index complete: %d cached, %d decompiled, %d failed, %d helper."):format(cached, decompiled, failed, helperIndexed))
 			end
 		end)
+	end
+
+	CodeSearch.Stop = function()
+		if not indexing and not searching then
+			setStatus("Nothing to stop.")
+			return
+		end
+		cancelRequested = true
+		operationId += 1
+		indexing = false
+		searching = false
+		setStatus("Stopping current Code Search task...")
 	end
 
 	CodeSearch.Init = function()
@@ -491,15 +545,16 @@ local function main()
 		searchBox.PlaceholderColor3 = Settings.Theme.PlaceholderText
 		searchBox.PlaceholderText = "Search cached code"
 		searchBox.Position = UDim2.new(0,6,0,6)
-		searchBox.Size = UDim2.new(1,-188,0,22)
+		searchBox.Size = UDim2.new(1,-246,0,22)
 		searchBox.Text = ""
 		searchBox.TextColor3 = Settings.Theme.Text
 		searchBox.TextSize = 14
 		searchBox.TextXAlignment = Enum.TextXAlignment.Left
 		searchBox.Parent = toolbar
 
-		local indexButton = makeButton(toolbar, "Index Scripts", UDim2.new(1,-176,0,6), UDim2.new(0,92,0,22))
-		local searchButton = makeButton(toolbar, "Search", UDim2.new(1,-78,0,6), UDim2.new(0,72,0,22))
+		local indexButton = makeButton(toolbar, "Index", UDim2.new(1,-234,0,6), UDim2.new(0,86,0,22))
+		local searchButton = makeButton(toolbar, "Search", UDim2.new(1,-144,0,6), UDim2.new(0,66,0,22))
+		local stopButton = makeButton(toolbar, "Stop", UDim2.new(1,-74,0,6), UDim2.new(0,68,0,22))
 
 		statusLabel = Instance.new("TextLabel")
 		statusLabel.BackgroundTransparency = 1
@@ -541,6 +596,7 @@ local function main()
 
 		indexButton.MouseButton1Click:Connect(CodeSearch.IndexScripts)
 		searchButton.MouseButton1Click:Connect(CodeSearch.Search)
+		stopButton.MouseButton1Click:Connect(CodeSearch.Stop)
 		searchBox.FocusLost:Connect(function(enterPressed)
 			if enterPressed then
 				CodeSearch.Search()

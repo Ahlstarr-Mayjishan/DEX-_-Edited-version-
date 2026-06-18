@@ -46,6 +46,9 @@ local function main()
 		if ClientIndex and ClientIndex.RefreshSurface then
 			return ClientIndex.RefreshSurface(force == true)
 		end
+		if env.RefreshClientSurface then
+			return env.RefreshClientSurface(force == true, false)
+		end
 		local all, scripts, remotes = {}, {}, {}
 		for _, obj in ipairs(game:GetDescendants()) do
 			all[#all + 1] = obj

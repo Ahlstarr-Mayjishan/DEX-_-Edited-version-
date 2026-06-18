@@ -126,7 +126,14 @@ local function main()
 		local limit = 160
 		collectFrom(root, results, limit)
 		if #results >= limit then return results end
-		for _, obj in pairs(root:GetDescendants()) do
+		local descendants = nil
+		if root == game and env.RefreshClientSurface then
+			descendants = env.RefreshClientSurface(false, false).AllInstances
+		else
+			local ok, list = pcall(root.GetDescendants, root)
+			descendants = ok and list or {}
+		end
+		for _, obj in pairs(descendants) do
 			collectFrom(obj, results, limit)
 			if #results >= limit then break end
 			if #results % 40 == 0 then task.wait() end

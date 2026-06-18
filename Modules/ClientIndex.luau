@@ -42,6 +42,9 @@ local function main()
 		end
 	end
 	local function collectAllInstances()
+		if env.RefreshClientSurface then
+			return env.RefreshClientSurface(false, false).AllInstances
+		end
 		local list, seen = {}, {}
 		for _, obj in ipairs(game:GetDescendants()) do addUnique(list, seen, obj) end
 		if env.getnilinstances then
@@ -77,6 +80,17 @@ local function main()
 		local now = os.clock()
 		if not force and now - surfaceStamp < surfaceTtl then return surface end
 		surfaceStamp = now
+		if env.RefreshClientSurface then
+			local sharedSurface = env.RefreshClientSurface(force == true, false)
+			surface = {
+				AllInstances = sharedSurface.AllInstances or {},
+				AllScripts = sharedSurface.AllScripts or {},
+				ViableScripts = sharedSurface.ViableScripts or {},
+				Remotes = sharedSurface.Remotes or {},
+			}
+			rebuildScriptLookup()
+			return surface
+		end
 		local all = collectAllInstances()
 		local allScripts, viableScripts, remotes = {}, {}, {}
 		for _, obj in ipairs(all) do

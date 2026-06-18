@@ -1,7 +1,7 @@
 --[[
 	Dex++
 	Version 3.1
-	
+
 	Developed by Chillz
 	Decompiler fixed + rspy plugin + adonis bypass by mcdaggitt,
 	Dex++ is a revival of Moon's Dex, made to fulfill Moon's Dex prophecy.
@@ -15,9 +15,9 @@ local game = workspace.Parent
 
 cloneref = cloneref or function(ref)
 	if not getreg then return ref end
-	
+
 	local InstanceList
-	
+
 	local a = Instance.new("Part")
 	for _, c in pairs(getreg()) do
 		if type(c) == "table" and #c then
@@ -58,8 +58,8 @@ local API, RMD
 
 -- Default Settings
 DefaultSettings = (function()
-	local rgb = Color3.fromRGB	
-	
+	local rgb = Color3.fromRGB
+
 	return {
 		Explorer = {
 			_Recurse = true,
@@ -148,10 +148,10 @@ DefaultSettings = (function()
 		AutoCheckUpdate = true,
 		AutoUpdateRef = "v3.1",
 		AutoUpdateAllowBranch = false,
-		
+
 		RemoteBlockWriteAttribute = false, -- writes attribute to remote instance if remote is blocked/unblocked
 		ClassIcon = "NewDark",
-		
+
 		-- What available icons:
 		-- > Vanilla3
 		-- > Old
@@ -240,9 +240,9 @@ Main = (function()
 		Menu = 100000,
 		Core = 101000
 	}
-	
+
 	Main.Plugins = {}
-	
+
 	--[[Main.LoadAdonisBypass = function()
 		-- skidded off reddit :pensive:
 		local getinfo = getinfo or debug.getinfo
@@ -303,20 +303,20 @@ Main = (function()
 		-- setthreadidentity(9)
 		setthreadidentity(7)
 	end
-	
+
 	Main.LoadGCBypass = function()
 		loadstring(game:HttpGet("https://raw.githubusercontent.com/secretisadev/Babyhamsta_Backup/refs/heads/main/Universal/Bypasses.lua", true))()
 	end]]
-	
+
 	Main.GetRandomString = function()
 		local output = ""
 		for i = 2, 25 do
 			output = output .. string.char(math.random(1,250))
 		end
-		
+
 		return output
 	end
-	
+
 	Main.GetSecureContainer = function()
 		return
 			syn and syn.protect_gui or
@@ -324,7 +324,7 @@ Main = (function()
 			service.CoreGui or
 			service.Players.LocalPlayer:WaitForChild("PlayerGui")
 	end
-	
+
 	Main.SecureGui = function(gui)
 		--warn("Secured: "..gui.Name)
 		gui.Name = "_DPP_".. Main.GetRandomString()
@@ -527,22 +527,22 @@ Main = (function()
 			return moduleData
 		end
 	end
-	
+
 	Main.LoadPluginFile = function(pluginDir)
 		if env.readfile then
 			if isfile(pluginDir) then
 				local preloadedPlugin = loadfile and loadfile(pluginDir) or loadstring(env.readfile(pluginDir))
 				local loadedPlugin = preloadedPlugin()
-				
+
 				local control = loadedPlugin
 				control.InitDeps(Main.GetInitDeps())
 
 				local moduleData = control.Main()
 				Apps[pluginDir] = moduleData
 				Main.AppControls[pluginDir] = control
-				
+
 				moduleData.PluginData = control.PluginData
-				
+
 				return moduleData
 			else
 				Main.Error("CANNOT FIND FILE MODULE "..pluginDir)
@@ -587,8 +587,8 @@ Main = (function()
 		PropertyTracker = Apps.PropertyTracker
 		InstanceSerializer = Apps.InstanceSerializer
 		ThreadManager = Apps.ThreadManager
-		
-		
+
+
 		--SecretServicePanel = Apps.SecretServicePanel
 		local appTable = {
 			Theme = Theme,
@@ -637,7 +637,7 @@ Main = (function()
 		end})
 
 		env.isonmobile = game:GetService("UserInputService").TouchEnabled
-		
+
 		env.loadstring = (pcall(loadstring,"local a = 1") and loadstring) or (game:GetService("RunService"):IsStudio() and script.Modules:FindFirstChild("Loadstring") and require(script.Modules:FindFirstChild("Loadstring")))
 
 		-- file
@@ -653,13 +653,13 @@ Main = (function()
 	if game:GetService("RunService"):IsStudio() then
 		return function() error("Cannot run in Roblox Studio!") end
 	end
-	
+
 	local Params = {
 		RepoURL = "https://raw.githubusercontent.com/luau/SynSaveInstance/main/",
 		SSI = "saveinstance",
 	}
 	local synsaveinstance = loadstring(oldgame:HttpGet(Params.RepoURL .. Params.SSI .. ".luau", true), Params.SSI)()
-	
+
 	    local function wrappedsaveinstance(obj, filepath, options)
 		            options["FilePath"] = filepath
 		            options["Object"] = obj
@@ -668,7 +668,7 @@ Main = (function()
 	        getgenv().saveinstance = wrappedsaveinstance
 	        return wrappedsaveinstance
         end)()
-		
+
 		env.parsefile = function(name)
 			return tostring(name):gsub("[*\\?:<>|]+", ""):sub(1, 175)
 		end
@@ -680,7 +680,7 @@ Main = (function()
 		env.checkcaller = checkcaller
 		env.getreg = getreg
 		env.getgc = getgc
-		
+
 		-- hooks
 		env.hookfunction = hookfunction
 		env.hookmetamethod = hookmetamethod
@@ -694,7 +694,7 @@ Main = (function()
 		env.getnilinstances = getnilinstances or get_nil_instances
 		env.getloadedmodules = getloadedmodules
 		env.getconnections = getconnections
-		
+
 		env.isViableDecompileScript = function(obj)
 			if obj:IsA("ModuleScript") then
 				return true
@@ -723,33 +723,49 @@ Main = (function()
 			return false
 		end
 
-		local function addDescendantMatches(list, seen, predicate)
-			for _, obj in pairs(game:GetDescendants()) do
-				if predicate(obj) then
-					addUniqueInstance(list, seen, obj)
-				end
+		local clientSurfaceTtl = 4
+		local clientSurfaceStamp = 0
+		local clientSurface = {
+			AllInstances = {},
+			AllScripts = {},
+			ViableScripts = {},
+			Remotes = {},
+		}
+
+		local function maybeYieldScan(i)
+			if i % 450 == 0 then
+				task.wait()
 			end
 		end
 
-		local function addNilMatches(list, seen, predicate)
+		local function addDescendantsToSurface(allInstances, seen)
+			local ok, descendants = pcall(game.GetDescendants, game)
+			if not ok or type(descendants) ~= "table" then return end
+			for i, obj in ipairs(descendants) do
+				addUniqueInstance(allInstances, seen, obj)
+				maybeYieldScan(i)
+			end
+		end
+
+		local function addNilToSurface(allInstances, seen)
 			if not env.getnilinstances then return end
 			local success, nilInstances = pcall(env.getnilinstances)
 			if not success or type(nilInstances) ~= "table" then return end
-			for _, obj in pairs(nilInstances) do
-				if predicate(obj) then
-					addUniqueInstance(list, seen, obj)
-				end
+			for i, obj in pairs(nilInstances) do
+				addUniqueInstance(allInstances, seen, obj)
+				if type(i) == "number" then maybeYieldScan(i) end
 			end
 		end
 
-		local function addLoadedModules(list, seen)
+		local function addLoadedModulesToSurface(allInstances, seen)
 			if not env.getloadedmodules then return end
 			local success, loadedModules = pcall(env.getloadedmodules)
 			if not success or type(loadedModules) ~= "table" then return end
-			for _, obj in pairs(loadedModules) do
+			for i, obj in pairs(loadedModules) do
 				if typeof(obj) == "Instance" and obj:IsA("ModuleScript") then
-					addUniqueInstance(list, seen, obj)
+					addUniqueInstance(allInstances, seen, obj)
 				end
+				if type(i) == "number" then maybeYieldScan(i) end
 			end
 		end
 
@@ -758,7 +774,7 @@ Main = (function()
 			local success, gcObjects = pcall(env.getgc)
 			if not success or type(gcObjects) ~= "table" then return end
 
-			for _, value in pairs(gcObjects) do
+			for i, value in pairs(gcObjects) do
 				if typeof(value) == "function" then
 					local envSuccess, fnEnv = pcall(getfenv, value)
 					local scr = envSuccess and type(fnEnv) == "table" and rawget(fnEnv, "script")
@@ -768,40 +784,67 @@ Main = (function()
 						end
 					end
 				end
+				if type(i) == "number" then maybeYieldScan(i) end
 			end
 		end
 
-		env.GetClientScripts = function(allowNonViable)
-			local scripts, seen = {}, {}
-			local function isWantedScript(obj)
-				if typeof(obj) ~= "Instance" or not obj:IsA("LuaSourceContainer") then return false end
-				return allowNonViable or env.isViableDecompileScript(obj)
+		env.RefreshClientSurface = function(force, includeGcScripts)
+			local now = os.clock()
+			if not force and now - clientSurfaceStamp < clientSurfaceTtl then
+				return clientSurface
 			end
 
-			addDescendantMatches(scripts, seen, isWantedScript)
-			addNilMatches(scripts, seen, isWantedScript)
-			addLoadedModules(scripts, seen)
-			addGcScriptRefs(scripts, seen, allowNonViable)
+			clientSurfaceStamp = now
+			local allInstances, seen = {}, {}
+			addDescendantsToSurface(allInstances, seen)
+			addNilToSurface(allInstances, seen)
+			addLoadedModulesToSurface(allInstances, seen)
 
-			return scripts
+			local allScripts, viableScripts, remotes = {}, {}, {}
+			local scriptSeen, viableSeen, remoteSeen = {}, {}, {}
+			for i, obj in ipairs(allInstances) do
+				if typeof(obj) == "Instance" then
+					if obj:IsA("LuaSourceContainer") then
+						addUniqueInstance(allScripts, scriptSeen, obj)
+						if env.isViableDecompileScript(obj) then
+							addUniqueInstance(viableScripts, viableSeen, obj)
+						end
+					elseif remoteClassMap[obj.ClassName] then
+						addUniqueInstance(remotes, remoteSeen, obj)
+					end
+				end
+				maybeYieldScan(i)
+			end
+
+			if includeGcScripts == true then
+				addGcScriptRefs(allScripts, scriptSeen, true)
+				addGcScriptRefs(viableScripts, viableSeen, false)
+			end
+
+			clientSurface = {
+				AllInstances = allInstances,
+				AllScripts = allScripts,
+				ViableScripts = viableScripts,
+				Remotes = remotes,
+				UpdatedAt = now,
+			}
+			return clientSurface
 		end
 
-		env.GetClientRemotes = function()
-			local remotes, seen = {}, {}
-			local function isRemote(obj)
-				return typeof(obj) == "Instance" and remoteClassMap[obj.ClassName] == true
-			end
+		env.GetClientScripts = function(allowNonViable, forceDeep)
+			local surface = env.RefreshClientSurface(forceDeep == true, forceDeep == true)
+			return allowNonViable and surface.AllScripts or surface.ViableScripts
+		end
 
-			addDescendantMatches(remotes, seen, isRemote)
-			addNilMatches(remotes, seen, isRemote)
-
-			return remotes
+		env.GetClientRemotes = function(force)
+			return env.RefreshClientSurface(force == true, false).Remotes
 		end
 
 		env.GetClientSurfaceCoverage = function()
-			local allScripts = env.GetClientScripts(true)
-			local viableScripts = env.GetClientScripts(false)
-			local remotes = env.GetClientRemotes()
+			local surface = env.RefreshClientSurface(false, false)
+			local allScripts = surface.AllScripts
+			local viableScripts = surface.ViableScripts
+			local remotes = surface.Remotes
 			local cached = 0
 
 			if env.DecompileCache and env.DecompileCache.GetEntries then
@@ -1003,20 +1046,20 @@ Main = (function()
 
 			return helper
 		end)()
-		
+
 		env.isdecompile = function()
 			return typeof(decompile) == "function" or typeof(getscriptbytecode) == "function" or false
 		end
-		
+
 		env.isdecompilefallback = function()
 			return typeof(decompile) ~= "function" or typeof(getscriptbytecode) == "function" or false
 		end
-		
-		
+
+
         -- DECOMPILERS
-		
+
 		local luaexpert_last_call = 0
-		
+
 		local function LuaExpertDec(script_instance)
 			local success, bytecode = pcall(env.getscriptbytecode, script_instance)
 
@@ -1048,7 +1091,7 @@ Main = (function()
 
 			local HttpService = game:GetService("HttpService")
 			local req = env.request or (syn and syn.request) or (http and http.request) or http_request or request
-			
+
 			local httpResult = req({
 				Url = "https://api.lua.expert/decompile",
 				Method = "POST",
@@ -1265,7 +1308,7 @@ Main = (function()
 
 		local function decompileUncached(script_instance, ...)
 			local tryNative = not Settings.Decompiler.PreferDecompilerFallback
-			
+
 			if nativeDecompile and tryNative then
 				local success, result = pcall(nativeDecompile, script_instance, ...)
 				-- Check if the native decompiler succeeded and actually returned valid code
@@ -1285,7 +1328,7 @@ Main = (function()
 					if success and bytecode then
 						local encoder = base64_encode or (crypt and crypt.base64encode) or (crypt and crypt.base64 and crypt.base64.encode)
 						local encodedBytecode = encoder and encoder(bytecode) or bytecode
-						
+
 						local req = env.request or request
 						local s, res = pcall(req, {
 							Url = "http://localhost:" .. tostring(Settings.Decompiler.ShinyDecompilerPort) .. "/decompile",
@@ -1302,7 +1345,7 @@ Main = (function()
 						end
 					end
 				end
-				
+
 				-- Fallback 2: Default to lua.expert API
 				return LuaExpertDec(script_instance)
 			else
@@ -1472,11 +1515,11 @@ Main = (function()
 		env.decompilebackground = function(script_instance, callback, priority, ...)
 			return env.DecompileQueue.Submit(script_instance, {Priority = priority or 10, Callback = callback, Async = true}, ...)
 		end
-		
+
 		if Main.Elevated then
 			getgenv().decompile = env.decompile
 		end
-		
+
 
 		if identifyexecutor then
 			Main.Executor = identifyexecutor()
@@ -1499,55 +1542,55 @@ Main = (function()
 			t.TextWrapped = true
 			t.TextScaled = true
 			t.Text = "\n\n\n\n\n\n\n\nHello Skidsploit user,\nZinnia, Chillz and the Secret Service does not approve of Dex being used on your skidsploit.\nPlease consider getting something better.\n\nIncompatible Reason: "..reason.."\n\n\n\n\n\n\n\n"
-			
+
 			-- This sound wont work!!!
 			local sound = Instance.new("Sound",msg)
 			sound.SoundId = "rbxassetid://175964948"
 			sound.Volume = 1
 			sound.Looped = true
 			sound.Playing = true
-			
+
 			if not tolerated then
 				Lib.ShowGui(msg)
-				
+
 				if os and os.execute then pcall(os.execute,'explorer "https://weao.xyz"') end
 				if pcall(game.GetService, game,"MessageBusService") and game:GetService("MessageBusService").Publish then pcall(game:GetService("MessageBusService").Publish, game:GetService("MessageBusService"), game:GetService("MessageBusService"):GetMessageId("Linking", "openURLRequest"), {url = 'explorer "https://weao.xyz"'}) end
 			else
 				warn(msg)
-			end			
+			end
 		end
-		
+
 																																													local yummy, evilList = "\105\100\101\110\116\105\102\121\101\120\101\99\117\116\111\114", { "\120\101\110\111", "\115\111\108\97\114\97", "\119\97\118\101" }
 																																													if ggv and ggv()[yummy] then local wow = ggv()[yummy] if table.find(evilList, string.lower(wow)) then incompatibleMessage("\83\72\73\84\84\89\32\69\88\69\67\85\84\79\82") end end
-																																													
+
 		local t = {}
 		t[1] = t
 		local x = unpack(t) or incompatibleMessage("WRAPPER FAILED TO CYCLIC #1")
 		if x[1] ~= t then incompatibleMessage("WRAPPER FAILED TO CYCLIC #2") end
-		
+
 		if game ~= workspace.Parent then
 			incompatibleMessage("WRAPPER NO CACHE (game â‰  workspace.Parent)", true)
 			game = workspace.Parent
 		end
-		
+
 		if Main.Elevated and not loadstring("for i = 1,1 do continue end") then incompatibleMessage("CAN'T CONTINUE OR NO LOADSTRING")end
-		
+
 		local obj = newproxy(true)
 		local mt = getmetatable(obj)
 		mt.__index = function() incompatibleMessage("CAN'T NAMECALL (__index triggered instead of __namecall)") end
 		mt.__namecall = function() end
 		obj:No()
-		
+
 		local fEnv = setmetatable({zin = 5},{__index = getfenv()})
 		local caller = function(f) f() end
 		setfenv(caller,fEnv)
 		caller(function() if not getfenv(2).zin then incompatibleMessage("RERU WILL BE FILING A LAWSUIT AGAINST YOU SOON") end end)
-		
+
 		local second = false
 		coroutine.wrap(function() local start = tick() wait(5) if tick() - start < 0.1 or not second then incompatibleMessage("SKIDDED YIELDING") end end)()
 		second = true]]
 	end
-	
+
 	local function serialize(val)
 		if typeof(val) == "Color3" then
 			local serializedColor = {}
@@ -1559,7 +1602,7 @@ Main = (function()
 			return val
 		end
 	end
-	
+
 	local function deserialize(val)
 		if typeof(val) == "table" then
 			if val.R and val.G and val.B then
@@ -1571,7 +1614,7 @@ Main = (function()
 			return val
 		end
 	end
-	
+
 	Main.ExportSettings = function()
 		local rawData = Settings or DefaultSettings
 
@@ -1602,7 +1645,7 @@ Main = (function()
 	Main.LoadSettings = function()
 		local s, data = pcall(env.readfile or error, "DexPlusPlusSettings.json")
 		if s and data and data ~= "" then
-			
+
 			local s, decoded = pcall(service.HttpService.JSONDecode, service.HttpService, data)
 			if s and decoded then
 
@@ -1630,8 +1673,8 @@ Main = (function()
 		end
 	end
 
-	
-	
+
+
 
 	Main.ResetSettings = function()
 		local function recur(t,res)
@@ -1656,7 +1699,7 @@ Main = (function()
 		if Main.Elevated then
 			if Main.LocalDepsUpToDate() then
 				local localAPI = Lib.ReadFile("dex/rbx_api.dat")
-				if localAPI then 
+				if localAPI then
 					rawAPI = localAPI
 				else
 					Main.DepsVersionData[1] = ""
@@ -1682,7 +1725,7 @@ Main = (function()
 			end
 		end
 		downloaded = true
-		
+
 		Main.RawAPI = rawAPI
 		api = service.HttpService:JSONDecode(rawAPI)
 
@@ -1817,7 +1860,7 @@ Main = (function()
 		if Main.Elevated then
 			if Main.LocalDepsUpToDate() then
 				local localRMD = Lib.ReadFile("dex/rbx_rmd.dat")
-				if localRMD then 
+				if localRMD then
 					rawXML = localRMD
 				else
 					Main.DepsVersionData[1] = ""
@@ -2279,7 +2322,7 @@ Main = (function()
 				app.Main.BackgroundColor3 = Settings.Theme.ButtonHover
 			end
 		end)
-		
+
 
 		app.Main.InputEnded:Connect(function(input)
 			if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
@@ -2305,6 +2348,72 @@ Main = (function()
 		control.Enable = enable
 		control.Disable = disable
 		Main.MenuApps[data.Name] = control
+		return control
+	end
+
+	Main.CreateLazyWindowApp = function(data)
+		local initialized = false
+		local control
+		local moduleData = data.Module
+		local ensureInit
+
+		ensureInit = function()
+			if not moduleData then
+				if data.GetModule then
+					moduleData = data.GetModule()
+				end
+				if not moduleData then
+					warn("Lazy app module unavailable: " .. tostring(data.Name))
+					if control then control.Disable(true) end
+					return false
+				end
+				moduleData.EnsureInit = ensureInit
+			end
+
+			if initialized then return true end
+			if moduleData.Init then
+				local ok, err = pcall(moduleData.Init)
+				if not ok then
+					warn("Failed to lazy init " .. tostring(data.Name) .. ": " .. tostring(err))
+					if control then control.Disable(true) end
+					return false
+				end
+			end
+			initialized = true
+			if moduleData.Window then
+				moduleData.Window.OnActivate:Connect(function()
+					if control then control.Enable(true) end
+				end)
+				moduleData.Window.OnDeactivate:Connect(function()
+					if control then control.Disable(true) end
+				end)
+			end
+			return true
+		end
+
+		if moduleData then
+			moduleData.EnsureInit = ensureInit
+		end
+
+		control = Main.CreateApp({
+			Name = data.Name,
+			IconMap = data.IconMap,
+			Icon = data.Icon,
+			OnClick = function(open)
+				if open then
+					if not ensureInit() then return end
+					if moduleData.Window then
+						moduleData.Window:Show()
+					else
+						warn("Lazy app has no window: " .. tostring(data.Name))
+						if control then control.Disable(true) end
+					end
+				elseif initialized and moduleData and moduleData.Window then
+					moduleData.Window:Hide()
+				end
+			end
+		})
+
 		return control
 	end
 
@@ -2386,19 +2495,19 @@ Main = (function()
 				service.TweenService:Create(Main.MainGui.OpenButton,TweenInfo.new(0,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{BackgroundTransparency = Main.MainGuiOpen and 0 or 0.2}):Play()
 			end
 		end)
-		
+
 		local infoDexIntro, isInfoCD
-		
+
 		--openButton.MainFrame.BottomFrame.Settings.Visible = false
-		
+
 		openButton.MainFrame.BottomFrame.Settings.MouseButton1Click:Connect(function()
 			if not SettingsWindow.Window.Closed then
 				SettingsWindow.Window:Hide()
 			else
 				SettingsWindow.Window:Show()
-			end		
+			end
 		end)
-		
+
 		openButton.MainFrame.BottomFrame.Information.MouseButton1Click:Connect(function()
 			local duration = 1
 			local Infos = {
@@ -2407,7 +2516,7 @@ Main = (function()
 				"Moon (Dex)",
 				"Cazan (3D Preview)",
 			}
-			
+
 			if isInfoCD then return end
 			isInfoCD = true
 			if not infoDexIntro then
@@ -2422,14 +2531,14 @@ Main = (function()
 						end
 					end
 				end)()
-				
+
 				Lib.FastWait(1.5)
 				isInfoCD = false
 			else
 				coroutine.wrap(function()
 					infoDexIntro.Close()
 					infoDexIntro = nil
-					
+
 					Lib.FastWait(1.5)
 					isInfoCD = false
 				end)()
@@ -2458,40 +2567,40 @@ Main = (function()
 		end})
 
 		Main.CreateApp({Name = "Notepad", IconMap = Main.LargeIcons, Icon = "Script_Viewer", Window = ScriptViewer.Window})
-		
+
 		Main.CreateApp({Name = "Console", IconMap = Main.LargeIcons, Icon = "Executor", Window = Console.Window})
-		
-		Main.CreateApp({Name = "Save Instance", IconMap = Main.LargeIcons, Icon = "Book", Window = SaveInstance.Window})
-		
-		Main.CreateApp({Name = "3D Viewer", IconMap = Main.LargeIcons, Icon = "Object", Window = ModelViewer.Window})
 
-		Main.CreateApp({Name = "Code Search", IconMap = Main.LargeIcons, Icon = "ScriptEdit", Window = CodeSearch.Window})
+		Main.CreateLazyWindowApp({Name = "Save Instance", IconMap = Main.LargeIcons, Icon = "Book", Module = SaveInstance})
 
-		Main.CreateApp({Name = "Script Relations", IconMap = Main.LargeIcons, Icon = "Watcher", Window = ScriptRelations.Window})
+		Main.CreateLazyWindowApp({Name = "3D Viewer", IconMap = Main.LargeIcons, Icon = "Object", Module = ModelViewer})
 
-		Main.CreateApp({Name = "Remote Usage", IconMap = Main.LargeIcons, Icon = "Output", Window = RemoteUsageMap.Window})
+		Main.CreateLazyWindowApp({Name = "Code Search", IconMap = Main.LargeIcons, Icon = "ScriptEdit", Module = CodeSearch})
 
-		Main.CreateApp({Name = "Object Links", IconMap = Main.LargeIcons, Icon = "Watcher", Window = ObjectLinks.Window})
+		Main.CreateLazyWindowApp({Name = "Script Relations", IconMap = Main.LargeIcons, Icon = "Watcher", Module = ScriptRelations})
 
-		Main.CreateApp({Name = "Image Viewer", IconMap = Main.LargeIcons, Icon = "Object", Window = ImageViewer.Window})
+		Main.CreateLazyWindowApp({Name = "Remote Usage", IconMap = Main.LargeIcons, Icon = "Output", Module = RemoteUsageMap})
 
-		Main.CreateApp({Name = "Activity Map", IconMap = Main.LargeIcons, Icon = "Watcher", Window = ActivityMap.Window})
+		Main.CreateLazyWindowApp({Name = "Object Links", IconMap = Main.LargeIcons, Icon = "Watcher", Module = ObjectLinks})
 
-		Main.CreateApp({Name = "Dependency Graph", IconMap = Main.LargeIcons, Icon = "ScriptEdit", Window = DependencyGraph.Window})
+		Main.CreateLazyWindowApp({Name = "Image Viewer", IconMap = Main.LargeIcons, Icon = "Object", Module = ImageViewer})
 
-		Main.CreateApp({Name = "Smart Search", IconMap = Main.LargeIcons, Icon = "ScriptEdit", Window = SmartSearch.Window})
+		Main.CreateLazyWindowApp({Name = "Activity Map", IconMap = Main.LargeIcons, Icon = "Watcher", Module = ActivityMap})
 
-		Main.CreateApp({Name = "Runtime Inspector", IconMap = Main.LargeIcons, Icon = "Watcher", Window = RuntimeInspector.Window})
+		Main.CreateLazyWindowApp({Name = "Dependency Graph", IconMap = Main.LargeIcons, Icon = "ScriptEdit", Module = DependencyGraph})
 
-		Main.CreateApp({Name = "Client Intelligence", IconMap = Main.LargeIcons, Icon = "Output", Window = ClientIntelligence.Window})
+		Main.CreateLazyWindowApp({Name = "Smart Search", IconMap = Main.LargeIcons, Icon = "ScriptEdit", Module = SmartSearch})
 
-		Main.CreateApp({Name = "Inspector Hub", IconMap = Main.LargeIcons, Icon = "Watcher", Window = InspectorHub.Window})
+		Main.CreateLazyWindowApp({Name = "Runtime Inspector", IconMap = Main.LargeIcons, Icon = "Watcher", Module = RuntimeInspector})
 
-		Main.CreateApp({Name = "Task Router", IconMap = Main.LargeIcons, Icon = "ScriptEdit", Window = TaskRouter.Window})
+		Main.CreateLazyWindowApp({Name = "Client Intelligence", IconMap = Main.LargeIcons, Icon = "Output", Module = ClientIntelligence})
 
-		Main.CreateApp({Name = "Security Auditor", IconMap = Main.LargeIcons, Icon = "Watcher", Window = SecurityAuditor.Window})
-		Main.CreateApp({Name = "Property Tracker", IconMap = Main.LargeIcons, Icon = "Watcher", Window = PropertyTracker.Window})
-		Main.CreateApp({Name = "Thread Manager", IconMap = Main.LargeIcons, Icon = "ScriptEdit", Window = ThreadManager.Window})
+		Main.CreateLazyWindowApp({Name = "Inspector Hub", IconMap = Main.LargeIcons, Icon = "Watcher", Module = InspectorHub})
+
+		Main.CreateLazyWindowApp({Name = "Task Router", IconMap = Main.LargeIcons, Icon = "ScriptEdit", Module = TaskRouter})
+
+		Main.CreateLazyWindowApp({Name = "Security Auditor", IconMap = Main.LargeIcons, Icon = "Watcher", Module = SecurityAuditor})
+		Main.CreateLazyWindowApp({Name = "Property Tracker", IconMap = Main.LargeIcons, Icon = "Watcher", Module = PropertyTracker})
+		Main.CreateLazyWindowApp({Name = "Thread Manager", IconMap = Main.LargeIcons, Icon = "ScriptEdit", Module = ThreadManager})
 		Main.CreateApp({Name = "Serialize Inst", IconMap = Main.LargeIcons, Icon = "Object", OnClick = function(callback)
 			if callback then
 				if InstanceSerializer then InstanceSerializer.Init() end
@@ -2500,11 +2609,11 @@ Main = (function()
 				end
 			end
 		end})
-		
+
 		for _, loadedplugin in pairs(Main.Plugins) do
-			Main.CreateApp({Name = loadedplugin.PluginData.FriendlyName, IconMap = Explorer.ClassIcons, Icon = "Attachment", Window = loadedplugin.Window})
+			Main.CreateLazyWindowApp({Name = loadedplugin.PluginData.FriendlyName, IconMap = Explorer.ClassIcons, Icon = "Attachment", Module = loadedplugin})
 		end
-		
+
 		Lib.ShowGui(gui)
 	end
 
@@ -2539,15 +2648,15 @@ Main = (function()
 
 	Main.Init = function()
 		Main.Elevated = pcall(function() local a = game:GetService("CoreGui"):GetFullName() end)
-		
+
 		-- saves new settings if does not exist
 		if isfile and not isfile("DexPlusPlusSettings.json") then
 			Main.SaveCurrentSettings()
 		end
-		
+
 		Main.InitEnv()
 		Main.LoadSettings() -- loads the settings before init
-		
+
 		Main.SetupFilesystem()
 
 		-- Load Lib
@@ -2572,11 +2681,11 @@ Main = (function()
 		Main.LargeIcons:SetDict({
 			Explorer = 0, Properties = 1, Script_Viewer = 2, Watcher = 3, Output = 4, ScriptEdit = 5, Book = 6, Executor = 7, Object = 8, Honey = 9
 		})
-		
+
 		--[[ Loading bypasses
 		intro.SetProgress("Loading Adonis Bypass",0.1)
 		pcall(Main.LoadAdonisBypass)
-		
+
 		intro.SetProgress("Loading GC Bypass",0.2)
 		pcall(Main.LoadGCBypass)]]
 
@@ -2591,7 +2700,7 @@ Main = (function()
 					Main.RobloxVersion = Main.DepsVersionData[2]
 				end
 			end
-			
+
 			Main.RobloxVersion = Main.RobloxVersion or oldgame:HttpGet("https://clientsettings.roblox.com/v2/client-version/WindowsStudio64/channel/LIVE"):match("(version%-[%w]+)")
 		end
 
@@ -2632,26 +2741,10 @@ Main = (function()
 		Properties.Init()
 		ScriptViewer.Init()
 		Console.Init()
-		SaveInstance.Init()
-		ModelViewer.Init()
 		SettingsWindow.Init()
-		CodeSearch.Init()
-		ScriptRelations.Init()
-		RemoteUsageMap.Init()
-		ObjectLinks.Init()
-		ImageViewer.Init()
-		ClientIndex.Init()
-		ActivityMap.Init()
-		DependencyGraph.Init()
-		SmartSearch.Init()
-		RuntimeInspector.Init()
-		ClientIntelligence.Init()
-		InspectorHub.Init()
-		TaskRouter.Init()
-		SecurityAuditor.Init()
 		--SecretServicePanel.Init()
-		
-		
+
+
 		if env.readfile and listfiles then
 			if #listfiles("dex/plugins") > 0 then
 				intro.SetProgress("Loading Plugin Files",0.8)
@@ -2659,10 +2752,8 @@ Main = (function()
 					local moduleData = Main.LoadPluginFile(pluginDir)
 					moduleData.PluginData = moduleData.PluginData or {}
 
-					moduleData.Init()
-
-					local pluginFriendlyName = moduleData.PluginData.FriendlyName or moduleData.Window.GuiElems.Title.Text or "Unnamed Plugin"
-					local pluginName = moduleData.PluginData.Name or moduleData.Window.GuiElems.Title.Text:gsub(" ", "") or "unnamedPlugin"
+					local pluginFriendlyName = moduleData.PluginData.FriendlyName or moduleData.PluginData.Name or tostring(pluginDir):match("[^/\\]+$") or "Unnamed Plugin"
+					local pluginName = moduleData.PluginData.Name or tostring(pluginFriendlyName):gsub(" ", "") or "unnamedPlugin"
 
 					intro.SetProgress("Initializing Plugin: ".. pluginFriendlyName,0.9)
 
@@ -2671,10 +2762,10 @@ Main = (function()
 
 					table.insert(Main.Plugins, moduleData)
 				end
-			end	
+			end
 		end
-		
-		
+
+
 		Lib.FastWait()
 
 		-- Done
@@ -2690,10 +2781,10 @@ Main = (function()
 		Explorer.Window:Show({Align = "right", Pos = 1, Size = 0.5, Silent = true})
 		Properties.Window:Show({Align = "right", Pos = 2, Size = 0.5, Silent = true})
 		Main.CheckForUpdatesAsync()
-		
+
 		Lib.DeferFunc(function() Lib.Window.ToggleSide("right") end)
 	end
-	
+
 	Main.Uninit = function()
 		if Main.MainGuiMouseEvent then
 			pcall(function() Main.MainGuiMouseEvent:Disconnect() end)
@@ -2747,11 +2838,11 @@ Main.Init()
 
 --for i,v in pairs(Main.MissingEnv) do print(i,v) end
 
--- Adonis related 
+-- Adonis related
 local function InitAdonisBypass()
 	local Adonis = { Name = "Adonis", Game = "*" }
 	local AdonisAnticheatThreads = {}
-	
+
 	if not getreg or not getgc or not isfunctionhooked then
 		warn("Executor does not support Adonis bypass functions.")
 		return false

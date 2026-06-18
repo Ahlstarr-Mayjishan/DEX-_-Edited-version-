@@ -132,7 +132,8 @@ local function main()
 		window:SetTitle("Client Intelligence - Snapshot")
 		local scripts, remotes = collectScripts(), collectRemotes()
 		local parts, guis, services = 0, 0, {}
-		for _, obj in pairs(game:GetDescendants()) do
+		local liveObjects = (env.RefreshClientSurface and env.RefreshClientSurface(false, false).AllInstances) or game:GetDescendants()
+		for _, obj in pairs(liveObjects) do
 			if obj:IsA("BasePart") then parts += 1 end
 			if obj:IsA("GuiObject") then guis += 1 end
 			local root = obj
@@ -219,7 +220,8 @@ local function main()
 		task.spawn(function()
 			local found = 0
 			divider("Live Instance Hits")
-			for _, obj in pairs(game:GetDescendants()) do
+			local liveObjects = (env.RefreshClientSurface and env.RefreshClientSurface(false, false).AllInstances) or game:GetDescendants()
+			for _, obj in pairs(liveObjects) do
 				if token ~= scanToken then return end
 				if obj.Name:lower():find(query,1,true) or obj.ClassName:lower():find(query,1,true) then
 					found += 1
