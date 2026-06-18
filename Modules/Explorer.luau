@@ -1952,32 +1952,6 @@ local function main()
 		Explorer.Refresh()
 	end
 
-		--[[
-		-- Remove old root connections
-		for obj in next,nilRoots do
-			if not newNilRoots[obj] then
-				if not disconnect then disconnect = obj[1].Disconnect end
-				disconnect(obj[1])
-				disconnect(obj[2])
-			end
-		end
-		
-		for obj in next,newNilRoots do
-			if not nilRoots[obj] then
-				nilRoots[obj] = {
-					connect(obj.DescendantAdded,addObject),
-					connect(obj.DescendantRemoving,removeObject)
-				}
-			end
-		end]]
-
-		--nilMap = newNilMap
-		--Explorer.NilRoots = newNilRoots
-
-		Explorer.Update()
-		Explorer.Refresh()
-	end
-
 	Explorer.GetInstancePath = function(obj)
 		local ffc = game.FindFirstChild
 		local getCh = game.GetChildren
@@ -2742,6 +2716,8 @@ return search]==]
 				end
 			end
 		end
+	end
+
 	local function registerSniffedTemplate(obj)
 		if not obj or typeof(obj) ~= "Instance" then return end
 
