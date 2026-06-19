@@ -99,13 +99,21 @@ local function main()
 		pad(row)
 		Lib.ButtonAnim(row,{Mode = 2, StartColor = Settings.Theme.Main2, HoverColor = Settings.Theme.ButtonHover, PressColor = Settings.Theme.ButtonPress, OutlineColor = Settings.Theme.Outline1})
 		row.MouseButton1Click:Connect(function()
+			if Explorer and Explorer.Nodes and Explorer.Selection then
+				local node = Explorer.Nodes[obj]
+				if node then
+					if Explorer.MakeNodeVisible then Explorer.MakeNodeVisible(node, true) end
+					Explorer.Selection:Set(node)
+					if Explorer.ViewNode then Explorer.ViewNode(node) end
+				end
+			end
 			if obj:IsA("LuaSourceContainer") and ScriptViewer then
 				ScriptViewer.ViewScript(obj)
 			elseif remoteClasses[obj.ClassName] and RemoteUsageMap then
 				RemoteUsageMap.ShowForRemote(obj)
 			elseif env.setclipboard then
 				env.setclipboard(getPath(obj))
-				setStatus("Copied object path.")
+				setStatus("Copied object path and focused in Explorer.")
 			end
 		end)
 		return row
@@ -131,7 +139,17 @@ local function main()
 		})
 		Lib.ButtonAnim(row,{Mode = 2, StartColor = Settings.Theme.Main2, HoverColor = Settings.Theme.ButtonHover, PressColor = Settings.Theme.ButtonPress, OutlineColor = Settings.Theme.Outline1})
 		row.MouseButton1Click:Connect(function()
-			if scriptObj and ScriptViewer then ScriptViewer.ViewScript(scriptObj) end
+			if scriptObj then
+				if Explorer and Explorer.Nodes and Explorer.Selection then
+					local node = Explorer.Nodes[scriptObj]
+					if node then
+						if Explorer.MakeNodeVisible then Explorer.MakeNodeVisible(node, true) end
+						Explorer.Selection:Set(node)
+						if Explorer.ViewNode then Explorer.ViewNode(node) end
+					end
+				end
+				if ScriptViewer then ScriptViewer.ViewScript(scriptObj) end
+			end
 		end)
 	end
 

@@ -24,6 +24,18 @@ To rebuild the project from source, install:
 
 Python and Rust are not required merely to run an already-built helper. C++ remains the fallback analyzer if a sidecar worker is unavailable.
 
+### Toolchain setup utility
+
+`HelperServer\DEX_Language_Manager.exe` checks whether Python, Cargo/Rust, `g++`, and `winget` are available. The helper dashboard shows the same status and can open this utility. Its source and build script live under `ToolchainSetup\`.
+
+The utility can install or update only the supported DEX++ toolchain packages:
+
+- Python 3.14 through `Python.Python.3.14`;
+- Rust through `Rustlang.Rustup`, followed by `rustup update stable`;
+- WinLibs `g++` through `BrechtSanders.WinLibs.MCF.UCRT`.
+
+It always displays the requested changes and waits for `y/N` confirmation. It does not silently install software. If `winget` is unavailable, it opens Microsoft's official App Installer page.
+
 ## Executor API requirements
 
 DarkDEX++ performs capability checks where possible. Missing optional APIs should disable or reduce the relevant feature instead of preventing the whole UI from opening.
@@ -117,8 +129,8 @@ Important: the helper can proxy bytecode to Potassium's external `Decompiler.exe
 
 1. Build the Luau bundle with `python .\build.py`, or use the included `DEX++_compiled.luau`.
 2. Build the helper with `HelperServer\compile.bat`, or use an already-built local executable.
-3. Start `HelperServer\DEX_Helper.exe`. Leave its console open while using DEX++.
-4. Open `http://localhost:8080/` and confirm that the dashboard reports `active` and `script ready`.
+3. Start `HelperServer\DEX_Helper.exe`. Leave its console open while using DEX++. The local dashboard opens automatically in your default browser.
+4. Confirm that `http://localhost:8080/` reports `active` and `script ready`.
 5. In Potassium, run:
 
 ```lua
@@ -132,6 +144,17 @@ loadstring(game:HttpGet("http://localhost:8080/script"))()
 If localhost HTTP is unavailable, execute `DEX++_compiled.luau` directly. The external dashboard and helper-backed features will remain unavailable.
 
 For the smoothest first run, keep low-impact indexing enabled, leave property-change logging disabled, and do not enable the experimental hook modules together.
+
+### Helper starts and immediately closes
+
+The helper now prevents duplicate instances:
+
+- if DEX++ Helper is already running, opening it again displays a clear notice and opens the existing dashboard;
+- if another application owns port `8080`, the helper reports that port conflict instead of silently closing;
+- after a successful startup, the helper automatically opens `http://localhost:8080/` in the default browser;
+- only one helper instance should run at a time.
+
+For automated or headless checks, set `DEX_HELPER_NO_DIALOG=1` to suppress startup dialogs and automatic browser opening.
 
 ## Dashboard guide
 

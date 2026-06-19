@@ -1775,7 +1775,20 @@ local function main()
 
 		context:Register("FIND_OBJECT_LINKS",{Name = "Find Links / References", IconMap = Explorer.MiscIcons, Icon = "ExploreData", DisabledIcon = "Empty", OnClick = function()
 			local obj = selection.List[1] and selection.List[1].Obj
-			if obj and ensureTool(ObjectLinks) then ObjectLinks.ShowForObject(obj) end
+			if obj then
+				if obj:IsA("LuaSourceContainer") then
+					if ensureTool(ScriptViewer) then
+						ScriptViewer.ViewScript(obj)
+					end
+					if ensureTool(ScriptRelations) then
+						ScriptRelations.ShowForScript(obj)
+					end
+				else
+					if ensureTool(ObjectLinks) then
+						ObjectLinks.ShowForObject(obj)
+					end
+				end
+			end
 		end})
 
 		context:Register("VIEW_IMAGE_ASSETS",{Name = "View Images", IconMap = Explorer.MiscIcons, Icon = "ViewScript", DisabledIcon = "Empty", OnClick = function()

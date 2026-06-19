@@ -7,6 +7,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <shellapi.h>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -26,6 +27,7 @@
 
 // Link with ws2_32.lib
 #pragma comment(lib, "ws2_32.lib")
+#pragma comment(lib, "shell32.lib")
 
 #define DEFAULT_PORT "8080"
 #define BUFFER_SIZE 8192
@@ -37,6 +39,31 @@
 
 const char* INDEX_FILE_PATH = "dex_helper_index.dat";
 const char* INDEX_MAGIC = "DEXPP_INDEX_V1";
+const wchar_t* INSTANCE_MUTEX_NAME = L"Local\\DEXPlusPlusHelperServer_8080";
+const wchar_t* DASHBOARD_URL = L"http://localhost:8080/";
+
+bool startup_dialogs_enabled() {
+    char value[8];
+    return GetEnvironmentVariableA("DEX_HELPER_NO_DIALOG", value, sizeof(value)) == 0;
+}
+
+void show_startup_notice(const wchar_t* message, bool open_dashboard) {
+    std::wcerr << message << std::endl;
+    if (!startup_dialogs_enabled()) return;
+
+    if (open_dashboard) {
+        ShellExecuteW(NULL, L"open", DASHBOARD_URL, NULL, NULL, SW_SHOWNORMAL);
+    }
+    MessageBoxW(NULL, message, L"DEX++ Helper", MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
+}
+
+void open_dashboard() {
+    if (!startup_dialogs_enabled()) return;
+    HINSTANCE result = ShellExecuteW(NULL, L"open", DASHBOARD_URL, NULL, NULL, SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(result) <= 32) {
+        std::cerr << "Could not open the helper dashboard automatically." << std::endl;
+    }
+}
 
 struct IndexedScript {
     std::string key;
@@ -1043,6 +1070,56 @@ std::string resolve_worker_path(const std::string& relative_path) {
     return "";
 }
 
+bool command_available(const char* command) {
+    char resolved[MAX_PATH + 1];
+    return SearchPathA(NULL, command, ".exe", MAX_PATH, resolved, NULL) > 0;
+}
+
+std::string resolve_toolchain_setup_path() {
+    const char* candidates[] = {
+        "DEX_Language_Manager.exe",
+        "../HelperServer/DEX_Language_Manager.exe",
+        "HelperServer/DEX_Language_Manager.exe"
+    };
+    for (const char* candidate : candidates) {
+        if (file_exists(candidate)) return candidate;
+    }
+    return "";
+}
+
+std::string toolchain_status() {
+    bool python = command_available("python") || command_available("py");
+    bool cargo = command_available("cargo");
+    bool compiler = command_available("g++");
+    bool winget = command_available("winget");
+    bool rust_binary = !resolve_worker_path("rust_source_analyzer/target/release/rust_source_analyzer.exe").empty();
+    bool setup = !resolve_toolchain_setup_path().empty();
+
+    std::stringstream json;
+    json << "{\"ok\":true,\"runtimeReady\":true,\"tools\":{";
+    json << "\"python\":{\"available\":" << (python ? "true" : "false") << ",\"purpose\":\"Deep source analysis and Luau bundle builds\"},";
+    json << "\"cargo\":{\"available\":" << (cargo ? "true" : "false") << ",\"purpose\":\"Build and update the Rust fast analyzer\"},";
+    json << "\"gpp\":{\"available\":" << (compiler ? "true" : "false") << ",\"purpose\":\"Rebuild DEX_Helper.exe and setup utilities\"},";
+    json << "\"winget\":{\"available\":" << (winget ? "true" : "false") << ",\"purpose\":\"Install or upgrade supported toolchains\"},";
+    json << "\"rustWorker\":{\"available\":" << (rust_binary ? "true" : "false") << ",\"purpose\":\"Fast analysis for large source payloads\"}";
+    json << "},\"setupAvailable\":" << (setup ? "true" : "false")
+         << ",\"note\":\"The prebuilt C++ helper runs without build toolchains.\"}";
+    return json.str();
+}
+
+std::string open_toolchain_setup() {
+    std::string setup_path = resolve_toolchain_setup_path();
+    if (setup_path.empty()) {
+        return "{\"ok\":false,\"error\":\"DEX_Language_Manager.exe was not found\"}";
+    }
+
+    HINSTANCE result = ShellExecuteA(NULL, "open", setup_path.c_str(), NULL, NULL, SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(result) <= 32) {
+        return "{\"ok\":false,\"error\":\"Windows could not launch the toolchain setup\"}";
+    }
+    return "{\"ok\":true}";
+}
+
 bool run_python_analyzer(const std::string& source, std::string& output) {
     std::string worker_path = resolve_worker_path("python/deep_source_analyzer.py");
     if (worker_path.empty()) return false;
@@ -1061,14 +1138,16 @@ bool run_rust_analyzer(const std::string& source, std::string& output) {
 }
 
 std::string worker_status() {
-    bool python_worker = !resolve_worker_path("python/deep_source_analyzer.py").empty();
+    bool python_source = !resolve_worker_path("python/deep_source_analyzer.py").empty();
+    bool python_runtime = command_available("python") || command_available("py");
+    bool python_worker = python_source && python_runtime;
     bool rust_source = !resolve_worker_path("rust_source_analyzer/Cargo.toml").empty();
     bool rust_binary = !resolve_worker_path("rust_source_analyzer/target/release/rust_source_analyzer.exe").empty();
 
     std::stringstream json;
     json << "{\"ok\":true,\"autoThresholdBytes\":262144,\"roles\":[";
     json << "{\"id\":\"cxx_core\",\"language\":\"C++\",\"ready\":true,\"priority\":3,\"role\":\"HTTP routing, cache, source index, dashboard, decompiler proxy, final fallback\"},";
-    json << "{\"id\":\"python_deep_analysis\",\"language\":\"Python\",\"ready\":" << (python_worker ? "true" : "false") << ",\"priority\":1,\"role\":\"Deep summaries, beginner-facing hints, recommendations, JSON shaping\"},";
+    json << "{\"id\":\"python_deep_analysis\",\"language\":\"Python\",\"ready\":" << (python_worker ? "true" : "false") << ",\"sourceAvailable\":" << (python_source ? "true" : "false") << ",\"runtimeAvailable\":" << (python_runtime ? "true" : "false") << ",\"priority\":1,\"role\":\"Deep summaries, beginner-facing hints, recommendations, JSON shaping\"},";
     json << "{\"id\":\"rust_source_analyzer\",\"language\":\"Rust\",\"ready\":" << (rust_binary ? "true" : "false") << ",\"sourceAvailable\":" << (rust_source ? "true" : "false") << ",\"priority\":2,\"role\":\"High-throughput lexical analysis for large source payloads\"}";
     json << "],\"routes\":{\"fast\":\"Rust -> C++\",\"deep\":\"Python -> Rust -> C++\",\"auto\":\"Python below 256 KB; Rust at or above 256 KB; C++ fallback\"}}";
     return json.str();
@@ -1199,6 +1278,13 @@ input,textarea{width:100%;background:#0f1115;border:1px solid var(--line);color:
     </div>
   </div>
   <div class="card">
+    <div class="title">Toolchain setup</div>
+    <div id="toolchainStatus" class="stateRows">
+      <div class="stateRow"><b>Checking build tools</b><span>Python, Cargo, g++, and winget.</span></div>
+    </div>
+    <button id="openToolchainSetup" style="margin-top:8px;width:100%">Open setup utility</button>
+  </div>
+  <div class="card">
     <div class="title">Index</div>
     <div class="metrics">
       <div class="metric"><b id="scripts">0</b><span>scripts</span></div>
@@ -1265,6 +1351,7 @@ async function textFetch(path, opts={}){const r=await fetch(path,opts);const t=a
 async function refreshStatus(){try{await textFetch('/status');setStatus('active','ok');const raw=await textFetch('/index-status');const j=JSON.parse(raw);$('scripts').textContent=fmt(j.scripts);$('bytes').textContent=fmt(j.bytes)}catch(e){setStatus('offline','bad')}}
 async function refreshScriptStatus(){try{const raw=await textFetch('/script-status');const j=JSON.parse(raw);const ok=!!j.ok;$('scriptDot').className='dot '+(ok?'ok':'bad');$('scriptPill').textContent=ok?'script ready':'script missing';$('scriptPill').className='pill '+(ok?'ok':'bad');$('scriptStatus').textContent=ok?`/script is ready (${fmt(j.bytes)} bytes from ${j.file}).`:'DEX++_compiled.luau was not found. Run python .\\build.py first.'}catch(e){$('scriptDot').className='dot bad';$('scriptPill').textContent='script error';$('scriptPill').className='pill bad';$('scriptStatus').textContent=e.message}}
 async function refreshWorkers(){try{const raw=await textFetch('/worker-status');const j=JSON.parse(raw);const roles=j.roles||[];$('workerRoles').innerHTML=roles.map(r=>`<div class="stateRow"><b>${esc(r.language)} <span class="${r.ready?'ok':'warn'}" style="display:inline">${r.ready?'ready':'source only'}</span></b><span>${esc(r.role||'')}</span></div>`).join('')||'<div class="stateRow"><b>No workers reported</b><span>Helper did not return role data.</span></div>'}catch(e){$('workerRoles').innerHTML='<div class="stateRow"><b class="bad">Worker status failed</b><span>'+esc(e.message)+'</span></div>'}}
+async function refreshToolchain(){try{const raw=await textFetch('/toolchain-status');const j=JSON.parse(raw);const tools=j.tools||{};const labels={python:'Python',cargo:'Cargo / Rust',gpp:'g++',winget:'winget',rustWorker:'Rust worker'};$('toolchainStatus').innerHTML=Object.entries(tools).map(([id,t])=>`<div class="stateRow"><b>${esc(labels[id]||id)} <span class="${t.available?'ok':'warn'}" style="display:inline">${t.available?'available':'missing'}</span></b><span>${esc(t.purpose||'')}</span></div>`).join('');$('openToolchainSetup').disabled=!j.setupAvailable;$('openToolchainSetup').textContent=j.setupAvailable?'Install / update tools':'Setup utility not built'}catch(e){$('toolchainStatus').innerHTML='<div class="stateRow"><b class="bad">Toolchain check failed</b><span>'+esc(e.message)+'</span></div>'}}
 function pct(v){const n=Math.max(0,Math.min(1,Number(v||0)));return Math.round(n*100)}
 function ago(ts){const n=Number(ts||0);if(!n)return 'never';const d=Math.max(0,Date.now()/1000-n);if(d<3)return 'now';if(d<60)return `${Math.floor(d)}s ago`;if(d<3600)return `${Math.floor(d/60)}m ago`;return `${Math.floor(d/3600)}h ago`}
 function toolLine(name,t){const progress=t.Progress!==undefined?pct(t.Progress):null;const cls=t.Load==='high'?'bad':(t.Load==='medium'||t.Load==='variable'?'warn':'ok');let meta=`${t.State||'unknown'} | load ${t.Load||'n/a'} | updated ${ago(t.UpdatedWallAt||0)}`;if(t.Total!==undefined)meta+=` | ${progress}% | ${fmt(t.Cached)} cached | ${fmt(t.Decompiled)} new | ${fmt(t.Skipped)} skipped | ${fmt(t.Failed)} failed`;else if(name==='Remote Spy')meta+=` | ${fmt(t.Remotes)} remotes | ${fmt(t.Logs)} logs | ${fmt(t.Dropped)} dropped`;else if(name==='Property Tracker')meta+=` | ${fmt(t.Tracked)} objects | ${fmt(t.Properties)} props | ${fmt(t.Logs)} logs`;else if(name==='Thread Manager')meta+=` | ${fmt(t.Scripts)} scripts | ${fmt(t.Threads)} threads`;return `<div class="stateRow"><b>${esc(name)} <span class="${cls}" style="display:inline">${esc(t.State||'')}</span></b><span>${esc(meta)}</span>${progress!==null?`<div class="bar"><i style="width:${progress}%"></i></div>`:''}</div>`}
@@ -1277,6 +1364,7 @@ function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&l
 $('refresh').onclick=refreshStatus;
 $('copyLoadstring').onclick=async()=>{const text=$('loadstringBox').textContent;try{await navigator.clipboard.writeText(text);$('copyLoadstring').textContent='Copied';setTimeout(()=>$('copyLoadstring').textContent='Copy loadstring',900)}catch(e){$('copyLoadstring').textContent='Copy failed';setTimeout(()=>$('copyLoadstring').textContent='Copy loadstring',900)}};
 $('openScript').onclick=()=>window.open('/script','_blank');
+$('openToolchainSetup').onclick=async()=>{try{const raw=await textFetch('/open-toolchain-setup',{method:'POST'});const j=JSON.parse(raw);if(!j.ok)throw new Error(j.error||'Setup launch failed');$('openToolchainSetup').textContent='Setup opened';setTimeout(refreshToolchain,1200)}catch(e){$('openToolchainSetup').textContent='Open failed';setTimeout(()=>$('openToolchainSetup').textContent='Install / update tools',1200)}};
 $('load').onclick=async()=>{await textFetch('/index-load',{method:'POST'});refreshStatus()};
 $('save').onclick=async()=>{await textFetch('/index-save',{method:'POST'});refreshStatus()};
 $('clear').onclick=async()=>{if(confirm('Clear helper index?')){await textFetch('/index-clear',{method:'POST'});refreshStatus();$('resultsView').innerHTML='<div class="hit"><h3>Index cleared</h3></div>'}};
@@ -1290,9 +1378,11 @@ document.querySelectorAll('.tab').forEach(b=>b.onclick=()=>show(b.dataset.view))
 refreshStatus();
 refreshScriptStatus();
 refreshWorkers();
+refreshToolchain();
 refreshToolState();
 setInterval(refreshScriptStatus,5000);
 setInterval(refreshWorkers,5000);
+setInterval(refreshToolchain,10000);
 setInterval(refreshToolState,1000);
 </script>
 </body>
@@ -1543,6 +1633,10 @@ void handle_client(SOCKET ClientSocket) {
             send_response(ClientSocket, 200, "OK", "DEX++ C++ Helper Server Active");
         } else if (path == "/worker-status" && method == "GET") {
             send_response(ClientSocket, 200, "OK", worker_status(), "application/json");
+        } else if (path == "/toolchain-status" && method == "GET") {
+            send_response(ClientSocket, 200, "OK", toolchain_status(), "application/json");
+        } else if (path == "/open-toolchain-setup" && method == "POST") {
+            send_response(ClientSocket, 200, "OK", open_toolchain_setup(), "application/json");
         } else if (path == "/script-status" && method == "GET") {
             send_response(ClientSocket, 200, "OK", script_status_response(), "application/json");
         } else if (path == "/script" && method == "GET") {
@@ -1616,6 +1710,23 @@ void handle_client(SOCKET ClientSocket) {
 }
 
 int main() {
+    SetConsoleTitleW(L"DEX++ Local Helper");
+
+    HANDLE instance_mutex = CreateMutexW(NULL, FALSE, INSTANCE_MUTEX_NAME);
+    if (instance_mutex == NULL) {
+        show_startup_notice(L"DEX++ Helper could not create its single-instance lock.", false);
+        return 1;
+    }
+    if (GetLastError() == ERROR_ALREADY_EXISTS) {
+        show_startup_notice(
+            L"DEX++ Helper is already running on port 8080.\n\n"
+            L"The existing dashboard will be opened instead of starting a duplicate server.",
+            true
+        );
+        CloseHandle(instance_mutex);
+        return 0;
+    }
+
     WSADATA wsaData;
     int iResult;
 
@@ -1629,6 +1740,8 @@ int main() {
     iResult = WSAStartup(MAKEWORD(2, 2), &wsaData);
     if (iResult != 0) {
         std::cerr << "WSAStartup failed with error: " << iResult << std::endl;
+        show_startup_notice(L"DEX++ Helper could not initialize Windows networking.", false);
+        CloseHandle(instance_mutex);
         return 1;
     }
 
@@ -1643,6 +1756,8 @@ int main() {
     if (iResult != 0) {
         std::cerr << "getaddrinfo failed with error: " << iResult << std::endl;
         WSACleanup();
+        show_startup_notice(L"DEX++ Helper could not resolve its local listening address.", false);
+        CloseHandle(instance_mutex);
         return 1;
     }
 
@@ -1652,16 +1767,29 @@ int main() {
         std::cerr << "socket failed with error: " << WSAGetLastError() << std::endl;
         freeaddrinfo(result);
         WSACleanup();
+        show_startup_notice(L"DEX++ Helper could not create its local server socket.", false);
+        CloseHandle(instance_mutex);
         return 1;
     }
 
     // Setup the TCP listening socket
     iResult = bind(ListenSocket, result->ai_addr, static_cast<int>(result->ai_addrlen));
     if (iResult == SOCKET_ERROR) {
-        std::cerr << "bind failed with error: " << WSAGetLastError() << std::endl;
+        int bind_error = WSAGetLastError();
+        std::cerr << "bind failed with error: " << bind_error << std::endl;
         freeaddrinfo(result);
         closesocket(ListenSocket);
         WSACleanup();
+        if (bind_error == WSAEADDRINUSE) {
+            show_startup_notice(
+                L"DEX++ Helper could not start because port 8080 is already in use.\n\n"
+                L"Close the application using port 8080, then start the helper again.",
+                false
+            );
+        } else {
+            show_startup_notice(L"DEX++ Helper could not bind to localhost port 8080.", false);
+        }
+        CloseHandle(instance_mutex);
         return 1;
     }
 
@@ -1672,12 +1800,16 @@ int main() {
         std::cerr << "listen failed with error: " << WSAGetLastError() << std::endl;
         closesocket(ListenSocket);
         WSACleanup();
+        show_startup_notice(L"DEX++ Helper created its socket but could not begin listening.", false);
+        CloseHandle(instance_mutex);
         return 1;
     }
 
     std::string load_result = load_index_response();
     std::cout << "DEX++ C++ Local Helper Server listening on port " << DEFAULT_PORT << "..." << std::endl;
     std::cout << "Index load: " << load_result << std::endl;
+    std::cout << "Dashboard: http://localhost:" << DEFAULT_PORT << "/" << std::endl;
+    open_dashboard();
 
     while (true) {
         // Accept a client socket

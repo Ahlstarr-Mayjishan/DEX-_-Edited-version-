@@ -105,6 +105,14 @@ local function main()
 		if obj then
 			Lib.ButtonAnim(row,{Mode = 2, StartColor = Settings.Theme.Main2, HoverColor = Settings.Theme.ButtonHover, PressColor = Settings.Theme.ButtonPress, OutlineColor = Settings.Theme.Outline1})
 			row.MouseButton1Click:Connect(function()
+				if Explorer and Explorer.Nodes and Explorer.Selection then
+					local node = Explorer.Nodes[obj]
+					if node then
+						if Explorer.MakeNodeVisible then Explorer.MakeNodeVisible(node, true) end
+						Explorer.Selection:Set(node)
+						if Explorer.ViewNode then Explorer.ViewNode(node) end
+					end
+				end
 				if ScriptViewer and ScriptViewer.ViewScript then
 					ScriptViewer.ViewScript(obj)
 				end

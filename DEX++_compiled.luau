@@ -11946,7 +11946,20 @@ end,
     
     		context:Register("FIND_OBJECT_LINKS",{Name = "Find Links / References", IconMap = Explorer.MiscIcons, Icon = "ExploreData", DisabledIcon = "Empty", OnClick = function()
     			local obj = selection.List[1] and selection.List[1].Obj
-    			if obj and ensureTool(ObjectLinks) then ObjectLinks.ShowForObject(obj) end
+    			if obj then
+    				if obj:IsA("LuaSourceContainer") then
+    					if ensureTool(ScriptViewer) then
+    						ScriptViewer.ViewScript(obj)
+    					end
+    					if ensureTool(ScriptRelations) then
+    						ScriptRelations.ShowForScript(obj)
+    					end
+    				else
+    					if ensureTool(ObjectLinks) then
+    						ObjectLinks.ShowForObject(obj)
+    					end
+    				end
+    			end
     		end})
     
     		context:Register("VIEW_IMAGE_ASSETS",{Name = "View Images", IconMap = Explorer.MiscIcons, Icon = "ViewScript", DisabledIcon = "Empty", OnClick = function()
@@ -16151,13 +16164,21 @@ end,
     		pad(row)
     		Lib.ButtonAnim(row,{Mode = 2, StartColor = Settings.Theme.Main2, HoverColor = Settings.Theme.ButtonHover, PressColor = Settings.Theme.ButtonPress, OutlineColor = Settings.Theme.Outline1})
     		row.MouseButton1Click:Connect(function()
+    			if Explorer and Explorer.Nodes and Explorer.Selection then
+    				local node = Explorer.Nodes[obj]
+    				if node then
+    					if Explorer.MakeNodeVisible then Explorer.MakeNodeVisible(node, true) end
+    					Explorer.Selection:Set(node)
+    					if Explorer.ViewNode then Explorer.ViewNode(node) end
+    				end
+    			end
     			if obj:IsA("LuaSourceContainer") and ScriptViewer then
     				ScriptViewer.ViewScript(obj)
     			elseif remoteClasses[obj.ClassName] and RemoteUsageMap then
     				RemoteUsageMap.ShowForRemote(obj)
     			elseif env.setclipboard then
     				env.setclipboard(getPath(obj))
-    				setStatus("Copied object path.")
+    				setStatus("Copied object path and focused in Explorer.")
     			end
     		end)
     		return row
@@ -16183,7 +16204,17 @@ end,
     		})
     		Lib.ButtonAnim(row,{Mode = 2, StartColor = Settings.Theme.Main2, HoverColor = Settings.Theme.ButtonHover, PressColor = Settings.Theme.ButtonPress, OutlineColor = Settings.Theme.Outline1})
     		row.MouseButton1Click:Connect(function()
-    			if scriptObj and ScriptViewer then ScriptViewer.ViewScript(scriptObj) end
+    			if scriptObj then
+    				if Explorer and Explorer.Nodes and Explorer.Selection then
+    					local node = Explorer.Nodes[scriptObj]
+    					if node then
+    						if Explorer.MakeNodeVisible then Explorer.MakeNodeVisible(node, true) end
+    						Explorer.Selection:Set(node)
+    						if Explorer.ViewNode then Explorer.ViewNode(node) end
+    					end
+    				end
+    				if ScriptViewer then ScriptViewer.ViewScript(scriptObj) end
+    			end
     		end)
     	end
     
@@ -19995,6 +20026,14 @@ end,
     		if obj then
     			Lib.ButtonAnim(row,{Mode = 2, StartColor = Settings.Theme.Main2, HoverColor = Settings.Theme.ButtonHover, PressColor = Settings.Theme.ButtonPress, OutlineColor = Settings.Theme.Outline1})
     			row.MouseButton1Click:Connect(function()
+    				if Explorer and Explorer.Nodes and Explorer.Selection then
+    					local node = Explorer.Nodes[obj]
+    					if node then
+    						if Explorer.MakeNodeVisible then Explorer.MakeNodeVisible(node, true) end
+    						Explorer.Selection:Set(node)
+    						if Explorer.ViewNode then Explorer.ViewNode(node) end
+    					end
+    				end
     				if ScriptViewer and ScriptViewer.ViewScript then
     					ScriptViewer.ViewScript(obj)
     				end
@@ -25664,8 +25703,7 @@ Main = (function()
 			end
 		end)
 
-		frame.InputChanged:Connect(function(input)
-			if input.UserInputType ~= Enum.UserInputType.MouseWheel then return end
+		local function scrollByInput(input)
 			if not tween or tween.PlaybackState ~= Enum.PlaybackState.Playing then
 				targetY = frame.CanvasPosition.Y
 			end
@@ -25679,7 +25717,9 @@ Main = (function()
 			})
 			suppressCanvasSync = false
 			tween:Play()
-		end)
+		end
+
+		return scrollByInput
 	end
 
 	Main.CreateApp = function(data)
@@ -25738,8 +25778,7 @@ Main = (function()
 
 		updateState()
 
-		local ySize = service.TextService:GetTextSize(data.Name,13,Enum.Font.GothamBold,Vector2.new(132,999999)).Y
-		app.Main.Size = UDim2.new(1,0,0,math.clamp(56+ySize,74,86))
+		app.Main.Size = UDim2.new(1,0,0,68)
 		app.Main.AppName.Text = data.Name
 		app.Main.AppName.Font = Enum.Font.GothamBold
 		app.Main.AppName.TextXAlignment = Enum.TextXAlignment.Left
@@ -25750,8 +25789,8 @@ Main = (function()
 			categoryLabel.Name = "CategoryLabel"
 			categoryLabel.BackgroundTransparency = 1
 			categoryLabel.Font = Enum.Font.Gotham
-			categoryLabel.Position = UDim2.new(0,56,0,36)
-			categoryLabel.Size = UDim2.new(1,-68,0,18)
+			categoryLabel.Position = UDim2.new(0,58,0,34)
+			categoryLabel.Size = UDim2.new(1,-72,0,18)
 			categoryLabel.TextColor3 = Settings.Theme.PlaceholderText
 			categoryLabel.TextSize = 11
 			categoryLabel.TextTruncate = Enum.TextTruncate.AtEnd
@@ -25762,15 +25801,9 @@ Main = (function()
 		categoryLabel.Visible = true
 
 		if app.Main.Icon then
-			app.Main.Icon.BackgroundColor3 = Settings.Theme.AccentSoft or Settings.Theme.Main1
-			app.Main.Icon.BackgroundTransparency = 0
-			app.Main.Icon.ImageColor3 = Settings.Theme.Highlight
-			local iconCorner = app.Main.Icon:FindFirstChildOfClass("UICorner")
-			if not iconCorner then
-				iconCorner = Instance.new("UICorner")
-				iconCorner.Parent = app.Main.Icon
-			end
-			iconCorner.CornerRadius = UDim.new(0,8)
+			app.Main.Icon.BackgroundTransparency = 1
+			app.Main.Icon.ImageColor3 = Settings.Theme.Text
+			app.Main.Icon.ImageTransparency = 0
 		end
 
 		app.Main.InputBegan:Connect(function(input)
@@ -25901,11 +25934,12 @@ Main = (function()
 
 		Main.MainGui.OpenButton.Text = "DEX++"
 		if val then Main.MainGui.OpenButton.MainFrame.Visible = true end
-		Main.MainGui.OpenButton.MainFrame:TweenSize(val and UDim2.new(0,430,0,520) or UDim2.new(0,0,0,0),Enum.EasingDirection.Out,Enum.EasingStyle.Quart,0.22,true)
+		Main.MainGui.OpenButton.MainFrame:TweenSize(val and UDim2.new(0,500,0,560) or UDim2.new(0,0,0,0),Enum.EasingDirection.Out,Enum.EasingStyle.Quart,0.22,true)
 		--Main.MainGui.OpenButton.BackgroundTransparency = val and 0 or (Lib.CheckMouseInGui(Main.MainGui.OpenButton) and 0 or 0.2)
 		service.TweenService:Create(Main.MainGui.OpenButton,TweenInfo.new(0.2,Enum.EasingStyle.Quad,Enum.EasingDirection.Out),{BackgroundTransparency = val and 0 or (Lib.CheckMouseInGui(Main.MainGui.OpenButton) and 0 or 0.2)}):Play()
 
 		if Main.MainGuiMouseEvent then Main.MainGuiMouseEvent:Disconnect() end
+		service.ContextActionService:UnbindAction("DEXPP_MenuWheel")
 
 		if not val then
 			local startTime = tick()
@@ -25915,6 +25949,20 @@ Main = (function()
 				if not Main.MainGuiOpen and startTime == Main.MainGuiCloseTime then Main.MainGui.OpenButton.MainFrame.Visible = false end
 			end)()
 		else
+			service.ContextActionService:BindActionAtPriority("DEXPP_MenuWheel", function(_, inputState, input)
+				if inputState ~= Enum.UserInputState.Change then
+					return Enum.ContextActionResult.Pass
+				end
+				if input.UserInputType == Enum.UserInputType.MouseWheel
+					and Main.ScrollMenuBy
+					and Lib.CheckMouseInGui(Main.MainGui.OpenButton.MainFrame)
+				then
+					Main.ScrollMenuBy(input)
+					return Enum.ContextActionResult.Sink
+				end
+				return Enum.ContextActionResult.Pass
+			end, false, Enum.ContextActionPriority.High.Value + 100, Enum.UserInputType.MouseWheel)
+
 			Main.MainGuiMouseEvent = service.UserInputService.InputBegan:Connect(function(input)
 				if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not Lib.CheckMouseInGui(Main.MainGui.OpenButton) and not Lib.CheckMouseInGui(Main.MainGui.OpenButton.MainFrame) then
 
@@ -25929,36 +25977,36 @@ Main = (function()
 			{1,"ScreenGui",{IgnoreGuiInset=true,Name="MainMenu",}},
 			{2,"TextButton",{AnchorPoint=Vector2.new(0.5,0),AutoButtonColor=false,BackgroundColor3=Settings.Theme.Menu,BorderSizePixel=0,Font=Enum.Font.GothamBold,Name="OpenButton",Parent={1},Position=UDim2.new(0.5,0,0,6),Size=UDim2.new(0,96,0,34),Text="DEX++",TextColor3=Settings.Theme.Text,TextSize=14,TextTransparency=0.02,}},
 			{3,"UICorner",{CornerRadius=UDim.new(0,10),Parent={2},}},
-			{4,"Frame",{AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Settings.Theme.Main2,ClipsDescendants=true,Name="MainFrame",Parent={2},Position=UDim2.new(0.5,0,1,8),Size=UDim2.new(0,430,0,520),}},
-			{5,"UICorner",{CornerRadius=UDim.new(0,12),Parent={4},}},
-			{6,"Frame",{BackgroundColor3=Settings.Theme.Menu,Name="BottomFrame",Parent={4},Position=UDim2.new(0,0,1,-44),Size=UDim2.new(1,0,0,44),}},
-			{7,"UICorner",{CornerRadius=UDim.new(0,12),Parent={6},}},
+			{4,"Frame",{AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Settings.Theme.Main2,ClipsDescendants=true,Name="MainFrame",Parent={2},Position=UDim2.new(0.5,0,1,8),Size=UDim2.new(0,500,0,560),}},
+			{5,"UICorner",{CornerRadius=UDim.new(0,8),Parent={4},}},
+			{6,"Frame",{BackgroundColor3=Settings.Theme.Menu,Name="BottomFrame",Parent={4},Position=UDim2.new(0,0,1,-46),Size=UDim2.new(1,0,0,46),}},
+			{7,"UICorner",{CornerRadius=UDim.new(0,8),Parent={6},}},
 			{8,"Frame",{BackgroundColor3=Settings.Theme.Main1,BorderSizePixel=0,Name="CoverFrame",Parent={6},Size=UDim2.new(1,0,0,6),}},
 			{9,"Frame",{BackgroundColor3=Settings.Theme.Outline1,BorderSizePixel=0,Name="Line",Parent={8},Position=UDim2.new(0,0,0,-1),Size=UDim2.new(1,0,0,1),}},
 			{10,"TextButton",{BackgroundColor3=Settings.Theme.Button,BackgroundTransparency=0,BorderSizePixel=0,Font=3,Name="Settings",Parent={6},Position=UDim2.new(1,-86,0,8),Size=UDim2.new(0,32,0,28),Text="",TextColor3=Color3.new(1,1,1),TextSize=14,}},
 			{11,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://6578871732",ImageColor3=Settings.Theme.Text,ImageTransparency=0.05,Name="Icon",Parent={10},Position=UDim2.new(0.5,-8,0.5,-8),Size=UDim2.new(0,16,0,16),}},
 			{12,"TextButton",{BackgroundColor3=Settings.Theme.Button,BackgroundTransparency=0,BorderSizePixel=0,Font=3,Name="Information",Parent={6},Position=UDim2.new(1,-46,0,8),Size=UDim2.new(0,32,0,28),Text="",TextColor3=Color3.new(1,1,1),TextSize=14,}},
 			{13,"ImageLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Image="rbxassetid://6578933307",ImageColor3=Settings.Theme.Text,ImageTransparency=0.05,Name="Icon",Parent={12},Position=UDim2.new(0.5,-8,0.5,-8),Size=UDim2.new(0,16,0,16),}},
-			{14,"ScrollingFrame",{Active=true,AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderColor3=Settings.Theme.Outline1,BorderSizePixel=0,Name="AppsFrame",Parent={4},Position=UDim2.new(0.5,0,0,120),ScrollBarImageColor3=Settings.Theme.Highlight,ScrollBarThickness=5,Size=UDim2.new(1,-16,1,-172),}},
-			{15,"Frame",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Name="Container",Parent={14},Position=UDim2.new(0,8,0,8),Size=UDim2.new(1,-22,0,2),}},
-			{16,"UIGridLayout",{CellPadding=UDim2.new(0,8,0,8),CellSize=UDim2.new(0,194,0,74),Parent={15},SortOrder=2,}},
+			{14,"ScrollingFrame",{Active=true,AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderColor3=Settings.Theme.Outline1,BorderSizePixel=0,Name="AppsFrame",Parent={4},Position=UDim2.new(0.5,0,0,120),ScrollBarImageColor3=Settings.Theme.Highlight,ScrollBarImageTransparency=0.15,ScrollBarThickness=4,Size=UDim2.new(1,-20,1,-174),}},
+			{15,"Frame",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Name="Container",Parent={14},Position=UDim2.new(0,8,0,8),Size=UDim2.new(1,-24,0,2),}},
+			{16,"UIGridLayout",{CellPadding=UDim2.new(0,8,0,8),CellSize=UDim2.new(0,224,0,68),Parent={15},SortOrder=2,}},
 			{17,"Frame",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Name="App",Parent={1},Size=UDim2.new(0,100,0,100),Visible=false,}},
-			{18,"TextButton",{AutoButtonColor=false,BackgroundColor3=Settings.Theme.Button,BorderSizePixel=0,Font=Enum.Font.GothamBold,Name="Main",Parent={17},Size=UDim2.new(1,0,0,74),Text="",TextColor3=Color3.new(0,0,0),TextSize=14,}},
-			{19,"ImageLabel",{BackgroundColor3=Settings.Theme.AccentSoft or Settings.Theme.Main1,BackgroundTransparency=0,Image="rbxassetid://129589545519436",ImageColor3=Settings.Theme.Highlight,ImageRectSize=Vector2.new(32,32),Name="Icon",Parent={18},Position=UDim2.new(0,12,0,13),ScaleType=4,Size=UDim2.new(0,34,0,34),}},
-			{20,"TextLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderSizePixel=0,Font=Enum.Font.GothamBold,Name="AppName",Parent={18},Position=UDim2.new(0,56,0,12),Size=UDim2.new(1,-68,0,20),Text="Explorer",TextColor3=Settings.Theme.Text,TextSize=13,TextTransparency=0.02,TextTruncate=1,TextWrapped=false,TextXAlignment=0,}},
+			{18,"TextButton",{AutoButtonColor=false,BackgroundColor3=Settings.Theme.Button,BorderSizePixel=0,Font=Enum.Font.GothamBold,Name="Main",Parent={17},Size=UDim2.new(1,0,0,68),Text="",TextColor3=Color3.new(0,0,0),TextSize=14,}},
+			{19,"ImageLabel",{BackgroundTransparency=1,Image="rbxassetid://129589545519436",ImageColor3=Settings.Theme.Text,ImageTransparency=0,ImageRectSize=Vector2.new(32,32),Name="Icon",Parent={18},Position=UDim2.new(0,14,0.5,-16),ScaleType=4,Size=UDim2.new(0,32,0,32),}},
+			{20,"TextLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderSizePixel=0,Font=Enum.Font.GothamBold,Name="AppName",Parent={18},Position=UDim2.new(0,58,0,10),Size=UDim2.new(1,-72,0,20),Text="Explorer",TextColor3=Settings.Theme.Text,TextSize=13,TextTransparency=0,TextTruncate=1,TextWrapped=false,TextXAlignment=0,}},
 			{21,"Frame",{BackgroundColor3=Settings.Theme.ListSelection,BorderSizePixel=0,Name="Highlight",Parent={18},Position=UDim2.new(0,0,0,0),Size=UDim2.new(0,3,1,0),}},
 			{22,"UIStroke",{ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Color=Settings.Theme.Outline1,Thickness=1,Transparency=0.2,Parent={2},}},
 			{23,"UIStroke",{ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Color=Settings.Theme.Outline1,Thickness=1,Transparency=0.25,Parent={4},}},
 			{24,"Frame",{BackgroundColor3=Settings.Theme.Main1,BorderSizePixel=0,Name="Header",Parent={4},Position=UDim2.new(0,0,0,0),Size=UDim2.new(1,0,0,116),}},
-			{25,"TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,Name="Title",Parent={24},Position=UDim2.new(0,16,0,10),Size=UDim2.new(1,-32,0,24),Text="DEX++ Command Center",TextColor3=Settings.Theme.Text,TextSize=18,TextXAlignment=0,}},
-			{26,"TextLabel",{BackgroundTransparency=1,Font=Enum.Font.Gotham,Name="Subtitle",Parent={24},Position=UDim2.new(0,16,0,34),Size=UDim2.new(1,-32,0,18),Text="Explorer, search, runtime inspection",TextColor3=Settings.Theme.PlaceholderText,TextSize=12,TextXAlignment=0,}},
-			{27,"TextBox",{BackgroundColor3=Settings.Theme.TextBox,BorderSizePixel=0,ClearTextOnFocus=false,Font=Enum.Font.RobotoMono,Name="SearchBox",Parent={24},PlaceholderColor3=Settings.Theme.PlaceholderText,PlaceholderText="Search tools",Position=UDim2.new(0,14,0,62),Size=UDim2.new(1,-28,0,30),Text="",TextColor3=Settings.Theme.Text,TextSize=12,TextXAlignment=0,}},
+			{25,"TextLabel",{BackgroundTransparency=1,Font=Enum.Font.GothamBold,Name="Title",Parent={24},Position=UDim2.new(0,18,0,12),Size=UDim2.new(1,-36,0,22),Text="DEX++ Tools",TextColor3=Settings.Theme.Text,TextSize=17,TextXAlignment=0,}},
+			{26,"TextLabel",{BackgroundTransparency=1,Font=Enum.Font.Gotham,Name="Subtitle",Parent={24},Position=UDim2.new(0,18,0,35),Size=UDim2.new(1,-36,0,18),Text="Open, search, and manage client tools",TextColor3=Settings.Theme.PlaceholderText,TextSize=12,TextXAlignment=0,}},
+			{27,"TextBox",{BackgroundColor3=Settings.Theme.TextBox,BorderSizePixel=0,ClearTextOnFocus=false,Font=Enum.Font.RobotoMono,Name="SearchBox",Parent={24},PlaceholderColor3=Settings.Theme.PlaceholderText,PlaceholderText="Search tools by name or category",Position=UDim2.new(0,16,0,64),Size=UDim2.new(1,-32,0,30),Text="",TextColor3=Settings.Theme.Text,TextSize=12,TextXAlignment=0,}},
 			{28,"UICorner",{CornerRadius=UDim.new(0,6),Parent={27},}},
 			{29,"UIStroke",{ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Color=Settings.Theme.Outline1,Thickness=1,Transparency=0.35,Parent={27},}},
 			{30,"TextLabel",{BackgroundTransparency=1,Font=Enum.Font.Gotham,Name="AppCount",Parent={6},Position=UDim2.new(0,12,0,0),Size=UDim2.new(1,-98,1,0),Text="0 tools",TextColor3=Settings.Theme.PlaceholderText,TextSize=12,TextXAlignment=0,}},
 			{31,"UICorner",{CornerRadius=UDim.new(0,6),Parent={10},}},
 			{32,"UICorner",{CornerRadius=UDim.new(0,6),Parent={12},}},
-			{33,"UICorner",{CornerRadius=UDim.new(0,7),Parent={18},}},
+			{33,"UICorner",{CornerRadius=UDim.new(0,6),Parent={18},}},
 			{34,"UIStroke",{ApplyStrokeMode=Enum.ApplyStrokeMode.Border,Color=Settings.Theme.Outline1,Thickness=1,Transparency=0.55,Parent={18},}},
 			{35,"Frame",{BackgroundColor3=Settings.Theme.Highlight,BorderSizePixel=0,Name="ActiveMarker",Parent={18},Position=UDim2.new(0,0,0,0),Size=UDim2.new(0,3,1,0),Visible=false,}},
 		})
@@ -26072,7 +26120,7 @@ Main = (function()
 			Main.ApplyMenuFilter()
 		end)
 		Main.AppsContainerGrid:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(Main.UpdateMenuCanvas)
-		Main.SmoothScrollingFrame(Main.AppsFrame, 84)
+		Main.ScrollMenuBy = Main.SmoothScrollingFrame(Main.AppsFrame, 76)
 		openButton.MouseButton1Click:Connect(function()
 			Main.SetMainGuiOpen(not Main.MainGuiOpen)
 		end)
