@@ -151,8 +151,11 @@ local function main()
 		local scriptByKey = collectScriptsByKey()
 		local found, scanned = 0, 0
 		addDivider("Cached Script Hits")
+		local t0 = os.clock()
+		local loopCount = 0
 		for key, entry in pairs(entries) do
-			if token ~= scanToken then return end
+			if token ~= scanToken or (window and window.Closed) then return end
+			loopCount += 1
 			if entry.File then
 				local path = cacheDir .. "/" .. tostring(entry.File)
 				if env.isfile(path) then
@@ -167,9 +170,10 @@ local function main()
 					end
 				end
 			end
-			if scanned % 20 == 0 then
+			if os.clock() - t0 > 0.006 or loopCount % 100 == 0 then
 				setStatus(("Scanning cache: %d script(s), %d hit(s)..."):format(scanned, found))
 				task.wait()
+				t0 = os.clock()
 			end
 		end
 		if found == 0 then addText("No cached scripts mention this remote yet.", true) end
@@ -182,18 +186,26 @@ local function main()
 		local hits = 0
 		addDivider("Runtime Constants Hits")
 		local scripts = env.ClientIndex and env.ClientIndex.RefreshSurface and env.ClientIndex.RefreshSurface(false).AllScripts or env.GetClientScripts(true)
+		local t0 = os.clock()
+		local loopCount = 0
 		for _, scriptObj in pairs(scripts) do
-			if token ~= scanToken then return end
-			local constants = env.GetScriptConstants(scriptObj)
-			for _, constant in pairs(constants) do
-				local text = tostring(constant)
-				if text:lower():find(nameToken, 1, true) then
-					hits += 1
-					addScriptResult(scriptObj, {Path = scriptObj:GetFullName(), Name = scriptObj.Name}, "constant", text)
-					break
+			if token ~= scanToken or (window and window.Closed) then return end
+			loopCount += 1
+			local success, constants = pcall(env.GetScriptConstants, scriptObj)
+			if success and type(constants) == "table" then
+				for _, constant in pairs(constants) do
+					local text = tostring(constant)
+					if text:lower():find(nameToken, 1, true) then
+						hits += 1
+						addScriptResult(scriptObj, {Path = scriptObj:GetFullName(), Name = scriptObj.Name}, "constant", text)
+						break
+					end
 				end
 			end
-			task.wait()
+			if os.clock() - t0 > 0.006 or loopCount % 40 == 0 then
+				task.wait()
+				t0 = os.clock()
+			end
 		end
 		if hits == 0 then addText("No runtime constants mention this remote.", true) end
 	end

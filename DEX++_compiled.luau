@@ -11946,6 +11946,24 @@ end,
     	local getAttribute = game.GetAttribute
     	local setAttribute = game.SetAttribute
     
+    	local gethiddenproperty = getgenv and getgenv().gethiddenproperty or nil
+    	local function safeGet(obj, propName, isAttr, attrName)
+    		if isAttr then
+    			return getAttribute(obj, attrName)
+    		else
+    			local success, val = pcall(function()
+    				if gethiddenproperty then
+    					local hiddenVal, isHidden = gethiddenproperty(obj, propName)
+    					if isHidden or hiddenVal ~= nil then
+    						return hiddenVal
+    					end
+    				end
+    				return obj[propName]
+    			end)
+    			return success and val or nil
+    		end
+    	end
+    
     	Properties.GuiElems = {}
     	Properties.Index = 0
     	Properties.ViewWidth = 0
@@ -12215,26 +12233,15 @@ end,
     					for c = 1,#classList do
     						local obj = classList[c]
     						if not firstSet then
-    							if isAttribute then
-    								firstVal = getAttribute(obj,attributeName)
-    								if firstVal ~= nil then
-    									firstObj = obj
-    									firstSet = true
-    								end
-    							else
-    								firstVal = obj[propName]
+    							firstVal = safeGet(obj, propName, isAttribute, attributeName)
+    							if firstVal ~= nil or not isAttribute then
     								firstObj = obj
     								firstSet = true
     							end
     							if ignored then break end
     						else
-    							local propVal,skip
-    							if isAttribute then
-    								propVal = getAttribute(obj,attributeName)
-    								if propVal == nil then skip = true end
-    							else
-    								propVal = obj[propName]
-    							end
+    							local propVal = safeGet(obj, propName, isAttribute, attributeName)
+    							local skip = isAttribute and (propVal == nil)
     
     							if not skip then
     								if not conflictMap[1] then
@@ -12260,8 +12267,10 @@ end,
     										for j = 1,#indexes do
     											if not firstValSub or not propValSub then break end -- PhysicalProperties
     											local indexName = indexes[j]
-    											firstValSub = firstValSub[indexName]
-    											propValSub = propValSub[indexName]
+    											local s1, v1 = pcall(function() return firstValSub[indexName] end)
+    											local s2, v2 = pcall(function() return propValSub[indexName] end)
+    											firstValSub = s1 and v1 or nil
+    											propValSub = s2 and v2 or nil
     										end
     
     										local mapInd = sPropInd + 1
@@ -12297,9 +12306,16 @@ end,
     
     	-- Fetches the properties to be displayed based on the explorer selection
     	Properties.ShowExplorerProps = function()
+    		if not propsFrame then return end
     		Properties.Index = 0
     		if scrollV then scrollV:ScrollTo(0, true) end
-    		if scrollH then scrollH:ToStart and scrollH:ToStart(true) or scrollH:ScrollTo(0, true) end
+    		if scrollH then
+    			if scrollH.ToStart then
+    				scrollH:ToStart(true)
+    			else
+    				scrollH:ScrollTo(0, true)
+    			end
+    		end
     
     		local maxConflictCheck = Settings.Properties.MaxConflictCheck
     		local sList = Explorer.Selection.List
@@ -12406,6 +12422,7 @@ end,
     	end
     
     	Properties.UpdateView = function()
+    		if not propsFrame then return end
     		local maxEntries = math.ceil(propsFrame.AbsoluteSize.Y / 23)
     		local maxX = propsFrame.AbsoluteSize.X
     		local totalWidth = Properties.ViewWidth + Properties.MinInputWidth
@@ -13137,11 +13154,10 @@ end,
     		if prop.MultiType then return "<Multiple Types>" end
     		if not obj then return end
     
-    		local propVal
-    		if prop.IsAttribute then
-    			propVal = getAttribute(obj,prop.AttributeName)
-    			if propVal == nil then return nil end
+    		local propVal = safeGet(obj, prop.Name, prop.IsAttribute, prop.AttributeName)
+    		if prop.IsAttribute and propVal == nil then return nil end
     
+    		if prop.IsAttribute then
     			local typ = typeof(propVal)
     			local currentType = Properties.TypeNameConvert[typ] or typ
     			if prop.RootType then
@@ -13151,29 +13167,14 @@ end,
     			elseif prop.ValueType.Name ~= currentType then
     				return nil
     			end
-    		else
-    			local gethiddenproperty = getgenv and getgenv().gethiddenproperty or nil
-    			local success, val = pcall(function()
-    				if gethiddenproperty then
-    					local hiddenVal, isHidden = gethiddenproperty(obj, prop.Name)
-    					if isHidden or hiddenVal ~= nil then
-    						return hiddenVal
-    					end
-    				end
-    				return obj[prop.Name]
-    			end)
-    			if success then
-    				propVal = val
-    			else
-    				propVal = obj[prop.Name]
-    			end
     		end
     		if prop.SubName then
     			local indexes = string.split(prop.SubName,".")
     			for i = 1,#indexes do
     				local indexName = indexes[i]
     				if #indexName > 0 and propVal then
-    					propVal = propVal[indexName]
+    					local s, v = pcall(function() return propVal[indexName] end)
+    					propVal = s and v or nil
     				end
     			end
     		end
@@ -13311,6 +13312,7 @@ end,
     	end
     
     	Properties.Refresh = function()
+    		if not propsFrame then return end
     		local maxEntries = math.max(math.ceil((propsFrame.AbsoluteSize.Y) / 23),0)	
     		local maxX = propsFrame.AbsoluteSize.X
     		local valueWidth = math.max(Properties.MinInputWidth,maxX-Properties.ViewWidth)
@@ -15653,6 +15655,7 @@ end,
     end
     
     local function main()
+    	local searchBox, searchStatus
     	local CodeFrame = (function()
     			local funcs = {}
     
@@ -16093,7 +16096,7 @@ end,
     				editBox.Text = text
     				editBox.SelectionStart = 1
     				editBox.CursorPosition = #editBox.Text + 1
-    				if #text > 0 then
+    				if #text > 0 and not (searchBox and searchBox:IsFocused()) then
     					editBox:CaptureFocus()
     				end
     				task.defer(function()
@@ -16390,6 +16393,31 @@ end,
     			end
     
     			funcs.JumpToCursor = function(self)
+    				local linesFrame = self.GuiElems.LinesFrame
+    				if not linesFrame then self:Refresh() return end
+    				local vSize = math.max(0, linesFrame.AbsoluteSize.Y)
+    				local hSize = math.max(0, linesFrame.AbsoluteSize.X)
+    				local maxLines = math.floor(vSize / self.FontSize)
+    				local maxCols = math.floor(hSize / math.ceil(self.FontSize/2))
+    
+    				if maxLines > 0 then
+    					if self.CursorY < self.ViewY then
+    						self.ViewY = self.CursorY
+    					elseif self.CursorY >= self.ViewY + maxLines then
+    						self.ViewY = math.max(0, self.CursorY - maxLines + 3)
+    					end
+    				end
+    
+    				if maxCols > 0 then
+    					if self.CursorX < self.ViewX then
+    						self.ViewX = math.max(0, self.CursorX - 2)
+    					elseif self.CursorX >= self.ViewX + maxCols then
+    						self.ViewX = math.max(0, self.CursorX - maxCols + 5)
+    					end
+    				end
+    
+    				self.ScrollV:ScrollTo(self.ViewY, true)
+    				self.ScrollH:ScrollTo(self.ViewX, true)
     				self:Refresh()
     			end
     
@@ -17021,7 +17049,6 @@ end,
     
     	local Notepad = {}
     	local window, codeFrame
-    	local searchBox, searchStatus
     	local selectionMenu
     	local searchMatches = {}
     	local searchIndex = 0
@@ -21554,8 +21581,11 @@ end,
     		local scriptByKey = collectScriptsByKey()
     		local found, scanned = 0, 0
     		addDivider("Cached Script Hits")
+    		local t0 = os.clock()
+    		local loopCount = 0
     		for key, entry in pairs(entries) do
-    			if token ~= scanToken then return end
+    			if token ~= scanToken or (window and window.Closed) then return end
+    			loopCount += 1
     			if entry.File then
     				local path = cacheDir .. "/" .. tostring(entry.File)
     				if env.isfile(path) then
@@ -21570,9 +21600,10 @@ end,
     					end
     				end
     			end
-    			if scanned % 20 == 0 then
+    			if os.clock() - t0 > 0.006 or loopCount % 100 == 0 then
     				setStatus(("Scanning cache: %d script(s), %d hit(s)..."):format(scanned, found))
     				task.wait()
+    				t0 = os.clock()
     			end
     		end
     		if found == 0 then addText("No cached scripts mention this remote yet.", true) end
@@ -21585,18 +21616,26 @@ end,
     		local hits = 0
     		addDivider("Runtime Constants Hits")
     		local scripts = env.ClientIndex and env.ClientIndex.RefreshSurface and env.ClientIndex.RefreshSurface(false).AllScripts or env.GetClientScripts(true)
+    		local t0 = os.clock()
+    		local loopCount = 0
     		for _, scriptObj in pairs(scripts) do
-    			if token ~= scanToken then return end
-    			local constants = env.GetScriptConstants(scriptObj)
-    			for _, constant in pairs(constants) do
-    				local text = tostring(constant)
-    				if text:lower():find(nameToken, 1, true) then
-    					hits += 1
-    					addScriptResult(scriptObj, {Path = scriptObj:GetFullName(), Name = scriptObj.Name}, "constant", text)
-    					break
+    			if token ~= scanToken or (window and window.Closed) then return end
+    			loopCount += 1
+    			local success, constants = pcall(env.GetScriptConstants, scriptObj)
+    			if success and type(constants) == "table" then
+    				for _, constant in pairs(constants) do
+    					local text = tostring(constant)
+    					if text:lower():find(nameToken, 1, true) then
+    						hits += 1
+    						addScriptResult(scriptObj, {Path = scriptObj:GetFullName(), Name = scriptObj.Name}, "constant", text)
+    						break
+    					end
     				end
     			end
-    			task.wait()
+    			if os.clock() - t0 > 0.006 or loopCount % 40 == 0 then
+    				task.wait()
+    				t0 = os.clock()
+    			end
     		end
     		if hits == 0 then addText("No runtime constants mention this remote.", true) end
     	end
@@ -27036,6 +27075,7 @@ Main = (function()
 		-- Init other modules
 		intro.SetProgress("Initializing Modules",0.8)
 		Explorer.Init()
+		selection = Explorer.Selection
 		Properties.Init()
 		Notepad.Init()
 		Console.Init()

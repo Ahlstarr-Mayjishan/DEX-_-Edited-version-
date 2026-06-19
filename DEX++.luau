@@ -3583,6 +3583,7 @@ Main = (function()
 		-- Init other modules
 		intro.SetProgress("Initializing Modules",0.8)
 		Explorer.Init()
+		selection = Explorer.Selection
 		Properties.Init()
 		Notepad.Init()
 		Console.Init()

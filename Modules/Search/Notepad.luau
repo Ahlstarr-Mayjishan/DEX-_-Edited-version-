@@ -55,6 +55,7 @@ local function getPath(obj)
 end
 
 local function main()
+	local searchBox, searchStatus
 	local CodeFrame = (function()
 			local funcs = {}
 
@@ -495,7 +496,7 @@ local function main()
 				editBox.Text = text
 				editBox.SelectionStart = 1
 				editBox.CursorPosition = #editBox.Text + 1
-				if #text > 0 then
+				if #text > 0 and not (searchBox and searchBox:IsFocused()) then
 					editBox:CaptureFocus()
 				end
 				task.defer(function()
@@ -792,6 +793,31 @@ local function main()
 			end
 
 			funcs.JumpToCursor = function(self)
+				local linesFrame = self.GuiElems.LinesFrame
+				if not linesFrame then self:Refresh() return end
+				local vSize = math.max(0, linesFrame.AbsoluteSize.Y)
+				local hSize = math.max(0, linesFrame.AbsoluteSize.X)
+				local maxLines = math.floor(vSize / self.FontSize)
+				local maxCols = math.floor(hSize / math.ceil(self.FontSize/2))
+
+				if maxLines > 0 then
+					if self.CursorY < self.ViewY then
+						self.ViewY = self.CursorY
+					elseif self.CursorY >= self.ViewY + maxLines then
+						self.ViewY = math.max(0, self.CursorY - maxLines + 3)
+					end
+				end
+
+				if maxCols > 0 then
+					if self.CursorX < self.ViewX then
+						self.ViewX = math.max(0, self.CursorX - 2)
+					elseif self.CursorX >= self.ViewX + maxCols then
+						self.ViewX = math.max(0, self.CursorX - maxCols + 5)
+					end
+				end
+
+				self.ScrollV:ScrollTo(self.ViewY, true)
+				self.ScrollH:ScrollTo(self.ViewX, true)
 				self:Refresh()
 			end
 
@@ -1423,7 +1449,6 @@ local function main()
 
 	local Notepad = {}
 	local window, codeFrame
-	local searchBox, searchStatus
 	local selectionMenu
 	local searchMatches = {}
 	local searchIndex = 0

@@ -57,6 +57,24 @@ local function main()
 	local getAttribute = game.GetAttribute
 	local setAttribute = game.SetAttribute
 
+	local gethiddenproperty = getgenv and getgenv().gethiddenproperty or nil
+	local function safeGet(obj, propName, isAttr, attrName)
+		if isAttr then
+			return getAttribute(obj, attrName)
+		else
+			local success, val = pcall(function()
+				if gethiddenproperty then
+					local hiddenVal, isHidden = gethiddenproperty(obj, propName)
+					if isHidden or hiddenVal ~= nil then
+						return hiddenVal
+					end
+				end
+				return obj[propName]
+			end)
+			return success and val or nil
+		end
+	end
+
 	Properties.GuiElems = {}
 	Properties.Index = 0
 	Properties.ViewWidth = 0
@@ -326,26 +344,15 @@ local function main()
 					for c = 1,#classList do
 						local obj = classList[c]
 						if not firstSet then
-							if isAttribute then
-								firstVal = getAttribute(obj,attributeName)
-								if firstVal ~= nil then
-									firstObj = obj
-									firstSet = true
-								end
-							else
-								firstVal = obj[propName]
+							firstVal = safeGet(obj, propName, isAttribute, attributeName)
+							if firstVal ~= nil or not isAttribute then
 								firstObj = obj
 								firstSet = true
 							end
 							if ignored then break end
 						else
-							local propVal,skip
-							if isAttribute then
-								propVal = getAttribute(obj,attributeName)
-								if propVal == nil then skip = true end
-							else
-								propVal = obj[propName]
-							end
+							local propVal = safeGet(obj, propName, isAttribute, attributeName)
+							local skip = isAttribute and (propVal == nil)
 
 							if not skip then
 								if not conflictMap[1] then
@@ -371,8 +378,10 @@ local function main()
 										for j = 1,#indexes do
 											if not firstValSub or not propValSub then break end -- PhysicalProperties
 											local indexName = indexes[j]
-											firstValSub = firstValSub[indexName]
-											propValSub = propValSub[indexName]
+											local s1, v1 = pcall(function() return firstValSub[indexName] end)
+											local s2, v2 = pcall(function() return propValSub[indexName] end)
+											firstValSub = s1 and v1 or nil
+											propValSub = s2 and v2 or nil
 										end
 
 										local mapInd = sPropInd + 1
@@ -408,9 +417,16 @@ local function main()
 
 	-- Fetches the properties to be displayed based on the explorer selection
 	Properties.ShowExplorerProps = function()
+		if not propsFrame then return end
 		Properties.Index = 0
 		if scrollV then scrollV:ScrollTo(0, true) end
-		if scrollH then scrollH:ToStart and scrollH:ToStart(true) or scrollH:ScrollTo(0, true) end
+		if scrollH then
+			if scrollH.ToStart then
+				scrollH:ToStart(true)
+			else
+				scrollH:ScrollTo(0, true)
+			end
+		end
 
 		local maxConflictCheck = Settings.Properties.MaxConflictCheck
 		local sList = Explorer.Selection.List
@@ -517,6 +533,7 @@ local function main()
 	end
 
 	Properties.UpdateView = function()
+		if not propsFrame then return end
 		local maxEntries = math.ceil(propsFrame.AbsoluteSize.Y / 23)
 		local maxX = propsFrame.AbsoluteSize.X
 		local totalWidth = Properties.ViewWidth + Properties.MinInputWidth
@@ -1248,11 +1265,10 @@ local function main()
 		if prop.MultiType then return "<Multiple Types>" end
 		if not obj then return end
 
-		local propVal
-		if prop.IsAttribute then
-			propVal = getAttribute(obj,prop.AttributeName)
-			if propVal == nil then return nil end
+		local propVal = safeGet(obj, prop.Name, prop.IsAttribute, prop.AttributeName)
+		if prop.IsAttribute and propVal == nil then return nil end
 
+		if prop.IsAttribute then
 			local typ = typeof(propVal)
 			local currentType = Properties.TypeNameConvert[typ] or typ
 			if prop.RootType then
@@ -1262,29 +1278,14 @@ local function main()
 			elseif prop.ValueType.Name ~= currentType then
 				return nil
 			end
-		else
-			local gethiddenproperty = getgenv and getgenv().gethiddenproperty or nil
-			local success, val = pcall(function()
-				if gethiddenproperty then
-					local hiddenVal, isHidden = gethiddenproperty(obj, prop.Name)
-					if isHidden or hiddenVal ~= nil then
-						return hiddenVal
-					end
-				end
-				return obj[prop.Name]
-			end)
-			if success then
-				propVal = val
-			else
-				propVal = obj[prop.Name]
-			end
 		end
 		if prop.SubName then
 			local indexes = string.split(prop.SubName,".")
 			for i = 1,#indexes do
 				local indexName = indexes[i]
 				if #indexName > 0 and propVal then
-					propVal = propVal[indexName]
+					local s, v = pcall(function() return propVal[indexName] end)
+					propVal = s and v or nil
 				end
 			end
 		end
@@ -1422,6 +1423,7 @@ local function main()
 	end
 
 	Properties.Refresh = function()
+		if not propsFrame then return end
 		local maxEntries = math.max(math.ceil((propsFrame.AbsoluteSize.Y) / 23),0)	
 		local maxX = propsFrame.AbsoluteSize.X
 		local valueWidth = math.max(Properties.MinInputWidth,maxX-Properties.ViewWidth)
