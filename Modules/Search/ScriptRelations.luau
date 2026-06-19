@@ -33,6 +33,13 @@ local function main()
 	local window, statusLabel, listFrame
 	local currentScript = nil
 	local analysisToken = 0
+	local function ensureTool(tool)
+		if not tool then return false end
+		if tool.EnsureInit then
+			return tool.EnsureInit()
+		end
+		return true
+	end
 	local function setStatus(text)
 		if statusLabel then statusLabel.Text = text end
 	end
