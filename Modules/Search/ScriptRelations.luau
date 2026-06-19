@@ -5,7 +5,7 @@
 ]]
 -- Common Locals
 local Main,Lib,Apps,Settings -- Main Containers
-local Explorer, Properties, ScriptViewer, ScriptRelations, Notebook -- Major Apps
+local Explorer, Properties, ScriptViewer, ScriptRelations, Notebook, DependencyGraph -- Major Apps
 local API,RMD,env,service,plr,create,createSimple -- Main Locals
 local function initDeps(data)
 	Main = data.Main
@@ -26,6 +26,7 @@ local function initAfterMain()
 	ScriptViewer = Apps.ScriptViewer
 	ScriptRelations = Apps.ScriptRelations
 	Notebook = Apps.Notebook
+	DependencyGraph = Apps.DependencyGraph
 end
 local function main()
 	local ScriptRelations = {}
@@ -75,7 +76,6 @@ local function main()
 	end
 	local function clearRows()
 		if not listFrame then return end
-		listFrame.CanvasPosition = Vector2.new(0, 0)
 		for _, child in pairs(listFrame:GetChildren()) do
 			if child:IsA("GuiButton") or child:IsA("TextLabel") then
 				child:Destroy()
@@ -280,7 +280,7 @@ local function main()
 		ScriptRelations.Window = window
 		statusLabel = createSimple("TextLabel",{
 			BackgroundColor3 = Settings.Theme.Main2, BorderSizePixel = 0, Font = Enum.Font.SourceSans,
-			Position = UDim2.new(0,0,0,0), Size = UDim2.new(1,0,0,24),
+			Position = UDim2.new(0,0,0,0), Size = UDim2.new(1,-120,0,24),
 			Text = "Right click a script in Explorer, then choose Script Relations.",
 			TextColor3 = Settings.Theme.PlaceholderText, TextSize = 14, TextTruncate = Enum.TextTruncate.AtEnd,
 			TextXAlignment = Enum.TextXAlignment.Left, Parent = window.GuiElems.Content
@@ -288,6 +288,21 @@ local function main()
 		local statusPadding = Instance.new("UIPadding")
 		statusPadding.PaddingLeft = UDim.new(0,6)
 		statusPadding.Parent = statusLabel
+
+		local visualGraphBtn = createSimple("TextButton",{
+			AutoButtonColor = false, BackgroundColor3 = Settings.Theme.Button, BorderColor3 = Settings.Theme.Outline2,
+			Font = Enum.Font.SourceSansBold, Position = UDim2.new(1,-116,0,1), Size = UDim2.new(0,112,0,22),
+			Text = "Visual Graph", TextColor3 = Settings.Theme.Text, TextSize = 12, Parent = window.GuiElems.Content
+		})
+		Lib.ButtonAnim(visualGraphBtn,{Mode = 2, StartColor = Settings.Theme.Button, HoverColor = Settings.Theme.ButtonHover, PressColor = Settings.Theme.ButtonPress, OutlineColor = Settings.Theme.Outline2})
+		visualGraphBtn.MouseButton1Click:Connect(function()
+			if currentScript and DependencyGraph then
+				if ensureTool(DependencyGraph) then
+					DependencyGraph.ShowForScript(currentScript)
+				end
+			end
+		end)
+
 		listFrame = createSimple("ScrollingFrame",{
 			Active = true, AutomaticCanvasSize = Enum.AutomaticSize.Y, BackgroundColor3 = Settings.Theme.Main2,
 			BorderSizePixel = 0, BottomImage = "", CanvasSize = UDim2.new(0,0,0,0), Position = UDim2.new(0,0,0,24),

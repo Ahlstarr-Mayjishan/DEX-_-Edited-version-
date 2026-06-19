@@ -535,6 +535,40 @@ local function main()
 		listFrame = createSimple("ScrollingFrame",{Active=true, AutomaticCanvasSize=Enum.AutomaticSize.None, BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, BottomImage="", CanvasSize=UDim2.new(0,2000,0,2000), Position=UDim2.new(0,0,0,0), ScrollBarImageColor3=Color3.fromRGB(70,70,70), ScrollBarThickness=10, Size=UDim2.new(1,0,1,0), TopImage="", Parent=mainArea})
 	end
 
+	DependencyGraph.ShowForScript = function(scr)
+		if not window then
+			DependencyGraph.Init()
+		end
+		if window then
+			window:Show()
+		end
+		scan()
+
+		task.spawn(function()
+			-- Wait for scan and node frame creation to complete
+			task.wait(0.25)
+			if not env.DecompileCache or not env.DecompileCache.GetScriptKey then return end
+			local ok, key = pcall(env.DecompileCache.GetScriptKey, scr)
+			if ok and key then
+				local frame = nodeFrames[key]
+				if frame then
+					-- Highlight node border
+					frame.BorderColor3 = Color3.fromRGB(255, 170, 0)
+					frame.BorderSizePixel = 2
+					-- Scroll listFrame to center on this node
+					local canvasX = math.clamp(frame.Position.X.Offset - 250, 0, math.max(0, listFrame.CanvasSize.X.Offset - listFrame.AbsoluteSize.X))
+					local canvasY = math.clamp(frame.Position.Y.Offset - 180, 0, math.max(0, listFrame.CanvasSize.Y.Offset - listFrame.AbsoluteSize.Y))
+					listFrame.CanvasPosition = Vector2.new(canvasX, canvasY)
+					-- Slide open sidebar inspector
+					local nodeData = nodesData[key]
+					if nodeData then
+						showNodeDetails(nodeData)
+					end
+				end
+			end
+		end)
+	end
+
 	DependencyGraph.Scan = scan
 	return DependencyGraph
 end

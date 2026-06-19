@@ -16121,7 +16121,6 @@ end,
     
     	local function clearRows()
     		if not listFrame then return end
-    		listFrame.CanvasPosition = Vector2.new(0, 0)
     		for _, child in pairs(listFrame:GetChildren()) do
     			if child:IsA("GuiButton") or child:IsA("TextLabel") or child:IsA("Frame") then child:Destroy() end
     		end
@@ -17850,6 +17849,7 @@ end,
     	local resultRows = {}
     	local selectedRecord = nil
     	local selectedRow = nil
+    	local updateInspector
     	local pinnedKeys = {}
     	local reviewedKeys = {}
     	local indexedKeys = {}
@@ -18150,7 +18150,6 @@ end,
     
     	local function clearResults()
     		if not resultsFrame then return end
-    		resultsFrame.CanvasPosition = Vector2.new(0, 0)
     		for _, child in pairs(resultsFrame:GetChildren()) do
     			if child:IsA("TextButton") then
     				child:Destroy()
@@ -18430,7 +18429,7 @@ end,
     		end
     	end
     
-    	local function updateInspector(record)
+    	updateInspector = function(record)
     		if not sidePanel then return end
     		if not record then
     			sideTitle.Text = "Result inspector"
@@ -18559,6 +18558,13 @@ end,
     		local filePath = "dex/code_search/results_" .. tostring(os.time()) .. ".md"
     		local ok, err = pcall(env.writefile, filePath, table.concat(lines, "\n"))
     		setStatus(ok and ("Exported results to " .. filePath) or ("Export failed: " .. tostring(err)))
+    	end
+    
+    	local function getResultContextMenu()
+    		if not resultContextMenu then
+    			resultContextMenu = Lib.ContextMenu.new()
+    		end
+    		return resultContextMenu
     	end
     
     	local function addResult(entryKey, entry, query, source, snippetOverride, metadata)
@@ -19923,6 +19929,40 @@ end,
     		listFrame = createSimple("ScrollingFrame",{Active=true, AutomaticCanvasSize=Enum.AutomaticSize.None, BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, BottomImage="", CanvasSize=UDim2.new(0,2000,0,2000), Position=UDim2.new(0,0,0,0), ScrollBarImageColor3=Color3.fromRGB(70,70,70), ScrollBarThickness=10, Size=UDim2.new(1,0,1,0), TopImage="", Parent=mainArea})
     	end
     
+    	DependencyGraph.ShowForScript = function(scr)
+    		if not window then
+    			DependencyGraph.Init()
+    		end
+    		if window then
+    			window:Show()
+    		end
+    		scan()
+    
+    		task.spawn(function()
+    			-- Wait for scan and node frame creation to complete
+    			task.wait(0.25)
+    			if not env.DecompileCache or not env.DecompileCache.GetScriptKey then return end
+    			local ok, key = pcall(env.DecompileCache.GetScriptKey, scr)
+    			if ok and key then
+    				local frame = nodeFrames[key]
+    				if frame then
+    					-- Highlight node border
+    					frame.BorderColor3 = Color3.fromRGB(255, 170, 0)
+    					frame.BorderSizePixel = 2
+    					-- Scroll listFrame to center on this node
+    					local canvasX = math.clamp(frame.Position.X.Offset - 250, 0, math.max(0, listFrame.CanvasSize.X.Offset - listFrame.AbsoluteSize.X))
+    					local canvasY = math.clamp(frame.Position.Y.Offset - 180, 0, math.max(0, listFrame.CanvasSize.Y.Offset - listFrame.AbsoluteSize.Y))
+    					listFrame.CanvasPosition = Vector2.new(canvasX, canvasY)
+    					-- Slide open sidebar inspector
+    					local nodeData = nodesData[key]
+    					if nodeData then
+    						showNodeDetails(nodeData)
+    					end
+    				end
+    			end
+    		end)
+    	end
+    
     	DependencyGraph.Scan = scan
     	return DependencyGraph
     end
@@ -19941,7 +19981,7 @@ end,
     ]]
     -- Common Locals
     local Main,Lib,Apps,Settings -- Main Containers
-    local Explorer, Properties, ScriptViewer, ScriptRelations, Notebook -- Major Apps
+    local Explorer, Properties, ScriptViewer, ScriptRelations, Notebook, DependencyGraph -- Major Apps
     local API,RMD,env,service,plr,create,createSimple -- Main Locals
     local function initDeps(data)
     	Main = data.Main
@@ -19962,6 +20002,7 @@ end,
     	ScriptViewer = Apps.ScriptViewer
     	ScriptRelations = Apps.ScriptRelations
     	Notebook = Apps.Notebook
+    	DependencyGraph = Apps.DependencyGraph
     end
     local function main()
     	local ScriptRelations = {}
@@ -20011,7 +20052,6 @@ end,
     	end
     	local function clearRows()
     		if not listFrame then return end
-    		listFrame.CanvasPosition = Vector2.new(0, 0)
     		for _, child in pairs(listFrame:GetChildren()) do
     			if child:IsA("GuiButton") or child:IsA("TextLabel") then
     				child:Destroy()
@@ -20216,7 +20256,7 @@ end,
     		ScriptRelations.Window = window
     		statusLabel = createSimple("TextLabel",{
     			BackgroundColor3 = Settings.Theme.Main2, BorderSizePixel = 0, Font = Enum.Font.SourceSans,
-    			Position = UDim2.new(0,0,0,0), Size = UDim2.new(1,0,0,24),
+    			Position = UDim2.new(0,0,0,0), Size = UDim2.new(1,-120,0,24),
     			Text = "Right click a script in Explorer, then choose Script Relations.",
     			TextColor3 = Settings.Theme.PlaceholderText, TextSize = 14, TextTruncate = Enum.TextTruncate.AtEnd,
     			TextXAlignment = Enum.TextXAlignment.Left, Parent = window.GuiElems.Content
@@ -20224,6 +20264,21 @@ end,
     		local statusPadding = Instance.new("UIPadding")
     		statusPadding.PaddingLeft = UDim.new(0,6)
     		statusPadding.Parent = statusLabel
+    
+    		local visualGraphBtn = createSimple("TextButton",{
+    			AutoButtonColor = false, BackgroundColor3 = Settings.Theme.Button, BorderColor3 = Settings.Theme.Outline2,
+    			Font = Enum.Font.SourceSansBold, Position = UDim2.new(1,-116,0,1), Size = UDim2.new(0,112,0,22),
+    			Text = "Visual Graph", TextColor3 = Settings.Theme.Text, TextSize = 12, Parent = window.GuiElems.Content
+    		})
+    		Lib.ButtonAnim(visualGraphBtn,{Mode = 2, StartColor = Settings.Theme.Button, HoverColor = Settings.Theme.ButtonHover, PressColor = Settings.Theme.ButtonPress, OutlineColor = Settings.Theme.Outline2})
+    		visualGraphBtn.MouseButton1Click:Connect(function()
+    			if currentScript and DependencyGraph then
+    				if ensureTool(DependencyGraph) then
+    					DependencyGraph.ShowForScript(currentScript)
+    				end
+    			end
+    		end)
+    
     		listFrame = createSimple("ScrollingFrame",{
     			Active = true, AutomaticCanvasSize = Enum.AutomaticSize.Y, BackgroundColor3 = Settings.Theme.Main2,
     			BorderSizePixel = 0, BottomImage = "", CanvasSize = UDim2.new(0,0,0,0), Position = UDim2.new(0,0,0,24),

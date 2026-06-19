@@ -46,6 +46,7 @@ local function main()
 	local resultRows = {}
 	local selectedRecord = nil
 	local selectedRow = nil
+	local updateInspector
 	local pinnedKeys = {}
 	local reviewedKeys = {}
 	local indexedKeys = {}
@@ -346,7 +347,6 @@ local function main()
 
 	local function clearResults()
 		if not resultsFrame then return end
-		resultsFrame.CanvasPosition = Vector2.new(0, 0)
 		for _, child in pairs(resultsFrame:GetChildren()) do
 			if child:IsA("TextButton") then
 				child:Destroy()
@@ -626,7 +626,7 @@ local function main()
 		end
 	end
 
-	local function updateInspector(record)
+	updateInspector = function(record)
 		if not sidePanel then return end
 		if not record then
 			sideTitle.Text = "Result inspector"
@@ -755,6 +755,13 @@ local function main()
 		local filePath = "dex/code_search/results_" .. tostring(os.time()) .. ".md"
 		local ok, err = pcall(env.writefile, filePath, table.concat(lines, "\n"))
 		setStatus(ok and ("Exported results to " .. filePath) or ("Export failed: " .. tostring(err)))
+	end
+
+	local function getResultContextMenu()
+		if not resultContextMenu then
+			resultContextMenu = Lib.ContextMenu.new()
+		end
+		return resultContextMenu
 	end
 
 	local function addResult(entryKey, entry, query, source, snippetOverride, metadata)
