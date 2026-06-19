@@ -1,0 +1,2 @@
+D:\Scripting\Rework DarkDEX++\HelperApp\bin\Release\net8.0-windows\win-x64\publish\DEX_Helper_App.pdb
+D:\Scripting\Rework DarkDEX++\HelperApp\bin\Release\net8.0-windows\win-x64\publish\DEX_Helper_App.exe

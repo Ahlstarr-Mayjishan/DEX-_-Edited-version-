@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "E0Xv6k4yLt4=",
+  "success": true,
+  "projectFilePath": "D:\\Scripting\\Rework DarkDEX++\\HelperApp\\DEXHelperApp.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\Zlota\\.nuget\\packages\\microsoft.net.illink.tasks\\8.0.28\\microsoft.net.illink.tasks.8.0.28.nupkg.sha512",
+    "C:\\Users\\Zlota\\.nuget\\packages\\microsoft.web.webview2\\1.0.3537.50\\microsoft.web.webview2.1.0.3537.50.nupkg.sha512"
+  ],
+  "logs": []
+}
