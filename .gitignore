@@ -5,6 +5,5 @@ DEX++_original.luau
 selene.toml
 HelperWorkers/rust_source_analyzer/target/
 HelperWorkers/python/__pycache__/
-HelperServer/DEX_Helper.exe
 HelperServer/dex_helper_index.dat
 HelperServer/dex_server_logs.txt
