@@ -1,12 +1,14 @@
 --[[
 	Model Viewer App Module
+--[[
+	Model Viewer App Module
 	
 	A model viewer :3
 ]]
 
 -- Common Locals
 local Main,Lib,Apps,Settings -- Main Containers
-local Explorer, Properties, ScriptViewer, ModelViewer, Notebook -- Major Apps
+local Explorer, Properties, Notepad, ModelViewer, Notebook -- Major Apps
 local API,RMD,env,service,plr,create,createSimple -- Main Locals
 
 local function initDeps(data)
@@ -27,7 +29,7 @@ end
 local function initAfterMain()
 	Explorer = Apps.Explorer
 	Properties = Apps.Properties
-	ScriptViewer = Apps.ScriptViewer
+	Notepad = Apps.Notepad
 	Notebook = Apps.Notebook
 end
 

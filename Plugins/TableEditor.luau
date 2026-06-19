@@ -1190,7 +1190,7 @@ local function main()
 
 		decompile_btn.MouseButton1Click:Connect(function()
 			if not decompile_btn.Active or not selected_key or typeof(selected_val) ~= "Instance" or not selected_val:IsA("LuaSourceContainer") then return end
-			local sv = apps_ref.ScriptViewer
+			local sv = apps_ref.Notepad
 			if sv and sv.ViewScript then
 				task.spawn(function()
 					sv.ViewScript(selected_val)

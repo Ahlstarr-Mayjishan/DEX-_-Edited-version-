@@ -5,7 +5,7 @@
 ]]
 -- Common Locals
 local Main,Lib,Apps,Settings -- Main Containers
-local Explorer, Properties, ScriptViewer, RemoteUsageMap, Notebook -- Major Apps
+local Explorer, Properties, Notepad, RemoteUsageMap, Notebook -- Major Apps
 local API,RMD,env,service,plr,create,createSimple -- Main Locals
 local function initDeps(data)
 	Main = data.Main
@@ -23,7 +23,7 @@ end
 local function initAfterMain()
 	Explorer = Apps.Explorer
 	Properties = Apps.Properties
-	ScriptViewer = Apps.ScriptViewer
+	Notepad = Apps.Notepad
 	RemoteUsageMap = Apps.RemoteUsageMap
 	Notebook = Apps.Notebook
 end
@@ -108,7 +108,7 @@ local function main()
 		})
 		Lib.ButtonAnim(row,{Mode = 2, StartColor = Settings.Theme.Main2, HoverColor = Settings.Theme.ButtonHover, PressColor = Settings.Theme.ButtonPress, OutlineColor = Settings.Theme.Outline1})
 		row.MouseButton1Click:Connect(function()
-			if scriptObj and ScriptViewer and ScriptViewer.ViewScript then ScriptViewer.ViewScript(scriptObj) end
+			if scriptObj and Notepad and Notepad.ViewScript then Notepad.ViewScript(scriptObj) end
 		end)
 		return row
 	end

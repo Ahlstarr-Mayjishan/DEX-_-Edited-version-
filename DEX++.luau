@@ -53,7 +53,7 @@ local EmbeddedModules = {
 local isFsSupported = readfile and writefile and isfile and isfolder and listfiles and delfile and delfolder
 
 -- Main vars
-local Main, Explorer, Properties, ScriptViewer, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, ClientIndex, ActivityMap, DependencyGraph, SmartSearch, RuntimeInspector, ClientIntelligence, InspectorHub, TaskRouter, ControlCenter, Theme, SmartDecompiler, SecurityAuditor, RemoteFuzzer, PropertyTracker, InstanceSerializer, ThreadManager--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
+local Main, Explorer, Properties, Notepad, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, ClientIndex, ActivityMap, DependencyGraph, SmartSearch, RuntimeInspector, ClientIntelligence, InspectorHub, TaskRouter, ControlCenter, Theme, SmartDecompiler, SecurityAuditor, RemoteFuzzer, PropertyTracker, InstanceSerializer, ThreadManager--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
 local API, RMD
 
 -- Default Settings
@@ -133,7 +133,7 @@ DefaultSettings = (function()
 				Bracket = rgb(171, 178, 191)
 			},
 		},
-		ScriptViewer = {
+		Notepad = {
 			ShowMoreInfo = true;
 		},
 		Window = {
@@ -508,7 +508,7 @@ Main = (function()
 		end
 	end
 
-	Main.ModuleList = {"Theme","Lib","Console","SettingsWindow","ControlCenter","TaskRouter","ThreadManager","Explorer","Properties","SaveInstance","ModelViewer","ImageViewer","ObjectLinks","InstanceSerializer","SmartDecompiler","ScriptViewer","ClientIndex","CodeSearch","SmartSearch","DependencyGraph","ScriptRelations","SecurityAuditor","RuntimeInspector","RemoteUsageMap","ActivityMap","PropertyTracker","RemoteFuzzer","ClientIntelligence","InspectorHub"}
+	Main.ModuleList = {"Theme","Lib","Console","SettingsWindow","ControlCenter","TaskRouter","ThreadManager","Explorer","Properties","SaveInstance","ModelViewer","ImageViewer","ObjectLinks","InstanceSerializer","SmartDecompiler","Notepad","ClientIndex","CodeSearch","SmartSearch","DependencyGraph","ScriptRelations","SecurityAuditor","RuntimeInspector","RemoteUsageMap","ActivityMap","PropertyTracker","RemoteFuzzer","ClientIntelligence","InspectorHub"}
 	Main.ModulePathMap = {
 		Theme = "Core/Theme",
 		Lib = "Core/Lib",
@@ -525,7 +525,7 @@ Main = (function()
 		ObjectLinks = "Explorer/ObjectLinks",
 		InstanceSerializer = "Explorer/InstanceSerializer",
 		SmartDecompiler = "Search/SmartDecompiler",
-		ScriptViewer = "Search/ScriptViewer",
+		Notepad = "Search/Notepad",
 		ClientIndex = "Search/ClientIndex",
 		CodeSearch = "Search/CodeSearch",
 		SmartSearch = "Search/SmartSearch",
@@ -932,7 +932,7 @@ Main = (function()
 		-- Init Major Apps and define them in modules
 		Explorer = Apps.Explorer
 		Properties = Apps.Properties
-		ScriptViewer = Apps.ScriptViewer
+		Notepad = Apps.Notepad
 		Console = Apps.Console
 		SaveInstance = Apps.SaveInstance
 		ModelViewer = Apps.ModelViewer
@@ -967,7 +967,7 @@ Main = (function()
 			SmartDecompiler = SmartDecompiler,
 			Explorer = Explorer,
 			Properties = Properties,
-			ScriptViewer = ScriptViewer,
+			Notepad = Notepad,
 			Console = Console,
 			SaveInstance = SaveInstance,
 			ModelViewer = ModelViewer,
@@ -3410,7 +3410,7 @@ Main = (function()
 			else if cptsOnMouseClick ~= nil then cptsOnMouseClick:Disconnect() cptsOnMouseClick = nil end end
 		end})
 
-		Main.CreateApp({Name = "Notepad", IconMap = Main.LargeIcons, Icon = "Script_Viewer", Window = ScriptViewer.Window})
+		Main.CreateApp({Name = "Notepad", IconMap = Main.LargeIcons, Icon = "Script_Viewer", Window = Notepad.Window})
 
 		Main.CreateApp({Name = "Console", IconMap = Main.LargeIcons, Icon = "Executor", Window = Console.Window})
 
@@ -3577,7 +3577,7 @@ Main = (function()
 		intro.SetProgress("Initializing Modules",0.8)
 		Explorer.Init()
 		Properties.Init()
-		ScriptViewer.Init()
+		Notepad.Init()
 		Console.Init()
 		SettingsWindow.Init()
 		--SecretServicePanel.Init()

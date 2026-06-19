@@ -5,7 +5,7 @@
 	Upgraded to a fully interactive visual node graph.
 ]]
 local Main, Lib, Apps, Settings
-local Explorer, ScriptViewer, DependencyGraph
+local Explorer, Notepad, DependencyGraph, ScriptRelations, ObjectLinks
 local API, RMD, env, service, plr, create, createSimple
 
 local function initDeps(data)
@@ -16,8 +16,10 @@ end
 
 local function initAfterMain()
 	Explorer = Apps.Explorer
-	ScriptViewer = Apps.ScriptViewer
+	Notepad = Apps.Notepad
 	DependencyGraph = Apps.DependencyGraph
+	ScriptRelations = Apps.ScriptRelations
+	ObjectLinks = Apps.ObjectLinks
 end
 
 local function main()
@@ -83,15 +85,36 @@ local function main()
 		end
 		return remotes
 	end
+	local function isWordChar(char)
+		if not char or char == "" then return false end
+		local cp = string.byte(char)
+		return (cp >= 97 and cp <= 122) or -- a-z
+			(cp >= 65 and cp <= 90)  or -- A-Z
+			(cp >= 48 and cp <= 57)  or -- 0-9
+			cp == 95                    -- _
+	end
 
 	local function requireBlockMentionsName(block, name)
 		local loweredName = tostring(name or ""):lower()
 		if #loweredName < 3 then return false end
 		local loweredBlock = tostring(block or ""):lower()
-		if loweredName:match("^[%w_]+$") then
-			return loweredBlock:find("%f[%w_]" .. loweredName .. "%f[^%w_]") ~= nil
+
+		local startPos = 1
+		while true do
+			local s, e = loweredBlock:find(loweredName, startPos, true)
+			if not s then break end
+
+			local charBefore = s > 1 and loweredBlock:sub(s - 1, s - 1) or ""
+			local charAfter = e < #loweredBlock and loweredBlock:sub(e + 1, e + 1) or ""
+
+			if not isWordChar(charBefore) and not isWordChar(charAfter) then
+				return true
+			end
+
+			startPos = s + 1
 		end
-		return loweredBlock:find(loweredName, 1, true) ~= nil
+
+		return false
 	end
 
 	-- Simple Rotated Line Drawer for Canvas
@@ -196,8 +219,8 @@ local function main()
 		end
 
 		addOption("Decompile Source", function()
-			if node.InstanceObj and ScriptViewer then
-				ScriptViewer.ViewScript(node.InstanceObj)
+			if node.InstanceObj and Notepad then
+				Notepad.ViewScript(node.InstanceObj)
 			end
 		end)
 
@@ -208,6 +231,24 @@ local function main()
 				elseif Explorer.ViewObj then
 					Explorer.ViewObj(node.InstanceObj)
 				end
+			end
+		end)
+
+		addOption("Focus in Graph", function()
+			if node.InstanceObj then
+				DependencyGraph.ShowForScript(node.InstanceObj)
+			end
+		end)
+
+		addOption("Find Links / References", function()
+			if node.InstanceObj and ObjectLinks then
+				ObjectLinks.ShowForObject(node.InstanceObj)
+			end
+		end)
+
+		addOption("Script Relations", function()
+			if node.InstanceObj and ScriptRelations then
+				ScriptRelations.ShowForScript(node.InstanceObj)
 			end
 		end)
 

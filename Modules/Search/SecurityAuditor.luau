@@ -8,7 +8,7 @@
 
 -- Common Locals
 local Main, Lib, Apps, Settings -- Main Containers
-local Explorer, ScriptViewer, SecurityAuditor, Theme -- Major Apps
+local Explorer, Notepad, SecurityAuditor, Theme -- Major Apps
 local API, RMD, env, service, plr, create, createSimple -- Main Locals
 
 local function initDeps(data)
@@ -28,7 +28,7 @@ end
 
 local function initAfterMain(t)
 	Explorer = t.Explorer
-	ScriptViewer = t.ScriptViewer
+	Notepad = t.Notepad
 	SecurityAuditor = t.SecurityAuditor
 	Theme = t.Theme
 end
@@ -184,8 +184,8 @@ local function main()
 			Theme.StyleButton(viewBtn, true)
 
 			viewBtn.MouseButton1Click:Connect(function()
-				if ScriptViewer then
-					ScriptViewer.ViewScript(finding.Object)
+				if Notepad then
+					Notepad.ViewScript(finding.Object)
 				end
 			end)
 		end

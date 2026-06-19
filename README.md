@@ -145,16 +145,38 @@ If localhost HTTP is unavailable, execute `DEX++_compiled.luau` directly. The ex
 
 For the smoothest first run, keep low-impact indexing enabled, leave property-change logging disabled, and do not enable the experimental hook modules together.
 
+### Desktop helper app
+
+For a real desktop wrapper, build or run:
+
+```bat
+HelperApp\build.bat
+HelperApp\DEX_Helper_App.exe
+```
+
+The app uses Microsoft WebView2, starts `HelperServer\DEX_Helper.exe` in hidden mode when needed, and embeds the local dashboard without a browser address bar.
+
+Requirements:
+
+- Microsoft .NET SDK 8.0 to build the app;
+- Microsoft Edge WebView2 Runtime to run it.
+
 ### Helper starts and immediately closes
 
 The helper now prevents duplicate instances:
 
 - if DEX++ Helper is already running, opening it again displays a clear notice and opens the existing dashboard;
 - if another application owns port `8080`, the helper reports that port conflict instead of silently closing;
-- after a successful startup, the helper automatically opens `http://localhost:8080/` in the default browser;
+- after a successful startup, the helper opens the dashboard in an Edge/Chrome app window;
+- the app starts centered at a compact size based on the available desktop area;
+- the helper console hides after the app window opens;
+- if Edge/Chrome app mode is unavailable, the helper falls back to `http://localhost:8080/` in the default browser;
 - only one helper instance should run at a time.
 
 For automated or headless checks, set `DEX_HELPER_NO_DIALOG=1` to suppress startup dialogs and automatic browser opening.
+Set `DEX_HELPER_WEB_MODE=1` to force the original browser-tab dashboard, or `DEX_HELPER_KEEP_CONSOLE=1` to keep the helper console visible while using app mode.
+
+The previous experimental native host has been disabled because reparenting Chromium windows can produce a black host window on some systems. A true native embedded app should be built with WebView2; that requires the WebView2 runtime/SDK and a .NET SDK or equivalent C++ WebView2 headers.
 
 ### Stop or clean local services
 

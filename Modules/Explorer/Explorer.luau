@@ -7,7 +7,7 @@
 
 -- Common Locals
 local Main,Lib,Apps,Settings -- Main Containers
-local Explorer, Properties, ScriptViewer, ModelViewer, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, Notebook -- Major Apps
+local Explorer, Properties, Notepad, ModelViewer, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, Notebook -- Major Apps
 local API,RMD,env,service,plr,create,createSimple -- Main Locals
 
 local function initDeps(data)
@@ -28,7 +28,7 @@ end
 local function initAfterMain()
 	Explorer = Apps.Explorer
 	Properties = Apps.Properties
-	ScriptViewer = Apps.ScriptViewer
+	Notepad = Apps.Notepad
 	ModelViewer = Apps.ModelViewer
 	ScriptRelations = Apps.ScriptRelations
 	RemoteUsageMap = Apps.RemoteUsageMap
@@ -50,6 +50,16 @@ local function main()
 	local capturedNode = {Obj = Instance.new("Folder")}
 	local idCounter = 0
 	local scrollV,scrollH,clipboard
+	local refreshScheduled = false
+	local function requestRefresh()
+		if refreshScheduled then return end
+		refreshScheduled = true
+		local defer = task and task.defer or function(f) coroutine.wrap(f)() end
+		defer(function()
+			refreshScheduled = false
+			Explorer.Refresh()
+		end)
+	end
 	local renameBox,renamingNode,searchFunc
 	local sortingEnabled,autoUpdateSearch
 	local table,math = table,math
@@ -405,7 +415,7 @@ local function main()
 				Explorer.Window.GuiElems.Content.ScrollCorner.Visible = false
 			end
 
-			Explorer.Index = scrollV.Index
+			Explorer.Index = math.round(scrollV.Index)
 		end
 	end
 
@@ -980,7 +990,7 @@ local function main()
 			end
 		end
 
-		scrollV:Update() Explorer.Index = scrollV.Index
+		scrollV:Update() Explorer.Index = math.round(scrollV.Index)
 		Explorer.Refresh()
 	end
 
@@ -1133,6 +1143,7 @@ local function main()
 		if presentClasses["LuaSourceContainer"] then
 			context:AddRegistered("VIEW_SCRIPT", not presentClasses.isViableDecompileScript or not env.isdecompile)
 			context:AddRegistered("VIEW_SCRIPT_RELATIONS", #sList ~= 1 or not presentClasses.isViableDecompileScript or not ScriptRelations)
+			context:AddRegistered("VIEW_DEPENDENCY_GRAPH", #sList ~= 1 or not presentClasses.isViableDecompileScript or not DependencyGraph)
 			context:AddRegistered("DUMP_FUNCTIONS", not presentClasses.isViableDecompileScript or env.getupvalues == nil or env.getconstants == nil)
 			context:AddRegistered("SAVE_SCRIPT", not presentClasses.isViableDecompileScript or not env.isdecompile or env.writefile == nil)
 			context:AddRegistered("SAVE_BYTECODE", not presentClasses.isViableDecompileScript or env.getscriptbytecode == nil or env.writefile == nil)
@@ -1775,19 +1786,8 @@ local function main()
 
 		context:Register("FIND_OBJECT_LINKS",{Name = "Find Links / References", IconMap = Explorer.MiscIcons, Icon = "ExploreData", DisabledIcon = "Empty", OnClick = function()
 			local obj = selection.List[1] and selection.List[1].Obj
-			if obj then
-				if obj:IsA("LuaSourceContainer") then
-					if ensureTool(ScriptViewer) then
-						ScriptViewer.ViewScript(obj)
-					end
-					if ensureTool(ScriptRelations) then
-						ScriptRelations.ShowForScript(obj)
-					end
-				else
-					if ensureTool(ObjectLinks) then
-						ObjectLinks.ShowForObject(obj)
-					end
-				end
+			if obj and ensureTool(ObjectLinks) then
+				ObjectLinks.ShowForObject(obj)
 			end
 		end})
 
@@ -1835,15 +1835,19 @@ local function main()
 
 		context:Register("VIEW_SCRIPT",{Name = "View Script", IconMap = Explorer.MiscIcons, Icon = "ViewScript", DisabledIcon = "Empty", OnClick = function()
 			local scr = selection.List[1] and selection.List[1].Obj
-			if scr then ScriptViewer.ViewScript(scr) end
+			if scr then Notepad.ViewScript(scr) end
 		end})
 		context:Register("VIEW_SCRIPT_RELATIONS",{Name = "Script Relations", IconMap = Explorer.MiscIcons, Icon = "SelectChildren", DisabledIcon = "Empty", OnClick = function()
 			local scr = selection.List[1] and selection.List[1].Obj
 			if scr and ensureTool(ScriptRelations) then ScriptRelations.ShowForScript(scr) end
 		end})
+		context:Register("VIEW_DEPENDENCY_GRAPH",{Name = "Script Dependency Graph", IconMap = Explorer.MiscIcons, Icon = "ExploreData", DisabledIcon = "Empty", OnClick = function()
+			local scr = selection.List[1] and selection.List[1].Obj
+			if scr and ensureTool(DependencyGraph) then DependencyGraph.ShowForScript(scr) end
+		end})
 		context:Register("DUMP_FUNCTIONS",{Name = "Dump Functions", IconMap = Explorer.MiscIcons, Icon = "SelectChildren", DisabledIcon = "Empty", OnClick = function()
 			local scr = selection.List[1] and selection.List[1].Obj
-			if scr then ScriptViewer.DumpFunctions(scr) end
+			if scr then Notepad.DumpFunctions(scr) end
 		end})
 		context:Register("FUZZ_REMOTE",{Name = "Fuzz Remote", IconMap = Explorer.MiscIcons, Icon = "CallRemote", DisabledIcon = "Empty", OnClick = function()
 			local remote = selection.List[1] and selection.List[1].Obj
@@ -1878,7 +1882,7 @@ local function main()
 
 		context:Register("VIEW_SCRIPT",{Name = "View Script", IconMap = Explorer.MiscIcons, Icon = "ViewScript", DisabledIcon = "Empty", OnClick = function()
 			local scr = selection.List[1] and selection.List[1].Obj
-			if scr then ScriptViewer.ViewScript(scr) end
+			if scr then Notepad.ViewScript(scr) end
 		end})
 
 		context:Register("SAVE_SCRIPT",{Name = "Save Script", IconMap = Explorer.MiscIcons, Icon = "Save", DisabledIcon = "Empty", OnClick = function()
@@ -2610,7 +2614,7 @@ return search]==]
 			if button == 1 then
 				if combo == 2 then
 					if node.Obj:IsA("LuaSourceContainer") then
-						ScriptViewer.ViewScript(node.Obj)
+						Notepad.ViewScript(node.Obj)
 					elseif #node > 0 and expanded[node] ~= 0 then
 						expanded[node] = not expanded[node]
 						Explorer.Update()
@@ -2907,8 +2911,8 @@ return search]==]
 		scrollV.Gui.Position = UDim2.new(1,-16,0,23)
 		scrollV:SetScrollFrame(treeFrame)
 		scrollV.Scrolled:Connect(function()
-			Explorer.Index = scrollV.Index
-			Explorer.Refresh()
+			Explorer.Index = math.round(scrollV.Index)
+			requestRefresh()
 		end)
 
 		scrollH = Lib.ScrollBar.new(true)
@@ -2916,7 +2920,7 @@ return search]==]
 		scrollH.WheelIncrement = Explorer.EntryIndent
 		scrollH.Gui.Position = UDim2.new(0,0,1,-16)
 		scrollH.Scrolled:Connect(function()
-			Explorer.Refresh()
+			requestRefresh()
 		end)
 
 		local window = Lib.Window.new()

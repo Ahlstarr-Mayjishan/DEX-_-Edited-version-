@@ -1,13 +1,16 @@
 --!nocheck
 --[[
 	Code Search App Module
+--!nocheck
+--[[
+	Code Search App Module
 
 	Indexes decompiled script cache and searches cached source files.
 ]]
 
 -- Common Locals
 local Main,Lib,Apps,Settings -- Main Containers
-local Explorer, Properties, ScriptViewer, CodeSearch, Notebook -- Major Apps
+local Explorer, Properties, Notepad, CodeSearch, Notebook -- Major Apps
 local API,RMD,env,service,plr,create,createSimple -- Main Locals
 
 local function initDeps(data)
@@ -28,7 +31,7 @@ end
 local function initAfterMain()
 	Explorer = Apps.Explorer
 	Properties = Apps.Properties
-	ScriptViewer = Apps.ScriptViewer
+	Notepad = Apps.Notepad
 	CodeSearch = Apps.CodeSearch
 	Notebook = Apps.Notebook
 end
@@ -669,9 +672,9 @@ local function main()
 
 	local function openScript(record)
 		local scriptInstance = resolveScript(record)
-		if scriptInstance and ScriptViewer and ScriptViewer.ViewScript then
-			ScriptViewer.ViewScript(scriptInstance)
-			setStatus("Opened in Script Viewer.")
+		if scriptInstance and Notepad and Notepad.ViewScript then
+			Notepad.ViewScript(scriptInstance)
+			setStatus("Opened in Notepad.")
 		else
 			setStatus("Live script instance is unavailable.")
 		end

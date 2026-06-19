@@ -5,7 +5,7 @@
 ]]
 
 local Main, Lib, Apps, Settings
-local Explorer, ScriptViewer, TaskRouter
+local Explorer, Notepad, TaskRouter
 local API, RMD, env, service, plr, create, createSimple
 
 local function initDeps(data)
@@ -24,7 +24,7 @@ end
 
 local function initAfterMain()
 	Explorer = Apps.Explorer
-	ScriptViewer = Apps.ScriptViewer
+	Notepad = Apps.Notepad
 	TaskRouter = Apps.TaskRouter
 end
 

@@ -4,7 +4,7 @@
 	Allows inspection and management of running client scripts and active coroutines in the Luau registry.
 ]]
 local Main, Lib, Apps, Settings, env
-local Explorer, ScriptViewer
+local Explorer, Notepad
 
 local function initDeps(data)
 	Main = data.Main
@@ -16,7 +16,7 @@ end
 
 local function initAfterMain(apps)
 	Explorer = apps.Explorer
-	ScriptViewer = apps.ScriptViewer
+	Notepad = apps.Notepad
 end
 
 local function main()
@@ -224,8 +224,8 @@ local function main()
 				end)
 				
 				button(row, "Decompile", UDim2.new(0.6, 66, 0, 6), UDim2.new(0, 70, 0, 24), function()
-					if ScriptViewer then
-						ScriptViewer.ViewScript(scr)
+					if Notepad then
+						Notepad.ViewScript(scr)
 					end
 				end)
 				

@@ -6,7 +6,7 @@
 
 -- Common Locals
 local Main,Lib,Apps,Settings -- Main Containers
-local Explorer, Properties, ScriptViewer, Notebook -- Major Apps
+local Explorer, Properties, Notepad, Notebook -- Major Apps
 local API,RMD,env,service,plr,create,createSimple -- Main Locals
 
 local function initDeps(data)
@@ -27,7 +27,7 @@ end
 local function initAfterMain()
 	Explorer = Apps.Explorer
 	Properties = Apps.Properties
-	ScriptViewer = Apps.ScriptViewer
+	Notepad = Apps.Notepad
 	Notebook = Apps.Notebook
 end
 
@@ -36,6 +36,16 @@ local function main()
 
 	local window, toolBar, propsFrame
 	local scrollV, scrollH
+	local refreshScheduled = false
+	local function requestRefresh()
+		if refreshScheduled then return end
+		refreshScheduled = true
+		local defer = task and task.defer or function(f) coroutine.wrap(f)() end
+		defer(function()
+			refreshScheduled = false
+			Properties.Refresh()
+		end)
+	end
 	local categoryOrder
 	local props,viewList,expanded,indexableProps,propEntries,autoUpdateObjs = {},{},{},{},{},{}
 	local inputBox,inputTextBox,inputProp
@@ -238,7 +248,16 @@ local function main()
 		for i = 1,#props do
 			local prop = props[i]
 			if not ignoreProps[prop.Name] then
-				local s = pcall(function() return obj[prop.Name] end)
+				local s = pcall(function()
+					local gethiddenproperty = getgenv and getgenv().gethiddenproperty or nil
+					if gethiddenproperty then
+						local val, isHidden = gethiddenproperty(obj, prop.Name)
+						if isHidden or val ~= nil then
+							return val
+						end
+					end
+					return obj[prop.Name]
+				end)
 				if s then
 					result[count] = prop
 					count = count + 1
@@ -519,7 +538,7 @@ local function main()
 				Properties.Window.GuiElems.Content.ScrollCorner.Visible = false
 			end
 
-			Properties.Index = scrollV.Index
+			Properties.Index = math.round(scrollV.Index)
 		end
 	end
 
@@ -1235,7 +1254,21 @@ local function main()
 				return nil
 			end
 		else
-			propVal = obj[prop.Name]
+			local gethiddenproperty = getgenv and getgenv().gethiddenproperty or nil
+			local success, val = pcall(function()
+				if gethiddenproperty then
+					local hiddenVal, isHidden = gethiddenproperty(obj, prop.Name)
+					if isHidden or hiddenVal ~= nil then
+						return hiddenVal
+					end
+				end
+				return obj[prop.Name]
+			end)
+			if success then
+				propVal = val
+			else
+				propVal = obj[prop.Name]
+			end
 		end
 		if prop.SubName then
 			local indexes = string.split(prop.SubName,".")
@@ -1879,8 +1912,8 @@ local function main()
 		scrollV.Gui.Position = UDim2.new(1,-16,0,23)
 		scrollV:SetScrollFrame(propsFrame)
 		scrollV.Scrolled:Connect(function()
-			Properties.Index = scrollV.Index
-			Properties.Refresh()
+			Properties.Index = math.round(scrollV.Index)
+			requestRefresh()
 		end)
 
 		scrollH = Lib.ScrollBar.new(true)
@@ -1888,7 +1921,7 @@ local function main()
 		scrollH.WheelIncrement = 20
 		scrollH.Gui.Position = UDim2.new(0,0,1,-16)
 		scrollH.Scrolled:Connect(function()
-			Properties.Refresh()
+			requestRefresh()
 		end)
 
 		-- Setup Gui

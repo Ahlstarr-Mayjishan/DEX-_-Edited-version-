@@ -4,7 +4,7 @@
 	Serializes a selected instance and its descendants into verbose Luau instantiation code.
 ]]
 local Main, Lib, Apps, Settings
-local Explorer, ScriptViewer
+local Explorer, Notepad
 
 local function initDeps(data)
 	Main = data.Main
@@ -15,7 +15,7 @@ end
 
 local function initAfterMain(apps)
 	Explorer = apps.Explorer
-	ScriptViewer = apps.ScriptViewer
+	Notepad = apps.Notepad
 end
 
 local function main()
@@ -169,10 +169,10 @@ local function main()
 		table.insert(code, "\nreturn " .. varNames[root])
 
 		local finalCode = table.concat(code, "\n")
-		if ScriptViewer and ScriptViewer.ViewRawCode then
-			ScriptViewer.ViewRawCode(finalCode, root.Name .. " Serialized")
+		if Notepad and Notepad.ViewRawCode then
+			Notepad.ViewRawCode(finalCode, root.Name .. " Serialized")
 		else
-			warn("ScriptViewer not available or missing ViewRawCode!")
+			warn("Notepad not available or missing ViewRawCode!")
 		end
 	end
 

@@ -4,7 +4,7 @@
 	Correlates Remote calls with RakNet outbound packet activity.
 ]]
 local Main,Lib,Apps,Settings
-local Explorer, Properties, ScriptViewer, RuntimeInspector, RemoteUsageMap, Notebook
+local Explorer, Properties, Notepad, RuntimeInspector, RemoteUsageMap, Notebook
 local API,RMD,env,service,plr,create,createSimple
 local function initDeps(data)
 	Main = data.Main
@@ -22,7 +22,7 @@ end
 local function initAfterMain()
 	Explorer = Apps.Explorer
 	Properties = Apps.Properties
-	ScriptViewer = Apps.ScriptViewer
+	Notepad = Apps.Notepad
 	RuntimeInspector = Apps.RuntimeInspector
 	RemoteUsageMap = Apps.RemoteUsageMap
 	Notebook = Apps.Notebook

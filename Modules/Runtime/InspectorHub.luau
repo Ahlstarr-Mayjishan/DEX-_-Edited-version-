@@ -5,7 +5,7 @@
 	risk queue, and an exportable brief for handoff.
 ]]
 local Main, Lib, Apps, Settings
-local Explorer, ScriptViewer, RuntimeInspector, RemoteUsageMap, ClientIndex, InspectorHub
+local Explorer, Notepad, RuntimeInspector, RemoteUsageMap, ClientIndex, InspectorHub
 local API, RMD, env, service, plr, create, createSimple
 
 local function initDeps(data)
@@ -16,7 +16,7 @@ end
 
 local function initAfterMain()
 	Explorer = Apps.Explorer
-	ScriptViewer = Apps.ScriptViewer
+	Notepad = Apps.Notepad
 	RuntimeInspector = Apps.RuntimeInspector
 	RemoteUsageMap = Apps.RemoteUsageMap
 	ClientIndex = Apps.ClientIndex
@@ -201,7 +201,7 @@ local function main()
 	end
 	local function focusObject(obj)
 		if typeof(obj) ~= "Instance" then return end
-		if obj:IsA("LuaSourceContainer") and ScriptViewer then pcall(ScriptViewer.ViewScript, obj) end
+		if obj:IsA("LuaSourceContainer") and Notepad then pcall(Notepad.ViewScript, obj) end
 		if remoteClasses[obj.ClassName] and RemoteUsageMap then pcall(RemoteUsageMap.ShowForRemote, obj) end
 		if Explorer and Explorer.Selection then pcall(function() Explorer.Selection:Set(obj) end) end
 	end

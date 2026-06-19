@@ -4,7 +4,7 @@
 	Aggregates client-side snapshots, dependency hints, smart queries, timeline, and perf hints.
 ]]
 local Main,Lib,Apps,Settings
-local Explorer, ScriptViewer, RuntimeInspector, ClientIntelligence, InspectorHub
+local Explorer, Notepad, RuntimeInspector, ClientIntelligence, InspectorHub
 local API,RMD,env,service,plr,create,createSimple
 
 local function initDeps(data)
@@ -15,7 +15,7 @@ end
 
 local function initAfterMain()
 	Explorer = Apps.Explorer
-	ScriptViewer = Apps.ScriptViewer
+	Notepad = Apps.Notepad
 	RuntimeInspector = Apps.RuntimeInspector
 	ClientIntelligence = Apps.ClientIntelligence
 	InspectorHub = Apps.InspectorHub
@@ -189,13 +189,13 @@ local function main()
 						local lower = source:lower()
 						for block in source:gmatch("require%s*%b()") do
 							shown += 1
-							actionRow("require link | " .. tostring(entry.Path or entry.Name), block:gsub("\n"," "), function() local scr = byKey[key]; if scr and ScriptViewer then ScriptViewer.ViewScript(scr) end end)
+							actionRow("require link | " .. tostring(entry.Path or entry.Name), block:gsub("\n"," "), function() local scr = byKey[key]; if scr and Notepad then Notepad.ViewScript(scr) end end)
 							if shown >= 60 then break end
 						end
 						for _, remote in ipairs(remotes) do
 							if #remote.Name >= 2 and lower:find(remote.Name:lower(), 1, true) then
 								shown += 1
-								actionRow("remote mention | " .. remote.Name, tostring(entry.Path or entry.Name), function() local scr = byKey[key]; if scr and ScriptViewer then ScriptViewer.ViewScript(scr) end end)
+								actionRow("remote mention | " .. remote.Name, tostring(entry.Path or entry.Name), function() local scr = byKey[key]; if scr and Notepad then Notepad.ViewScript(scr) end end)
 								break
 							end
 						end
@@ -237,7 +237,7 @@ local function main()
 					for _, row in ipairs(rows) do
 						local key, entry = row.Key, row.Entry or {}
 						found += 1
-						actionRow(tostring(entry.Path or entry.Name or key), formatCachedHit(row), function() local scr = byKey[key]; if scr and ScriptViewer then ScriptViewer.ViewScript(scr) end end)
+						actionRow(tostring(entry.Path or entry.Name or key), formatCachedHit(row), function() local scr = byKey[key]; if scr and Notepad then Notepad.ViewScript(scr) end end)
 					end
 				else
 					local entries, cacheDir = env.DecompileCache.GetEntries()
@@ -247,7 +247,7 @@ local function main()
 							local ok, source = pcall(env.readfile, cacheDir .. "/" .. tostring(entry.File))
 							if ok and type(source) == "string" and (source:lower():find(query,1,true) or tostring(entry.Path or ""):lower():find(query,1,true)) then
 								found += 1
-								actionRow(tostring(entry.Path or entry.Name), "cached source hit", function() local scr = byKey[key]; if scr and ScriptViewer then ScriptViewer.ViewScript(scr) end end)
+								actionRow(tostring(entry.Path or entry.Name), "cached source hit", function() local scr = byKey[key]; if scr and Notepad then Notepad.ViewScript(scr) end end)
 								if found >= 80 then break end
 							end
 						end

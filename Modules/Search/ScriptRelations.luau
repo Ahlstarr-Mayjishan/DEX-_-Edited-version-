@@ -5,7 +5,7 @@
 ]]
 -- Common Locals
 local Main,Lib,Apps,Settings -- Main Containers
-local Explorer, Properties, ScriptViewer, ScriptRelations, Notebook, DependencyGraph -- Major Apps
+local Explorer, Properties, Notepad, ScriptRelations, Notebook, DependencyGraph -- Major Apps
 local API,RMD,env,service,plr,create,createSimple -- Main Locals
 local function initDeps(data)
 	Main = data.Main
@@ -23,7 +23,7 @@ end
 local function initAfterMain()
 	Explorer = Apps.Explorer
 	Properties = Apps.Properties
-	ScriptViewer = Apps.ScriptViewer
+	Notepad = Apps.Notepad
 	ScriptRelations = Apps.ScriptRelations
 	Notebook = Apps.Notebook
 	DependencyGraph = Apps.DependencyGraph
@@ -121,8 +121,8 @@ local function main()
 						if Explorer.ViewNode then Explorer.ViewNode(node) end
 					end
 				end
-				if ScriptViewer and ScriptViewer.ViewScript then
-					ScriptViewer.ViewScript(obj)
+				if Notepad and Notepad.ViewScript then
+					Notepad.ViewScript(obj)
 				end
 			end)
 		end

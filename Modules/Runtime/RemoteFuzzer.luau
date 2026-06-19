@@ -4,7 +4,7 @@
 	Generates custom payload/fuzz testing scripts for RemoteEvents and RemoteFunctions.
 ]]
 local Main, Lib, Apps, Settings
-local ScriptViewer
+local Notepad
 
 local function initDeps(data)
 	Main = data.Main
@@ -14,7 +14,7 @@ local function initDeps(data)
 end
 
 local function initAfterMain(apps)
-	ScriptViewer = apps.ScriptViewer
+	Notepad = apps.Notepad
 end
 
 local function main()
@@ -105,10 +105,10 @@ local function main()
 		table.insert(code, "\nprint(\"=== Remote Fuzzing Finished ===\")")
 
 		local finalCode = table.concat(code, "\n")
-		if ScriptViewer and ScriptViewer.ViewRawCode then
-			ScriptViewer.ViewRawCode(finalCode, remote.Name .. " Fuzzer")
+		if Notepad and Notepad.ViewRawCode then
+			Notepad.ViewRawCode(finalCode, remote.Name .. " Fuzzer")
 		else
-			warn("ScriptViewer not available or missing ViewRawCode!")
+			warn("Notepad not available or missing ViewRawCode!")
 		end
 	end
 

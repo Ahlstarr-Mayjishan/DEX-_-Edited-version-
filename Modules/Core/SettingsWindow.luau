@@ -1,12 +1,14 @@
 --[[
 	Save Instance App Module
+--[[
+	Save Instance App Module
 	
 	Revival of the old dex's Save Instance
 ]] 
 
 -- Common Locals
 local Main,Lib,Apps,Settings -- Main Containers
-local Explorer, Properties, ScriptViewer, SettingsWindow, Notebook -- Major Apps
+local Explorer, Properties, Notepad, SettingsWindow, Notebook -- Major Apps
 local API,RMD,env,service,plr,create,createSimple -- Main Locals
 
 local function initDeps(data)
@@ -27,7 +29,7 @@ end
 local function initAfterMain()
 	Explorer = Apps.Explorer
 	Properties = Apps.Properties
-	ScriptViewer = Apps.ScriptViewer
+	Notepad = Apps.Notepad
 	SettingsWindow = Apps.SettingsWindow
 	Notebook = Apps.Notebook
 end
@@ -196,7 +198,7 @@ local function main()
 	end
 	
 	SettingsWindow.ReloadPrompt = function()		
-		local win = ScriptViewer.ReloadPromptWindow
+		local win = Notepad.ReloadPromptWindow
 		if not win then
 			win = Lib.Window.new()
 			win.Alignable = false
@@ -373,11 +375,11 @@ local function main()
 			Settings.Properties.ClearOnFocus = clearOnFocus.Toggled
 		end)
 		
-		AddSeperator("Script Viewer")
+		AddSeperator("Notepad")
 		
-		local showMoreInfo = AddCheckbox("Show Decompiled Script Info", Settings.ScriptViewer.ShowMoreInfo)
+		local showMoreInfo = AddCheckbox("Show Decompiled Script Info", Settings.Notepad.ShowMoreInfo)
 		showMoreInfo.OnInput:Connect(function()
-			Settings.ScriptViewer.ShowMoreInfo = showMoreInfo.Toggled
+			Settings.Notepad.ShowMoreInfo = showMoreInfo.Toggled
 		end)
 		
 		AddSeperator("Decompiler")

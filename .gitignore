@@ -10,3 +10,6 @@ HelperServer/dex_server_logs.txt
 HelperServer/DEX_Toolchain_Setup*.exe
 HelperServer/ToolchainTest.exe
 ToolchainSetup/*.exe
+HelperApp/bin/
+HelperApp/obj/
+HelperApp/app_error.log

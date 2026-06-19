@@ -32,7 +32,7 @@ def build():
             "ImageViewer", "ObjectLinks", "InstanceSerializer",
         ],
         "Search": [
-            "SmartDecompiler", "ScriptViewer", "ClientIndex", "CodeSearch",
+            "SmartDecompiler", "Notepad", "ClientIndex", "CodeSearch",
             "SmartSearch", "DependencyGraph", "ScriptRelations",
             "SecurityAuditor",
         ],

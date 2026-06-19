@@ -4,7 +4,7 @@
 	Ranked search across live instances, remotes, paths, classes, and cached source.
 ]]
 local Main,Lib,Apps,Settings
-local Explorer, ScriptViewer, SmartSearch
+local Explorer, Notepad, SmartSearch
 local API,RMD,env,service,plr,create,createSimple
 
 local function initDeps(data)
@@ -15,7 +15,7 @@ end
 
 local function initAfterMain()
 	Explorer = Apps.Explorer
-	ScriptViewer = Apps.ScriptViewer
+	Notepad = Apps.Notepad
 	SmartSearch = Apps.SmartSearch
 end
 
@@ -113,7 +113,7 @@ local function main()
 					local entry, scr = hit.Entry, byKey[hit.Key]
 					local hitScore = normalize(entry.Path):find(query,1,true) and 42 or 22
 					rows[#rows + 1] = {Title=tostring(entry.Path or entry.Name), Detail=hit.Snippet or "cached code hit", Kind="code", Score=hitScore, Callback=function()
-						if scr and ScriptViewer then ScriptViewer.ViewScript(scr) end
+						if scr and Notepad then Notepad.ViewScript(scr) end
 					end}
 				end
 			elseif env.DecompileCache and env.DecompileCache.GetEntries and env.isfile then
@@ -127,7 +127,7 @@ local function main()
 						if ok and type(source) == "string" and (source:lower():find(query,1,true) or normalize(entry.Path):find(query,1,true)) then
 							local scr = byKey[key]
 							rows[#rows + 1] = {Title=tostring(entry.Path or entry.Name), Detail="cached code hit", Kind="code", Score=22, Callback=function()
-								if scr and ScriptViewer then ScriptViewer.ViewScript(scr) end
+								if scr and Notepad then Notepad.ViewScript(scr) end
 							end}
 						end
 					end

@@ -32,7 +32,7 @@ Instance browsing, object inspection, previews, serialization, and save/export t
 Script/code search, source indexing, dependency/reference views, and code security review.
 
 - `SmartDecompiler`
-- `ScriptViewer`
+- `Notepad`
 - `ClientIndex`
 - `CodeSearch` (`Search Center` in the menu)
 - `SmartSearch`

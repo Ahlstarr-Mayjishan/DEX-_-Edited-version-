@@ -4,7 +4,7 @@
 	Fast reference inspector for any selected Instance.
 ]]
 local Main,Lib,Apps,Settings
-local Explorer, ScriptViewer, ObjectLinks, RemoteUsageMap, Notebook
+local Explorer, Notepad, ObjectLinks, RemoteUsageMap, Notebook
 local API,RMD,env,service,plr,create,createSimple
 
 local function initDeps(data)
@@ -23,7 +23,7 @@ end
 
 local function initAfterMain()
 	Explorer = Apps.Explorer
-	ScriptViewer = Apps.ScriptViewer
+	Notepad = Apps.Notepad
 	ObjectLinks = Apps.ObjectLinks
 	RemoteUsageMap = Apps.RemoteUsageMap
 	Notebook = Apps.Notebook
@@ -107,8 +107,8 @@ local function main()
 					if Explorer.ViewNode then Explorer.ViewNode(node) end
 				end
 			end
-			if obj:IsA("LuaSourceContainer") and ScriptViewer then
-				ScriptViewer.ViewScript(obj)
+			if obj:IsA("LuaSourceContainer") and Notepad then
+				Notepad.ViewScript(obj)
 			elseif remoteClasses[obj.ClassName] and RemoteUsageMap then
 				RemoteUsageMap.ShowForRemote(obj)
 			elseif env.setclipboard then
@@ -148,7 +148,7 @@ local function main()
 						if Explorer.ViewNode then Explorer.ViewNode(node) end
 					end
 				end
-				if ScriptViewer then ScriptViewer.ViewScript(scriptObj) end
+				if Notepad then Notepad.ViewScript(scriptObj) end
 			end
 		end)
 	end

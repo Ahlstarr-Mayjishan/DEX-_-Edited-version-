@@ -7,6 +7,7 @@
 #include <winsock2.h>
 #include <ws2tcpip.h>
 #include <windows.h>
+#include <windowsx.h>
 #include <shellapi.h>
 #include <tlhelp32.h>
 #include <iostream>
@@ -44,9 +45,84 @@ const char* INDEX_MAGIC = "DEXPP_INDEX_V1";
 const wchar_t* INSTANCE_MUTEX_NAME = L"Local\\DEXPlusPlusHelperServer_8080";
 const wchar_t* DASHBOARD_URL = L"http://localhost:8080/";
 
+bool launch_native_dashboard();
+
 bool startup_dialogs_enabled() {
     char value[8];
     return GetEnvironmentVariableA("DEX_HELPER_NO_DIALOG", value, sizeof(value)) == 0;
+}
+
+bool env_flag_enabled(const char* name) {
+    char value[8] = {};
+    DWORD length = GetEnvironmentVariableA(name, value, sizeof(value));
+    if (length == 0 || length >= sizeof(value)) return false;
+    std::string normalized = value;
+    std::transform(normalized.begin(), normalized.end(), normalized.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+    return normalized == "1" || normalized == "true" || normalized == "yes";
+}
+
+std::wstring expand_path(const wchar_t* path) {
+    wchar_t expanded[MAX_PATH] = {};
+    DWORD length = ExpandEnvironmentStringsW(path, expanded, MAX_PATH);
+    if (length == 0 || length > MAX_PATH) return L"";
+    return expanded;
+}
+
+std::wstring find_app_browser() {
+    const wchar_t* candidates[] = {
+        L"%ProgramFiles(x86)%\\Microsoft\\Edge\\Application\\msedge.exe",
+        L"%ProgramFiles%\\Microsoft\\Edge\\Application\\msedge.exe",
+        L"%LocalAppData%\\Microsoft\\Edge\\Application\\msedge.exe",
+        L"%ProgramFiles%\\Google\\Chrome\\Application\\chrome.exe",
+        L"%ProgramFiles(x86)%\\Google\\Chrome\\Application\\chrome.exe",
+        L"%LocalAppData%\\Google\\Chrome\\Application\\chrome.exe",
+    };
+    for (const wchar_t* candidate : candidates) {
+        std::wstring path = expand_path(candidate);
+        if (!path.empty() && GetFileAttributesW(path.c_str()) != INVALID_FILE_ATTRIBUTES) {
+            return path;
+        }
+    }
+    return L"";
+}
+
+bool launch_dashboard_app() {
+    std::wstring browser = find_app_browser();
+    std::wstring local_app_data = expand_path(L"%LocalAppData%");
+    if (browser.empty() || local_app_data.empty()) return false;
+
+    std::wstring profile = local_app_data + L"\\DEXPlusPlus\\HelperApp";
+    CreateDirectoryW((local_app_data + L"\\DEXPlusPlus").c_str(), NULL);
+    CreateDirectoryW(profile.c_str(), NULL);
+
+    RECT work{};
+    SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+    int work_width = std::max(800L, work.right - work.left);
+    int work_height = std::max(600L, work.bottom - work.top);
+    int app_width = std::max(760, std::min(1100, work_width - 96));
+    int app_height = std::max(560, std::min(720, work_height - 72));
+    int app_x = work.left + std::max(0, (work_width - app_width) / 2);
+    int app_y = work.top + std::max(0, (work_height - app_height) / 2);
+
+    std::wstring parameters =
+        L"--app=http://localhost:8080/"
+        L" --user-data-dir=\"" + profile + L"\""
+        L" --no-first-run --disable-sync"
+        L" --window-size=" + std::to_wstring(app_width) + L"," + std::to_wstring(app_height)
+        + L" --window-position=" + std::to_wstring(app_x) + L"," + std::to_wstring(app_y);
+
+    SHELLEXECUTEINFOW launch{};
+    launch.cbSize = sizeof(launch);
+    launch.fMask = SEE_MASK_NOCLOSEPROCESS;
+    launch.lpVerb = L"open";
+    launch.lpFile = browser.c_str();
+    launch.lpParameters = parameters.c_str();
+    launch.nShow = SW_SHOWNORMAL;
+    if (!ShellExecuteExW(&launch)) return false;
+    if (launch.hProcess) CloseHandle(launch.hProcess);
+    return true;
 }
 
 void show_startup_notice(const wchar_t* message, bool open_dashboard) {
@@ -54,13 +130,22 @@ void show_startup_notice(const wchar_t* message, bool open_dashboard) {
     if (!startup_dialogs_enabled()) return;
 
     if (open_dashboard) {
-        ShellExecuteW(NULL, L"open", DASHBOARD_URL, NULL, NULL, SW_SHOWNORMAL);
+        if (!launch_dashboard_app()) {
+            ShellExecuteW(NULL, L"open", DASHBOARD_URL, NULL, NULL, SW_SHOWNORMAL);
+        }
     }
     MessageBoxW(NULL, message, L"DEX++ Helper", MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
 }
 
 void open_dashboard() {
     if (!startup_dialogs_enabled()) return;
+    if (!env_flag_enabled("DEX_HELPER_WEB_MODE") && launch_dashboard_app()) {
+        if (!env_flag_enabled("DEX_HELPER_KEEP_CONSOLE")) {
+            HWND console = GetConsoleWindow();
+            if (console) ShowWindow(console, SW_HIDE);
+        }
+        return;
+    }
     HINSTANCE result = ShellExecuteW(NULL, L"open", DASHBOARD_URL, NULL, NULL, SW_SHOWNORMAL);
     if (reinterpret_cast<INT_PTR>(result) <= 32) {
         std::cerr << "Could not open the helper dashboard automatically." << std::endl;
@@ -87,6 +172,14 @@ std::mutex g_tool_state_mutex;
 std::string g_tool_state_json = "{\"ok\":true,\"tools\":{},\"updatedAt\":0}";
 std::atomic<int> g_active_clients{0};
 std::atomic<bool> g_shutdown_requested{false};
+std::atomic<bool> g_dashboard_started{false};
+std::atomic<bool> g_dashboard_ready{false};
+HWND g_dashboard_host = NULL;
+HWND g_dashboard_view = NULL;
+HANDLE g_dashboard_browser_process = NULL;
+HANDLE g_dashboard_browser_job = NULL;
+DWORD g_dashboard_browser_pid = 0;
+const int DASHBOARD_TITLE_HEIGHT = 44;
 
 bool terminate_process_by_name(const wchar_t* process_name) {
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -144,6 +237,283 @@ void schedule_local_shutdown(bool clean_data) {
         }
         ExitProcess(0);
     }).detach();
+}
+
+BOOL CALLBACK find_browser_window(HWND window, LPARAM data) {
+    DWORD process_id = 0;
+    GetWindowThreadProcessId(window, &process_id);
+    if (process_id == g_dashboard_browser_pid && GetWindow(window, GW_OWNER) == NULL) {
+        *reinterpret_cast<HWND*>(data) = window;
+        return FALSE;
+    }
+    return TRUE;
+}
+
+void resize_dashboard_view(HWND host) {
+    if (!g_dashboard_view) return;
+    RECT client{};
+    GetClientRect(host, &client);
+    SetWindowPos(
+        g_dashboard_view,
+        NULL,
+        0,
+        DASHBOARD_TITLE_HEIGHT,
+        client.right,
+        std::max<LONG>(1, client.bottom - DASHBOARD_TITLE_HEIGHT),
+        SWP_NOZORDER | SWP_NOACTIVATE
+    );
+}
+
+LRESULT CALLBACK dashboard_window_proc(HWND window, UINT message, WPARAM w_param, LPARAM l_param) {
+    switch (message) {
+        case WM_NCCALCSIZE:
+            if (w_param) return 0;
+            break;
+        case WM_NCHITTEST: {
+            POINT cursor{GET_X_LPARAM(l_param), GET_Y_LPARAM(l_param)};
+            RECT rect{};
+            GetWindowRect(window, &rect);
+            int x = cursor.x - rect.left;
+            int y = cursor.y - rect.top;
+            const int border = 7;
+            if (y < border) {
+                if (x < border) return HTTOPLEFT;
+                if (x >= rect.right - rect.left - border) return HTTOPRIGHT;
+                return HTTOP;
+            }
+            if (y >= rect.bottom - rect.top - border) {
+                if (x < border) return HTBOTTOMLEFT;
+                if (x >= rect.right - rect.left - border) return HTBOTTOMRIGHT;
+                return HTBOTTOM;
+            }
+            if (x < border) return HTLEFT;
+            if (x >= rect.right - rect.left - border) return HTRIGHT;
+            if (y < DASHBOARD_TITLE_HEIGHT && x < rect.right - rect.left - 144) return HTCAPTION;
+            return HTCLIENT;
+        }
+        case WM_LBUTTONUP: {
+            int x = GET_X_LPARAM(l_param);
+            int y = GET_Y_LPARAM(l_param);
+            RECT client{};
+            GetClientRect(window, &client);
+            if (y >= 0 && y < DASHBOARD_TITLE_HEIGHT) {
+                if (x >= client.right - 48) {
+                    PostMessageW(window, WM_CLOSE, 0, 0);
+                } else if (x >= client.right - 96) {
+                    ShowWindow(window, IsZoomed(window) ? SW_RESTORE : SW_MAXIMIZE);
+                } else if (x >= client.right - 144) {
+                    ShowWindow(window, SW_MINIMIZE);
+                }
+            }
+            return 0;
+        }
+        case WM_LBUTTONDBLCLK: {
+            int x = GET_X_LPARAM(l_param);
+            int y = GET_Y_LPARAM(l_param);
+            RECT client{};
+            GetClientRect(window, &client);
+            if (y < DASHBOARD_TITLE_HEIGHT && x < client.right - 144) {
+                ShowWindow(window, IsZoomed(window) ? SW_RESTORE : SW_MAXIMIZE);
+            }
+            return 0;
+        }
+        case WM_SIZE:
+            resize_dashboard_view(window);
+            InvalidateRect(window, NULL, FALSE);
+            return 0;
+        case WM_GETMINMAXINFO: {
+            auto* info = reinterpret_cast<MINMAXINFO*>(l_param);
+            info->ptMinTrackSize.x = 760;
+            info->ptMinTrackSize.y = 560;
+            return 0;
+        }
+        case WM_ERASEBKGND:
+            return 1;
+        case WM_PAINT: {
+            PAINTSTRUCT paint{};
+            HDC dc = BeginPaint(window, &paint);
+            RECT client{};
+            GetClientRect(window, &client);
+            RECT title{0, 0, client.right, DASHBOARD_TITLE_HEIGHT};
+            HBRUSH background = CreateSolidBrush(RGB(12, 16, 21));
+            FillRect(dc, &title, background);
+            DeleteObject(background);
+
+            SetBkMode(dc, TRANSPARENT);
+            SetTextColor(dc, RGB(235, 240, 245));
+            HFONT font = CreateFontW(
+                -17, 0, 0, 0, FW_SEMIBOLD, FALSE, FALSE, FALSE,
+                DEFAULT_CHARSET, OUT_DEFAULT_PRECIS, CLIP_DEFAULT_PRECIS,
+                CLEARTYPE_QUALITY, DEFAULT_PITCH | FF_DONTCARE, L"Segoe UI"
+            );
+            HFONT old_font = static_cast<HFONT>(SelectObject(dc, font));
+            RECT brand{18, 0, client.right - 150, DASHBOARD_TITLE_HEIGHT};
+            DrawTextW(dc, L"DEX++  /  HELPER", -1, &brand, DT_LEFT | DT_VCENTER | DT_SINGLELINE);
+
+            SetTextColor(dc, RGB(151, 165, 180));
+            RECT minimize{client.right - 144, 0, client.right - 96, DASHBOARD_TITLE_HEIGHT};
+            RECT maximize{client.right - 96, 0, client.right - 48, DASHBOARD_TITLE_HEIGHT};
+            RECT close{client.right - 48, 0, client.right, DASHBOARD_TITLE_HEIGHT};
+            DrawTextW(dc, L"\x2212", -1, &minimize, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            DrawTextW(dc, IsZoomed(window) ? L"\x2750" : L"\x25A1", -1, &maximize, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+            DrawTextW(dc, L"\x00D7", -1, &close, DT_CENTER | DT_VCENTER | DT_SINGLELINE);
+
+            SelectObject(dc, old_font);
+            DeleteObject(font);
+            EndPaint(window, &paint);
+            return 0;
+        }
+        case WM_CLOSE:
+            DestroyWindow(window);
+            return 0;
+        case WM_DESTROY:
+            if (g_dashboard_view) {
+                PostMessageW(g_dashboard_view, WM_CLOSE, 0, 0);
+                g_dashboard_view = NULL;
+            }
+            if (g_dashboard_browser_process) {
+                CloseHandle(g_dashboard_browser_process);
+                g_dashboard_browser_process = NULL;
+            }
+            if (g_dashboard_browser_job) {
+                CloseHandle(g_dashboard_browser_job);
+                g_dashboard_browser_job = NULL;
+            }
+            g_dashboard_host = NULL;
+            PostQuitMessage(0);
+            if (g_dashboard_ready.exchange(false) && !g_shutdown_requested.load()) {
+                schedule_local_shutdown(false);
+            }
+            return 0;
+    }
+    return DefWindowProcW(window, message, w_param, l_param);
+}
+
+bool start_embedded_browser(HWND host) {
+    std::wstring browser = find_app_browser();
+    std::wstring local_app_data = expand_path(L"%LocalAppData%");
+    if (browser.empty() || local_app_data.empty()) return false;
+
+    std::wstring profile = local_app_data + L"\\DEXPlusPlus\\NativeHost_"
+        + std::to_wstring(GetCurrentProcessId());
+    CreateDirectoryW((local_app_data + L"\\DEXPlusPlus").c_str(), NULL);
+    CreateDirectoryW(profile.c_str(), NULL);
+    std::wstring parameters =
+        L"--app=http://localhost:8080/"
+        L" --user-data-dir=\"" + profile + L"\""
+        L" --no-first-run --disable-sync --disable-gpu"
+        L" --disable-features=msEdgeSidebarV2"
+        L" --window-position=120,80 --window-size=900,640";
+
+    SHELLEXECUTEINFOW launch{};
+    launch.cbSize = sizeof(launch);
+    launch.fMask = SEE_MASK_NOCLOSEPROCESS;
+    launch.lpVerb = L"open";
+    launch.lpFile = browser.c_str();
+    launch.lpParameters = parameters.c_str();
+    launch.nShow = SW_SHOWNORMAL;
+    if (!ShellExecuteExW(&launch) || !launch.hProcess) return false;
+
+    g_dashboard_browser_process = launch.hProcess;
+    g_dashboard_browser_pid = GetProcessId(launch.hProcess);
+    g_dashboard_browser_job = CreateJobObjectW(NULL, NULL);
+    if (g_dashboard_browser_job) {
+        JOBOBJECT_EXTENDED_LIMIT_INFORMATION limits{};
+        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
+        SetInformationJobObject(
+            g_dashboard_browser_job,
+            JobObjectExtendedLimitInformation,
+            &limits,
+            sizeof(limits)
+        );
+        if (!AssignProcessToJobObject(g_dashboard_browser_job, launch.hProcess)) {
+            CloseHandle(g_dashboard_browser_job);
+            g_dashboard_browser_job = NULL;
+        }
+    }
+    for (int attempt = 0; attempt < 80 && !g_dashboard_view; ++attempt) {
+        EnumWindows(find_browser_window, reinterpret_cast<LPARAM>(&g_dashboard_view));
+        if (!g_dashboard_view) std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    if (!g_dashboard_view) return false;
+
+    ShowWindow(g_dashboard_view, SW_RESTORE);
+    LONG_PTR style = GetWindowLongPtrW(g_dashboard_view, GWL_STYLE);
+    style &= ~(WS_POPUP | WS_CAPTION | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU);
+    style |= WS_CHILD | WS_VISIBLE;
+    SetWindowLongPtrW(g_dashboard_view, GWL_STYLE, style);
+    LONG_PTR ex_style = GetWindowLongPtrW(g_dashboard_view, GWL_EXSTYLE);
+    ex_style &= ~(WS_EX_APPWINDOW | WS_EX_WINDOWEDGE | WS_EX_CLIENTEDGE);
+    SetWindowLongPtrW(g_dashboard_view, GWL_EXSTYLE, ex_style);
+    SetParent(g_dashboard_view, host);
+    resize_dashboard_view(host);
+    SetWindowPos(g_dashboard_view, NULL, 0, DASHBOARD_TITLE_HEIGHT, 0, 0, SWP_NOSIZE | SWP_NOZORDER | SWP_FRAMECHANGED | SWP_SHOWWINDOW);
+    ShowWindow(g_dashboard_view, SW_SHOW);
+    SendMessageW(g_dashboard_view, WM_SIZE, 0, 0);
+    RedrawWindow(g_dashboard_view, NULL, NULL, RDW_INVALIDATE | RDW_ALLCHILDREN | RDW_UPDATENOW);
+    return true;
+}
+
+bool launch_native_dashboard() {
+    if (g_dashboard_started.exchange(true)) {
+        if (g_dashboard_host) {
+            ShowWindow(g_dashboard_host, SW_RESTORE);
+            SetForegroundWindow(g_dashboard_host);
+        }
+        return true;
+    }
+
+    std::thread([]() {
+        HINSTANCE instance = GetModuleHandleW(NULL);
+        WNDCLASSEXW window_class{};
+        window_class.cbSize = sizeof(window_class);
+        window_class.style = CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS;
+        window_class.lpfnWndProc = dashboard_window_proc;
+        window_class.hInstance = instance;
+        window_class.hCursor = LoadCursorW(NULL, IDC_ARROW);
+        window_class.hbrBackground = CreateSolidBrush(RGB(12, 16, 21));
+        window_class.lpszClassName = L"DEXPlusPlusNativeDashboard";
+        RegisterClassExW(&window_class);
+
+        RECT work{};
+        SystemParametersInfoW(SPI_GETWORKAREA, 0, &work, 0);
+        int work_width = work.right - work.left;
+        int work_height = work.bottom - work.top;
+        int width = std::max(760, std::min(1100, work_width - 96));
+        int height = std::max(560, std::min(720, work_height - 72));
+        int x = work.left + std::max(0, (work_width - width) / 2);
+        int y = work.top + std::max(0, (work_height - height) / 2);
+
+        g_dashboard_host = CreateWindowExW(
+            0,
+            window_class.lpszClassName,
+            L"DEX++ Helper",
+            WS_POPUP | WS_THICKFRAME | WS_MINIMIZEBOX | WS_MAXIMIZEBOX | WS_SYSMENU,
+            x, y, width, height,
+            NULL, NULL, instance, NULL
+        );
+        if (g_dashboard_host) {
+            ShowWindow(g_dashboard_host, SW_SHOW);
+            UpdateWindow(g_dashboard_host);
+        }
+        if (!g_dashboard_host || !start_embedded_browser(g_dashboard_host)) {
+            g_dashboard_started.store(false);
+            if (g_dashboard_host) DestroyWindow(g_dashboard_host);
+            ShellExecuteW(NULL, L"open", DASHBOARD_URL, NULL, NULL, SW_SHOWNORMAL);
+            return;
+        }
+
+        g_dashboard_ready.store(true);
+        UpdateWindow(g_dashboard_host);
+        SetForegroundWindow(g_dashboard_host);
+
+        MSG message{};
+        while (GetMessageW(&message, NULL, 0, 0) > 0) {
+            TranslateMessage(&message);
+            DispatchMessageW(&message);
+        }
+    }).detach();
+    return true;
 }
 
 // Fast C++ linear-time variable normalizer. This is a source cleanup pass, not a full deobfuscator.
@@ -892,6 +1262,27 @@ std::string search_index(const std::string& body) {
     return json.str();
 }
 
+std::string index_entry(const std::string& key) {
+    std::lock_guard<std::mutex> lock(g_script_index_mutex);
+    auto found = g_script_index.find(trim_copy(key));
+    if (found == g_script_index.end()) {
+        return "{\"ok\":false,\"error\":\"script not found\"}";
+    }
+
+    const IndexedScript& entry = found->second;
+    std::stringstream json;
+    json << "{\"ok\":true,"
+         << "\"key\":\"" << escape_json(entry.key) << "\","
+         << "\"path\":\"" << escape_json(entry.path) << "\","
+         << "\"name\":\"" << escape_json(entry.name) << "\","
+         << "\"className\":\"" << escape_json(entry.class_name) << "\","
+         << "\"updatedAt\":" << static_cast<long long>(entry.updated_at) << ","
+         << "\"source\":\"" << escape_json(entry.source) << "\","
+         << "\"analysis\":" << entry.analysis
+         << "}";
+    return json.str();
+}
+
 void write_field(std::ostream& out, const std::string& value) {
     out << value.size() << "\n";
     out.write(value.data(), static_cast<std::streamsize>(value.size()));
@@ -1296,23 +1687,26 @@ std::string helper_dashboard_html() {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DEX++ Helper</title>
 <style>
-:root{color-scheme:dark;--bg:#0b0e12;--panel:#151a20;--panel2:#1d242c;--line:#2b3440;--text:#edf2f7;--muted:#92a0af;--accent:#41a890;--accent2:#4cc38f;--warn:#d6a849;--bad:#e85b66}
-*{box-sizing:border-box}html{scroll-behavior:smooth}body{margin:0;background:radial-gradient(circle at 20% 0%,#16201f 0,#0b0e12 36rem),var(--bg);color:var(--text);font:14px/1.45 Segoe UI,Roboto,Arial,sans-serif}
-header{height:58px;display:flex;align-items:center;gap:14px;padding:0 18px;border-bottom:1px solid var(--line);background:rgba(9,12,16,.92);backdrop-filter:blur(12px);position:sticky;top:0;z-index:2}
-h1{font-size:17px;margin:0;font-weight:650}.pill{font:12px Consolas,monospace;color:var(--muted);border:1px solid var(--line);border-radius:4px;padding:3px 7px}
-main{display:grid;grid-template-columns:320px 1fr;min-height:calc(100vh - 58px)}
-aside{border-right:1px solid var(--line);background:#12151a;padding:14px;display:flex;flex-direction:column;gap:12px}
-section{padding:14px;display:grid;grid-template-rows:auto 1fr;gap:12px;min-width:0}
-.card{background:linear-gradient(180deg,rgba(255,255,255,.025),rgba(255,255,255,0)),var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px}.title{font-weight:650;margin-bottom:8px}
-.metrics{display:grid;grid-template-columns:1fr 1fr;gap:8px}.metric{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:9px}.metric b{display:block;font-size:18px}.metric span{color:var(--muted);font-size:12px}
-.stateRows{display:flex;flex-direction:column;gap:7px}.stateRow{background:var(--panel2);border:1px solid var(--line);border-radius:4px;padding:8px}.stateRow b{display:block;font-size:13px}.stateRow span{display:block;color:var(--muted);font:12px Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.bar{height:6px;background:#0f1115;border:1px solid var(--line);border-radius:999px;overflow:hidden;margin-top:6px}.bar i{display:block;height:100%;width:0;background:var(--accent2)}
-button,input,textarea{font:inherit}button{background:var(--panel2);border:1px solid var(--line);color:var(--text);border-radius:5px;height:30px;padding:0 10px;cursor:pointer;transition:border-color .18s,background .18s,transform .18s}button:hover{border-color:var(--accent);background:#25312f}button:active{transform:translateY(1px)}button.primary{background:var(--accent);border-color:var(--accent);color:white}.row{display:flex;gap:8px;align-items:center}.row>*{min-width:0}
-input,textarea{width:100%;background:#0f1115;border:1px solid var(--line);color:var(--text);border-radius:4px;padding:8px;outline:none}input:focus,textarea:focus{border-color:var(--accent)}textarea{min-height:160px;resize:vertical;font-family:Consolas,monospace}
-.toolbar{display:grid;grid-template-columns:1fr auto auto;gap:8px}.tabs{display:flex;gap:6px}.tab{height:30px}.tab.active{border-color:var(--accent);color:white}
-.results{overflow:auto;border:1px solid var(--line);border-radius:6px;background:#0e1013}.hit{padding:10px 12px;border-bottom:1px solid var(--line)}.hit:last-child{border-bottom:0}.hit h3{font-size:14px;margin:0 0 4px}.hit .meta{color:var(--muted);font:12px Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hit pre{margin:8px 0 0;white-space:pre-wrap;color:#cbd5e1;font:12px Consolas,monospace}
-.hero{display:grid;grid-template-columns:1.15fr .85fr;gap:12px}.statusGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:var(--muted);margin-right:6px}.dot.ok{background:var(--accent2);box-shadow:0 0 12px rgba(76,195,143,.7)}.dot.warn{background:var(--warn)}.dot.bad{background:var(--bad)}.codebox{font:12px Consolas,monospace;background:#0f1115;border:1px solid var(--line);border-radius:5px;padding:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.steps{display:grid;gap:8px}.step{display:grid;grid-template-columns:24px 1fr;gap:8px;align-items:start}.step b{display:grid;place-items:center;width:22px;height:22px;border-radius:5px;background:var(--panel2);border:1px solid var(--line);font:12px Consolas,monospace}
+:root{color-scheme:dark;--bg:#0b0f14;--sidebar:#10151b;--panel:#151b22;--panel2:#1a222b;--panel3:#202a34;--line:#2a3743;--line-soft:#202a34;--text:#f2f5f7;--muted:#8fa0b1;--accent:#52b69a;--accent2:#68c7a9;--warn:#d7ad56;--bad:#e66a73}
+*{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:#53606c transparent}*::-webkit-scrollbar{width:8px;height:8px}*::-webkit-scrollbar-track{background:transparent}*::-webkit-scrollbar-thumb{background:#4a5662;border:2px solid transparent;background-clip:padding-box;border-radius:8px}*::-webkit-scrollbar-thumb:hover{background:#65727e;border:2px solid transparent;background-clip:padding-box}*::-webkit-scrollbar-button{display:none;width:0;height:0}
+html{scroll-behavior:smooth}body{margin:0;background:var(--bg);color:var(--text);font:14px/1.48 "Segoe UI Variable","Segoe UI",Arial,sans-serif;letter-spacing:0}
+header{height:48px;display:flex;align-items:center;gap:9px;padding:0 16px;border-bottom:1px solid var(--line-soft);background:#0d1217;position:sticky;top:0;z-index:2}
+h1{display:none}.pill{font:11px Consolas,monospace;color:var(--muted);background:#141b22;border:1px solid var(--line);border-radius:4px;padding:4px 8px}
+main{display:grid;grid-template-columns:306px 1fr;height:calc(100vh - 48px);min-height:560px;overflow:hidden}
+aside{overflow:auto;border-right:1px solid var(--line-soft);background:var(--sidebar);padding:12px 12px 20px;display:flex;flex-direction:column;gap:2px}
+section{padding:14px 16px 16px;display:grid;grid-template-rows:auto auto minmax(0,1fr);gap:10px;min-width:0;min-height:0;overflow:hidden}
+.card{background:transparent;border:0;border-bottom:1px solid var(--line-soft);border-radius:0;padding:15px 8px 17px}.card:last-child{border-bottom:0}.title{font-size:12px;font-weight:650;color:#cbd5de;margin-bottom:10px;text-transform:uppercase}
+.metrics{display:grid;grid-template-columns:1fr 1fr;gap:7px}.metric{background:var(--panel);border:1px solid var(--line-soft);border-radius:6px;padding:10px 11px}.metric b{display:block;font-size:20px;font-weight:650;font-variant-numeric:tabular-nums}.metric span{color:var(--muted);font-size:11px}
+.stateRows{display:flex;flex-direction:column;gap:6px}.stateRow{background:var(--panel);border:1px solid var(--line-soft);border-radius:6px;padding:9px 10px}.stateRow b{display:block;font-size:13px;font-weight:600}.stateRow span{display:block;color:var(--muted);font:11px/1.45 Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.bar{height:4px;background:#0b1015;border-radius:4px;overflow:hidden;margin-top:7px}.bar i{display:block;height:100%;width:0;background:var(--accent2)}
+button,input,textarea{font:inherit;letter-spacing:0}button{background:var(--panel2);border:1px solid var(--line);color:#dce4ea;border-radius:5px;height:31px;padding:0 11px;cursor:pointer;transition:border-color .16s,background .16s,color .16s,transform .16s}button:hover{border-color:#465767;background:var(--panel3);color:white}button:active{transform:translateY(1px)}button:focus-visible,input:focus-visible,textarea:focus-visible{outline:2px solid rgba(82,182,154,.45);outline-offset:1px}button.primary{background:var(--accent);border-color:var(--accent);color:#07130f;font-weight:650}button.primary:hover{background:var(--accent2);border-color:var(--accent2)}.row{display:flex;gap:7px;align-items:center;flex-wrap:wrap}.row>*{min-width:0}
+input,textarea{width:100%;background:#0d1217;border:1px solid var(--line);color:var(--text);border-radius:5px;padding:8px 10px;outline:none}input:focus,textarea:focus{border-color:var(--accent)}textarea{min-height:150px;resize:vertical;font-family:Consolas,monospace}
+.toolbar{display:grid;grid-template-columns:1fr auto auto;gap:8px}.tabs{display:flex;gap:2px;border-bottom:1px solid var(--line-soft)}.tab{height:34px;border:0;border-bottom:2px solid transparent;border-radius:0;background:transparent;color:var(--muted)}.tab:hover{background:transparent;color:var(--text);border-color:#43515e}.tab.active{border-color:var(--accent);color:white;background:transparent}
+.results{min-height:0;overflow:auto;border:1px solid var(--line-soft);border-radius:6px;background:#0d1217}.hit{padding:11px 13px;border-bottom:1px solid var(--line-soft)}.hit:last-child{border-bottom:0}.hit h3{font-size:14px;margin:0 0 4px}.hit .meta{color:var(--muted);font:11px Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.hit pre{margin:8px 0 0;white-space:pre-wrap;color:#cbd5e1;font:12px Consolas,monospace}
+.searchWorkspace{display:grid;grid-template-columns:minmax(280px,40%) minmax(320px,1fr);min-height:0;overflow:hidden;border:1px solid var(--line-soft);border-radius:6px;background:#0d1217}.resultList{min-height:0;overflow:auto;border-right:1px solid var(--line-soft)}.resultSummary{position:sticky;top:0;z-index:1;padding:9px 12px;background:#131920;border-bottom:1px solid var(--line-soft);color:var(--muted);font:11px Consolas,monospace}.resultItem{display:block;width:100%;height:auto;padding:11px 12px;text-align:left;border:0;border-bottom:1px solid var(--line-soft);border-radius:0;background:transparent}.resultItem:hover{background:#151d24}.resultItem.active{background:#182822;box-shadow:inset 2px 0 var(--accent)}.resultItem h3{font-size:14px;margin:0 0 4px;color:var(--text)}.resultItem .meta{color:var(--muted);font:11px Consolas,monospace;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.resultInspector{min-width:0;min-height:0;display:grid;grid-template-rows:auto auto minmax(0,1fr);overflow:hidden}.inspectorHead{padding:12px 14px;border-bottom:1px solid var(--line-soft)}.inspectorHead h2{font-size:15px;margin:0 0 4px}.inspectorActions{display:flex;gap:7px;flex-wrap:wrap;padding:9px 12px;border-bottom:1px solid var(--line-soft);background:#11171d}.sourcePreview{margin:0;padding:14px;overflow:auto;white-space:pre;tab-size:4;color:#cbd5e1;font:12px/1.55 Consolas,monospace}.emptyInspector{display:grid;place-items:center;padding:28px;color:var(--muted);text-align:center}.actionStatus{margin-left:auto;align-self:center;color:var(--muted);font:11px Consolas,monospace}
+.hero{display:grid;grid-template-columns:1.15fr .85fr;gap:12px}.statusGrid{display:grid;grid-template-columns:repeat(3,1fr);gap:8px}.dot{display:inline-block;width:7px;height:7px;border-radius:50%;background:var(--muted);margin-right:6px}.dot.ok{background:var(--accent2);box-shadow:0 0 10px rgba(104,199,169,.4)}.dot.warn{background:var(--warn)}.dot.bad{background:var(--bad)}.codebox{font:11px Consolas,monospace;background:#0d1217;border:1px solid var(--line-soft);border-radius:5px;padding:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}.steps{display:grid;gap:9px}.step{display:grid;grid-template-columns:24px 1fr;gap:9px;align-items:start}.step b{display:grid;place-items:center;width:22px;height:22px;border-radius:4px;background:var(--panel2);border:1px solid var(--line);font:11px Consolas,monospace}
 .muted{color:var(--muted)}.ok{color:var(--accent2)}.warn{color:var(--warn)}.bad{color:var(--bad)}.hidden{display:none!important}
-@media(max-width:980px){main{grid-template-columns:1fr}.hero{grid-template-columns:1fr}aside{border-right:0;border-bottom:1px solid var(--line)}}
+@media(max-width:980px){main{grid-template-columns:1fr;height:auto;min-height:calc(100vh - 48px);overflow:visible}.hero{grid-template-columns:1fr}aside{border-right:0;border-bottom:1px solid var(--line);max-height:46vh}section{height:70vh}.searchWorkspace{grid-template-columns:minmax(240px,38%) 1fr}}
+@media(max-width:700px){.searchWorkspace{grid-template-columns:1fr}.resultList{border-right:0}.resultInspector{display:none}}
 </style>
 </head>
 <body>
@@ -1394,8 +1788,14 @@ input,textarea{width:100%;background:#0f1115;border:1px solid var(--line);color:
     <button class="tab" data-view="remoteView">Remotes</button>
     <button class="tab" data-view="helpView">First run guide</button>
   </div>
-  <div id="resultsView" class="results">
-    <div class="hit"><h3>Search waits for an index</h3><div class="meta">Run DEX in Roblox, open Search Center, then use Index Scripts. Results appear here after helper receives cached source.</div></div>
+  <div id="resultsView" class="searchWorkspace">
+    <div id="resultList" class="resultList">
+      <div class="resultSummary">Search waits for an index</div>
+      <div class="hit"><div class="meta">Run DEX in Roblox, open Search Center, then use Index Scripts.</div></div>
+    </div>
+    <div id="resultInspector" class="resultInspector">
+      <div class="emptyInspector">Select a script to preview its source and use quick actions.</div>
+    </div>
   </div>
   <div id="analysisView" class="results hidden"><div class="hit"><h3>No analysis yet</h3><pre id="analysisOut">Paste source and click Analyze or Normalize.</pre></div></div>
   <div id="remoteView" class="results hidden"><div class="hit"><h3>No remote analysis yet</h3><pre>Paste RemoteSpy logs and click Analyze Remotes.</pre></div></div>
@@ -1427,7 +1827,12 @@ function toolLine(name,t){const progress=t.Progress!==undefined?pct(t.Progress):
 function updateSession(j){const game=j.game||{};const session=j.session||{};const connected=session.state==='connected'||Object.keys(j.tools||{}).length>0;$('dexDot').className='dot '+(connected?'ok':'warn');$('dexPill').textContent=connected?'Roblox connected':'Roblox waiting';$('dexPill').className='pill '+(connected?'ok':'warn');$('gameName').textContent=game.Name||'Waiting for DEX';$('gameMeta').textContent=game.PlaceId?`Place ${game.PlaceId} | Game ${game.GameId||'?'} | Job ${game.JobId||'?'} | ${session.executor||'executor unknown'}`:'Run the loadstring in Roblox to connect this dashboard.';const cs=(j.tools||{})['Code Search'];if(cs&&cs.State){const progress=cs.Progress!==undefined?` ${pct(cs.Progress)}%`:'';$('indexTarget').textContent=`Code Search: ${cs.State}${progress}`;$('indexMeta').textContent=`${fmt(cs.Cached)} cached | ${fmt(cs.Decompiled)} new | ${fmt(cs.Skipped)} skipped | ${fmt(cs.Failed)} failed | helper ${fmt(cs.HelperIndexed)}`}else{$('indexTarget').textContent='No active index';$('indexMeta').textContent='Code Search > Index Scripts will show progress here.'}}
 async function refreshToolState(){try{const raw=await textFetch('/tool-state');const j=JSON.parse(raw);updateSession(j);const tools=j.tools||{};const names=Object.keys(tools).sort((a,b)=>Number(tools[b].UpdatedAt||0)-Number(tools[a].UpdatedAt||0));$('liveDex').innerHTML=names.length?names.slice(0,6).map(n=>toolLine(n,tools[n]||{})).join(''):'<div class="stateRow"><b>No live tool state</b><span>DEX has not reported yet.</span></div>'}catch(e){$('liveDex').innerHTML='<div class="stateRow"><b class="bad">Live state unavailable</b><span>'+esc(e.message)+'</span></div>'}}
 function show(view){document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.view===view));['resultsView','analysisView','remoteView','helpView'].forEach(id=>$(id).classList.toggle('hidden',id!==view))}
-function hitHtml(item){return `<div class="hit"><h3>${esc(item.name||item.key||'script')} <span class="muted">[${esc(item.className||'')}</span>]</h3><div class="meta">${esc(item.path||'')}</div><div class="meta">${esc(item.matchType||'hit')} score ${esc(item.score||0)} confidence ${Math.round(Number(item.confidence||0)*100)}%</div><pre>${esc(item.snippet||'')}</pre></div>`}
+let searchResults=[];
+let selectedResultKey='';
+function resultItemHtml(item){const active=item.key===selectedResultKey?' active':'';return `<button class="resultItem${active}" data-result-key="${esc(item.key||'')}"><h3>${esc(item.name||item.key||'script')} <span class="muted">[${esc(item.className||'')}]</span></h3><div class="meta">${esc(item.path||'')}</div><div class="meta">${esc(item.matchType||'hit')} | score ${esc(item.score||0)} | confidence ${Math.round(Number(item.confidence||0)*100)}%</div></button>`}
+function renderResultList(total){$('resultList').innerHTML=`<div class="resultSummary">${fmt(total)} result${Number(total)===1?'':'s'} | ${fmt(searchResults.length)} shown</div>`+(searchResults.map(resultItemHtml).join('')||'<div class="hit"><h3>No results</h3><div class="meta">Try a path, remote name, require target, or identifier.</div></div>');document.querySelectorAll('[data-result-key]').forEach(button=>button.onclick=()=>selectResult(button.dataset.resultKey))}
+async function copyText(text,button,label){try{await navigator.clipboard.writeText(text);button.textContent='Copied';setTimeout(()=>button.textContent=label,900)}catch(e){button.textContent='Copy failed';setTimeout(()=>button.textContent=label,900)}}
+async function selectResult(key){selectedResultKey=key;renderResultList(searchResults.length);const item=searchResults.find(entry=>entry.key===key);if(!item)return;$('resultInspector').innerHTML=`<div class="inspectorHead"><h2>${esc(item.name||item.key)}</h2><div class="meta">${esc(item.path||'')}</div></div><div class="inspectorActions"><button disabled>Loading source...</button></div><div class="emptyInspector">Reading the indexed script.</div>`;try{const raw=await textFetch('/index-entry',{method:'POST',headers:{'Content-Type':'text/plain'},body:key});const entry=JSON.parse(raw);if(!entry.ok)throw new Error(entry.error||'Script unavailable');$('resultInspector').innerHTML=`<div class="inspectorHead"><h2>${esc(entry.name||entry.key)} <span class="muted">[${esc(entry.className||'')}]</span></h2><div class="meta">${esc(entry.path||'')}</div></div><div class="inspectorActions"><button id="copyResultPath">Copy path</button><button id="copyResultSource" class="primary">Copy source</button><button id="analyzeResult">Analyze</button><span id="resultActionStatus" class="actionStatus">${fmt((entry.source||'').length)} chars</span></div><pre class="sourcePreview">${esc(entry.source||'-- Empty source')}</pre>`;$('copyResultPath').onclick=event=>copyText(entry.path||'',event.currentTarget,'Copy path');$('copyResultSource').onclick=event=>copyText(entry.source||'',event.currentTarget,'Copy source');$('analyzeResult').onclick=()=>{show('analysisView');$('sourceBox').value=entry.source||'';$('analyze').click()}}catch(e){$('resultInspector').innerHTML=`<div class="emptyInspector"><div><b class="bad">Could not load script</b><br>${esc(e.message)}</div></div>`}}
 function remoteHtml(item){const methods=Object.entries(item.methods||{}).map(([k,v])=>`${k}:${v}`).join(' ');const flags=(item.flags||[]).join(', ')||'none';const samples=(item.samples||[]).map(s=>`- ${s}`).join('\n');return `<div class="hit"><h3>${esc(item.path)} <span class="${Number(item.risk||0)>0?'warn':'ok'}">risk ${esc(item.risk||0)}</span></h3><div class="meta">calls ${esc(item.calls||0)} | out ${esc(item.outgoing||0)} | in ${esc(item.incoming||0)} | ${esc(methods)}</div><div class="meta">flags: ${esc(flags)}</div><pre>${esc(samples||'no args sample')}</pre></div>`}
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 $('refresh').onclick=refreshStatus;
@@ -1438,8 +1843,8 @@ $('stopLocal').onclick=async()=>{if(!confirm('Stop DEX++ Helper and Potassium De
 $('cleanLocal').onclick=async()=>{if(!confirm('Delete helper index and logs, then stop local services? DEX source cache inside the executor workspace is not deleted.'))return;try{await textFetch('/clean-local',{method:'POST'});$('cleanLocal').textContent='Cleaning...';setStatus('cleaning','warn')}catch(e){$('cleanLocal').textContent='Clean failed'}};
 $('load').onclick=async()=>{await textFetch('/index-load',{method:'POST'});refreshStatus()};
 $('save').onclick=async()=>{await textFetch('/index-save',{method:'POST'});refreshStatus()};
-$('clear').onclick=async()=>{if(confirm('Clear helper index?')){await textFetch('/index-clear',{method:'POST'});refreshStatus();$('resultsView').innerHTML='<div class="hit"><h3>Index cleared</h3></div>'}};
-$('search').onclick=async()=>{const q=$('query').value.trim();if(!q)return;show('resultsView');$('resultsView').innerHTML='<div class="hit"><h3>Searching...</h3></div>';try{const raw=await textFetch('/search-source',{method:'POST',headers:{'Content-Type':'text/plain'},body:'120\n'+q});const j=JSON.parse(raw);$('resultsView').innerHTML=(j.results||[]).map(hitHtml).join('')||'<div class="hit"><h3>No results</h3></div>';refreshStatus()}catch(e){$('resultsView').innerHTML='<div class="hit"><h3 class="bad">Search failed</h3><pre>'+esc(e.message)+'</pre></div>'}};
+$('clear').onclick=async()=>{if(confirm('Clear helper index?')){await textFetch('/index-clear',{method:'POST'});refreshStatus();searchResults=[];selectedResultKey='';renderResultList(0);$('resultInspector').innerHTML='<div class="emptyInspector">Index cleared.</div>'}};
+$('search').onclick=async()=>{const q=$('query').value.trim();if(!q)return;show('resultsView');searchResults=[];selectedResultKey='';$('resultList').innerHTML='<div class="resultSummary">Searching...</div>';$('resultInspector').innerHTML='<div class="emptyInspector">Results will open here without moving the guide or page layout.</div>';try{const raw=await textFetch('/search-source',{method:'POST',headers:{'Content-Type':'text/plain'},body:'120\n'+q});const j=JSON.parse(raw);searchResults=j.results||[];renderResultList(j.total||searchResults.length);if(searchResults.length)selectResult(searchResults[0].key);refreshStatus()}catch(e){$('resultList').innerHTML='<div class="hit"><h3 class="bad">Search failed</h3><pre>'+esc(e.message)+'</pre></div>'}};
 $('query').addEventListener('keydown',e=>{if(e.key==='Enter')$('search').click()});
 $('analyze').onclick=async()=>{show('analysisView');try{$('analysisOut').textContent=await textFetch('/analyze-source-auto',{method:'POST',headers:{'Content-Type':'text/plain'},body:$('sourceBox').value})}catch(e){$('analysisOut').textContent=e.message}};
 $('normalize').onclick=async()=>{show('analysisView');try{$('analysisOut').textContent=await textFetch('/normalize-source',{method:'POST',headers:{'Content-Type':'text/plain'},body:$('sourceBox').value})}catch(e){$('analysisOut').textContent=e.message}};
@@ -1770,6 +2175,8 @@ void handle_client(SOCKET ClientSocket) {
             send_response(ClientSocket, 200, "OK", index_source_payload(body));
         } else if (path == "/search-source" && method == "POST") {
             send_response(ClientSocket, 200, "OK", search_index(body));
+        } else if (path == "/index-entry" && method == "POST") {
+            send_response(ClientSocket, 200, "OK", index_entry(body), "application/json");
         } else if (path == "/index-status" && method == "GET") {
             send_response(ClientSocket, 200, "OK", index_status());
         } else if (path == "/tool-state" && method == "GET") {
