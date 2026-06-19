@@ -115,6 +115,26 @@ local function main()
 		return line
 	end
 
+	local function getNodeCenter(frame)
+		if not listFrame then return Vector2.zero end
+		local canvasTopLeft = frame.AbsolutePosition - listFrame.AbsolutePosition + listFrame.CanvasPosition
+		return canvasTopLeft + frame.AbsoluteSize / 2
+	end
+
+	local function getNodeEdgePoint(frame, toward)
+		local center = getNodeCenter(frame)
+		local delta = toward - center
+		local absX, absY = math.abs(delta.X), math.abs(delta.Y)
+		if absX < 0.001 and absY < 0.001 then return center end
+
+		local halfWidth = math.max(1, frame.AbsoluteSize.X / 2)
+		local halfHeight = math.max(1, frame.AbsoluteSize.Y / 2)
+		local xScale = absX > 0 and halfWidth / absX or math.huge
+		local yScale = absY > 0 and halfHeight / absY or math.huge
+		local scale = math.min(xScale, yScale)
+		return center + delta * scale
+	end
+
 	local function updateLines()
 		for _, line in ipairs(edgeLines) do
 			line:Destroy()
@@ -128,17 +148,10 @@ local function main()
 			local fFrame = nodeFrames[edge.fromKey]
 			local tFrame = nodeFrames[edge.toKey]
 			if fFrame and tFrame then
-				local fromCenterX = fFrame.Position.X.Offset + fFrame.Size.X.Offset / 2
-				local toCenterX = tFrame.Position.X.Offset + tFrame.Size.X.Offset / 2
-				local direction = toCenterX >= fromCenterX and 1 or -1
-				local p1 = Vector2.new(
-					fromCenterX + direction * fFrame.Size.X.Offset / 2,
-					fFrame.Position.Y.Offset + fFrame.Size.Y.Offset / 2
-				)
-				local p2 = Vector2.new(
-					toCenterX - direction * tFrame.Size.X.Offset / 2,
-					tFrame.Position.Y.Offset + tFrame.Size.Y.Offset / 2
-				)
+				local fromCenter = getNodeCenter(fFrame)
+				local toCenter = getNodeCenter(tFrame)
+				local p1 = getNodeEdgePoint(fFrame, toCenter)
+				local p2 = getNodeEdgePoint(tFrame, fromCenter)
 				local line = drawLine(p1, p2, edge.fromKey == focusKey)
 				if line then
 					table.insert(edgeLines, line)
@@ -525,7 +538,7 @@ local function main()
 			end
 			listFrame.CanvasSize = UDim2.new(0, maxX, 0, maxY)
 
-			updateLines()
+			task.defer(updateLines)
 			statusLabel.Text = ("Graph built: %d nodes, %d unique links, %d remotes. Select or hover a node to show links."):format(scanned, #edgesData, remoteHits)
 		end)
 	end
@@ -560,23 +573,23 @@ local function main()
 		local sideLayout = Instance.new("UIListLayout", sidePanel)
 		sideLayout.Padding = UDim.new(0,6)
 
-		sideTitle = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,20), Text="Script Name", TextColor3=Settings.Theme.Text, TextSize=14, TextXAlignment=Enum.TextXAlignment.Left, Parent=sidePanel})
-		sideRole = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,16), Text="Role: Core Logic", TextColor3=Settings.Theme.Important, TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, Parent=sidePanel})
-		sideMeta = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSans, Size=UDim2.new(1,0,0,16), Text="Class & ID", TextColor3=Settings.Theme.PlaceholderText, TextSize=11, TextXAlignment=Enum.TextXAlignment.Left, Parent=sidePanel})
+		sideTitle = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,20), Text="Script Name", TextColor3=Settings.Theme.Text, TextSize=14, TextXAlignment=Enum.TextXAlignment.Left, ZIndex=51, Parent=sidePanel})
+		sideRole = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,16), Text="Role: Core Logic", TextColor3=Settings.Theme.Important, TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, ZIndex=51, Parent=sidePanel})
+		sideMeta = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSans, Size=UDim2.new(1,0,0,16), Text="Class & ID", TextColor3=Settings.Theme.PlaceholderText, TextSize=11, TextXAlignment=Enum.TextXAlignment.Left, ZIndex=51, Parent=sidePanel})
 		
-		createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,16), Text="Path:", TextColor3=Settings.Theme.PlaceholderText, TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, Parent=sidePanel})
-		sidePath = createSimple("TextBox",{BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, Font=Enum.Font.Code, Size=UDim2.new(1,0,0,40), TextEditable=false, ClearTextOnFocus=false, TextWrapped=true, TextSize=10, TextColor3=Settings.Theme.Text, TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top, Parent=sidePanel})
+		createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,16), Text="Path:", TextColor3=Settings.Theme.PlaceholderText, TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, ZIndex=51, Parent=sidePanel})
+		sidePath = createSimple("TextBox",{BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, Font=Enum.Font.Code, Size=UDim2.new(1,0,0,40), TextEditable=false, ClearTextOnFocus=false, TextWrapped=true, TextSize=10, TextColor3=Settings.Theme.Text, TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top, ZIndex=51, Parent=sidePanel})
 		Instance.new("UIPadding", sidePath).PaddingLeft = UDim.new(0,4)
 
-		createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,16), Text="Required By (Incoming):", TextColor3=Settings.Theme.PlaceholderText, TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, Parent=sidePanel})
-		sideIncoming = createSimple("TextBox",{BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, Font=Enum.Font.SourceSans, Size=UDim2.new(1,0,0,50), TextEditable=false, ClearTextOnFocus=false, TextWrapped=true, TextSize=11, TextColor3=Settings.Theme.Text, TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top, Parent=sidePanel})
+		createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,16), Text="Required By (Incoming):", TextColor3=Settings.Theme.PlaceholderText, TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, ZIndex=51, Parent=sidePanel})
+		sideIncoming = createSimple("TextBox",{BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, Font=Enum.Font.SourceSans, Size=UDim2.new(1,0,0,50), TextEditable=false, ClearTextOnFocus=false, TextWrapped=true, TextSize=11, TextColor3=Settings.Theme.Text, TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top, ZIndex=51, Parent=sidePanel})
 		Instance.new("UIPadding", sideIncoming).PaddingLeft = UDim.new(0,4)
 
-		createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,16), Text="Requires (Outgoing):", TextColor3=Settings.Theme.PlaceholderText, TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, Parent=sidePanel})
-		sideOutgoing = createSimple("TextBox",{BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, Font=Enum.Font.SourceSans, Size=UDim2.new(1,0,0,50), TextEditable=false, ClearTextOnFocus=false, TextWrapped=true, TextSize=11, TextColor3=Settings.Theme.Text, TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top, Parent=sidePanel})
+		createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,16), Text="Requires (Outgoing):", TextColor3=Settings.Theme.PlaceholderText, TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, ZIndex=51, Parent=sidePanel})
+		sideOutgoing = createSimple("TextBox",{BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, Font=Enum.Font.SourceSans, Size=UDim2.new(1,0,0,50), TextEditable=false, ClearTextOnFocus=false, TextWrapped=true, TextSize=11, TextColor3=Settings.Theme.Text, TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top, ZIndex=51, Parent=sidePanel})
 		Instance.new("UIPadding", sideOutgoing).PaddingLeft = UDim.new(0,4)
 
-		local closeSideBtn = createSimple("TextButton",{AutoButtonColor=false, BackgroundColor3=Settings.Theme.Button, BorderSizePixel=0, Font=Enum.Font.SourceSans, Size=UDim2.new(1,0,0,24), Text="Close Inspector", TextColor3=Settings.Theme.Text, TextSize=13, Parent=sidePanel})
+		local closeSideBtn = createSimple("TextButton",{AutoButtonColor=false, BackgroundColor3=Settings.Theme.Button, BorderSizePixel=0, Font=Enum.Font.SourceSans, Size=UDim2.new(1,0,0,24), Text="Close Inspector", TextColor3=Settings.Theme.Text, TextSize=13, ZIndex=51, Parent=sidePanel})
 		closeSideBtn.MouseButton1Click:Connect(function() sidePanel.Visible = false end)
 		Lib.ButtonAnim(closeSideBtn,{Mode=2, StartColor=Settings.Theme.Button, HoverColor=Settings.Theme.ButtonHover, PressColor=Settings.Theme.ButtonPress})
 

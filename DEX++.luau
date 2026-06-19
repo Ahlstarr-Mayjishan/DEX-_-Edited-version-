@@ -1616,14 +1616,35 @@ Main = (function()
 			return ("%08x"):format(hash)
 		end
 
-		local function isCacheableSource(source)
-			if type(source) ~= "string" or source:match("%S") == nil then return false end
+		local decompileFailures = {
+			{Code = "empty_source", Text = "empty source", Patterns = {"empty bytecode", "empty bytecode payload", "empty response"}},
+			{Code = "deserialization", Text = "bytecode deserialization or parsing failed", Patterns = {"deserialization failed", "parsing error", "code: eof", "unexpected end of file"}},
+			{Code = "unsupported_version", Text = "unsupported Luau bytecode version", Patterns = {"unsupported bytecode version"}},
+			{Code = "bytecode_unavailable", Text = "executor could not extract script bytecode", Patterns = {"getscriptbytecode is not supported", "failed to get script bytecode"}},
+			{Code = "transport", Text = "decompiler connection or HTTP request failed", Patterns = {"error occurred while requesting", "could not connect to potassium decompiler", "failed to send request", "incomplete request send", "invalid http response", "non-200 status"}},
+			{Code = "decompiler_error", Text = "decompiler rejected the bytecode", Patterns = {"failed to decompile", "decompile failed:", "-- error:"}},
+		}
+
+		local function getDecompileFailure(source)
+			if type(source) ~= "string" or source:match("%S") == nil then
+				return {Code = "empty_source", Text = "decompiler returned no source"}
+			end
 			local lowered = source:lower()
-			if lowered:match("failed to decompile") or lowered:match("empty bytecode") then return false end
-			if lowered:match("getscriptbytecode is not supported") or lowered:match("failed to get script bytecode") then return false end
-			if lowered:match("error occurred while requesting") then return false end
-			return true
+			for _, failure in ipairs(decompileFailures) do
+				for _, pattern in ipairs(failure.Patterns) do
+					if lowered:find(pattern, 1, true) then
+						return {Code = failure.Code, Text = failure.Text, Raw = source}
+					end
+				end
+			end
+			return nil
 		end
+
+		local function isCacheableSource(source)
+			return getDecompileFailure(source) == nil
+		end
+		env.GetDecompileFailure = getDecompileFailure
+		env.IsValidDecompileSource = isCacheableSource
 
 		local function createDecompileCache()
 			local cache = {}
@@ -1780,10 +1801,10 @@ Main = (function()
 				if not env.isfile(path) then return nil, "Cached source file is missing." end
 
 				local success, source = pcall(env.readfile, path)
-				if success and type(source) == "string" then
+				if success and isCacheableSource(source) then
 					return source, entry
 				end
-				return nil, "Unable to read cached source."
+				return nil, "Cached source is empty or contains a decompiler failure."
 			end
 			cache.Write = function(script_instance, source)
 				if not isCacheableSource(source) then return false end
@@ -1834,12 +1855,8 @@ Main = (function()
 
 			if nativeDecompile and tryNative then
 				local success, result = pcall(nativeDecompile, script_instance, ...)
-				-- Check if the native decompiler succeeded and actually returned valid code
-				if success and result and tostring(result) ~= "" then
-					local strResult = tostring(result)
-					if not strResult:match("Failed to decompile") and not strResult:match("Empty bytecode") then
-						return strResult
-					end
+				if success and isCacheableSource(result) then
+					return tostring(result)
 				end
 			end
 
@@ -1873,7 +1890,7 @@ Main = (function()
 								script = encodedBytecode
 							})
 						})
-						if s and res and res.StatusCode == 200 then
+						if s and res and res.StatusCode == 200 and isCacheableSource(res.Body) then
 							return res.Body
 						end
 					end
@@ -1885,7 +1902,7 @@ Main = (function()
 				-- If bytecode isn't supported but we had native decompiler, try it as absolute last resort
 				if nativeDecompile then
 					local success, result = pcall(nativeDecompile, script_instance, ...)
-					if success and result then
+					if success and isCacheableSource(result) then
 						return tostring(result)
 					end
 				end

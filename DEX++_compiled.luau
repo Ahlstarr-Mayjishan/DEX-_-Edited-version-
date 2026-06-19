@@ -17489,18 +17489,27 @@ end,
     		else
     			local oldtick = tick()
     			s,source = pcall(env.decompile or function() end,scr)
-    			if s and type(source) == "string" then
+    			if s and type(source) == "string" and (not env.IsValidDecompileSource or env.IsValidDecompileSource(source)) then
     				rawSourceCache = source
     			else
     				rawSourceCache = ""
     			end
     		end
     
-    		if not s or not source or source == "" then
+    		local failure
+    		if env.GetDecompileFailure then
+    			local ok, result = pcall(env.GetDecompileFailure, source)
+    			if ok then failure = result end
+    		end
+    		local validSource = s and type(source) == "string" and source ~= ""
+    			and failure == nil
+    			and (not env.IsValidDecompileSource or env.IsValidDecompileSource(source))
+    		if not validSource then
+    			local failureDetail = type(source) == "string" and source:match("%S") and source or nil
     			PreviousScr = nil
     			rawSourceCache = ""
     			dumpbtn.TextColor3 = Color3.new(0.5,0.5,0.5)
-    			source = "-- Unable to view source.\n"
+    			source = "-- Decompile failed.\n"
     			
     			if Settings.ScriptViewer.ShowMoreInfo then
     				source = source .. "-- Script Path: "..getPath(scr).."\n"
@@ -17508,10 +17517,15 @@ end,
     					source = source .. "-- Reason: The script is not running on client. (attempt to decompile ServerScript or 'Script' with RunContext Server)\n"
     				elseif not env.isdecompile() then
     					source = source .. "-- Reason: Your executor does not support decompiler. (missing 'decompile' function and 'getscriptbytecode' function as fallback)\n"
+    				elseif failure then
+    					source = source .. "-- Reason [" .. tostring(failure.Code or "decompiler_error") .. "]: " .. tostring(failure.Text or "Decompiler failed.") .. "\n"
     				else
-    					source = source .. "-- Reason: Unknown Error.\n"
+    					source = source .. "-- Reason: The decompiler rejected or could not deserialize this bytecode.\n"
     				end
     				source = source .. "-- Executor: "..executorName.." ("..executorVersion..")"
+    				if failureDetail then
+    					source = source .. "\n\n-- Raw decompiler response:\n--[[\n" .. failureDetail .. "\n--]]"
+    				end
     			end
     		else
     			PreviousScr = scr
@@ -18032,6 +18046,10 @@ end,
     	end
     
     	local function isFailureSource(source)
+    		if env.GetDecompileFailure then
+    			local ok, failure = pcall(env.GetDecompileFailure, source)
+    			if ok then return failure ~= nil end
+    		end
     		if not sourceHasText(source) then return true end
     		local lowered = tostring(source):lower()
     		return lowered:find("failed to decompile", 1, true) ~= nil
@@ -19509,6 +19527,26 @@ end,
     		return line
     	end
     
+    	local function getNodeCenter(frame)
+    		if not listFrame then return Vector2.zero end
+    		local canvasTopLeft = frame.AbsolutePosition - listFrame.AbsolutePosition + listFrame.CanvasPosition
+    		return canvasTopLeft + frame.AbsoluteSize / 2
+    	end
+    
+    	local function getNodeEdgePoint(frame, toward)
+    		local center = getNodeCenter(frame)
+    		local delta = toward - center
+    		local absX, absY = math.abs(delta.X), math.abs(delta.Y)
+    		if absX < 0.001 and absY < 0.001 then return center end
+    
+    		local halfWidth = math.max(1, frame.AbsoluteSize.X / 2)
+    		local halfHeight = math.max(1, frame.AbsoluteSize.Y / 2)
+    		local xScale = absX > 0 and halfWidth / absX or math.huge
+    		local yScale = absY > 0 and halfHeight / absY or math.huge
+    		local scale = math.min(xScale, yScale)
+    		return center + delta * scale
+    	end
+    
     	local function updateLines()
     		for _, line in ipairs(edgeLines) do
     			line:Destroy()
@@ -19522,17 +19560,10 @@ end,
     			local fFrame = nodeFrames[edge.fromKey]
     			local tFrame = nodeFrames[edge.toKey]
     			if fFrame and tFrame then
-    				local fromCenterX = fFrame.Position.X.Offset + fFrame.Size.X.Offset / 2
-    				local toCenterX = tFrame.Position.X.Offset + tFrame.Size.X.Offset / 2
-    				local direction = toCenterX >= fromCenterX and 1 or -1
-    				local p1 = Vector2.new(
-    					fromCenterX + direction * fFrame.Size.X.Offset / 2,
-    					fFrame.Position.Y.Offset + fFrame.Size.Y.Offset / 2
-    				)
-    				local p2 = Vector2.new(
-    					toCenterX - direction * tFrame.Size.X.Offset / 2,
-    					tFrame.Position.Y.Offset + tFrame.Size.Y.Offset / 2
-    				)
+    				local fromCenter = getNodeCenter(fFrame)
+    				local toCenter = getNodeCenter(tFrame)
+    				local p1 = getNodeEdgePoint(fFrame, toCenter)
+    				local p2 = getNodeEdgePoint(tFrame, fromCenter)
     				local line = drawLine(p1, p2, edge.fromKey == focusKey)
     				if line then
     					table.insert(edgeLines, line)
@@ -19919,7 +19950,7 @@ end,
     			end
     			listFrame.CanvasSize = UDim2.new(0, maxX, 0, maxY)
     
-    			updateLines()
+    			task.defer(updateLines)
     			statusLabel.Text = ("Graph built: %d nodes, %d unique links, %d remotes. Select or hover a node to show links."):format(scanned, #edgesData, remoteHits)
     		end)
     	end
@@ -19954,23 +19985,23 @@ end,
     		local sideLayout = Instance.new("UIListLayout", sidePanel)
     		sideLayout.Padding = UDim.new(0,6)
     
-    		sideTitle = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,20), Text="Script Name", TextColor3=Settings.Theme.Text, TextSize=14, TextXAlignment=Enum.TextXAlignment.Left, Parent=sidePanel})
-    		sideRole = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,16), Text="Role: Core Logic", TextColor3=Settings.Theme.Important, TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, Parent=sidePanel})
-    		sideMeta = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSans, Size=UDim2.new(1,0,0,16), Text="Class & ID", TextColor3=Settings.Theme.PlaceholderText, TextSize=11, TextXAlignment=Enum.TextXAlignment.Left, Parent=sidePanel})
+    		sideTitle = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,20), Text="Script Name", TextColor3=Settings.Theme.Text, TextSize=14, TextXAlignment=Enum.TextXAlignment.Left, ZIndex=51, Parent=sidePanel})
+    		sideRole = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,16), Text="Role: Core Logic", TextColor3=Settings.Theme.Important, TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, ZIndex=51, Parent=sidePanel})
+    		sideMeta = createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSans, Size=UDim2.new(1,0,0,16), Text="Class & ID", TextColor3=Settings.Theme.PlaceholderText, TextSize=11, TextXAlignment=Enum.TextXAlignment.Left, ZIndex=51, Parent=sidePanel})
     		
-    		createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,16), Text="Path:", TextColor3=Settings.Theme.PlaceholderText, TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, Parent=sidePanel})
-    		sidePath = createSimple("TextBox",{BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, Font=Enum.Font.Code, Size=UDim2.new(1,0,0,40), TextEditable=false, ClearTextOnFocus=false, TextWrapped=true, TextSize=10, TextColor3=Settings.Theme.Text, TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top, Parent=sidePanel})
+    		createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,16), Text="Path:", TextColor3=Settings.Theme.PlaceholderText, TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, ZIndex=51, Parent=sidePanel})
+    		sidePath = createSimple("TextBox",{BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, Font=Enum.Font.Code, Size=UDim2.new(1,0,0,40), TextEditable=false, ClearTextOnFocus=false, TextWrapped=true, TextSize=10, TextColor3=Settings.Theme.Text, TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top, ZIndex=51, Parent=sidePanel})
     		Instance.new("UIPadding", sidePath).PaddingLeft = UDim.new(0,4)
     
-    		createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,16), Text="Required By (Incoming):", TextColor3=Settings.Theme.PlaceholderText, TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, Parent=sidePanel})
-    		sideIncoming = createSimple("TextBox",{BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, Font=Enum.Font.SourceSans, Size=UDim2.new(1,0,0,50), TextEditable=false, ClearTextOnFocus=false, TextWrapped=true, TextSize=11, TextColor3=Settings.Theme.Text, TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top, Parent=sidePanel})
+    		createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,16), Text="Required By (Incoming):", TextColor3=Settings.Theme.PlaceholderText, TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, ZIndex=51, Parent=sidePanel})
+    		sideIncoming = createSimple("TextBox",{BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, Font=Enum.Font.SourceSans, Size=UDim2.new(1,0,0,50), TextEditable=false, ClearTextOnFocus=false, TextWrapped=true, TextSize=11, TextColor3=Settings.Theme.Text, TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top, ZIndex=51, Parent=sidePanel})
     		Instance.new("UIPadding", sideIncoming).PaddingLeft = UDim.new(0,4)
     
-    		createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,16), Text="Requires (Outgoing):", TextColor3=Settings.Theme.PlaceholderText, TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, Parent=sidePanel})
-    		sideOutgoing = createSimple("TextBox",{BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, Font=Enum.Font.SourceSans, Size=UDim2.new(1,0,0,50), TextEditable=false, ClearTextOnFocus=false, TextWrapped=true, TextSize=11, TextColor3=Settings.Theme.Text, TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top, Parent=sidePanel})
+    		createSimple("TextLabel",{BackgroundTransparency=1, Font=Enum.Font.SourceSansBold, Size=UDim2.new(1,0,0,16), Text="Requires (Outgoing):", TextColor3=Settings.Theme.PlaceholderText, TextSize=12, TextXAlignment=Enum.TextXAlignment.Left, ZIndex=51, Parent=sidePanel})
+    		sideOutgoing = createSimple("TextBox",{BackgroundColor3=Settings.Theme.Main2, BorderSizePixel=0, Font=Enum.Font.SourceSans, Size=UDim2.new(1,0,0,50), TextEditable=false, ClearTextOnFocus=false, TextWrapped=true, TextSize=11, TextColor3=Settings.Theme.Text, TextXAlignment=Enum.TextXAlignment.Left, TextYAlignment=Enum.TextYAlignment.Top, ZIndex=51, Parent=sidePanel})
     		Instance.new("UIPadding", sideOutgoing).PaddingLeft = UDim.new(0,4)
     
-    		local closeSideBtn = createSimple("TextButton",{AutoButtonColor=false, BackgroundColor3=Settings.Theme.Button, BorderSizePixel=0, Font=Enum.Font.SourceSans, Size=UDim2.new(1,0,0,24), Text="Close Inspector", TextColor3=Settings.Theme.Text, TextSize=13, Parent=sidePanel})
+    		local closeSideBtn = createSimple("TextButton",{AutoButtonColor=false, BackgroundColor3=Settings.Theme.Button, BorderSizePixel=0, Font=Enum.Font.SourceSans, Size=UDim2.new(1,0,0,24), Text="Close Inspector", TextColor3=Settings.Theme.Text, TextSize=13, ZIndex=51, Parent=sidePanel})
     		closeSideBtn.MouseButton1Click:Connect(function() sidePanel.Visible = false end)
     		Lib.ButtonAnim(closeSideBtn,{Mode=2, StartColor=Settings.Theme.Button, HoverColor=Settings.Theme.ButtonHover, PressColor=Settings.Theme.ButtonPress})
     
@@ -24559,14 +24590,35 @@ Main = (function()
 			return ("%08x"):format(hash)
 		end
 
-		local function isCacheableSource(source)
-			if type(source) ~= "string" or source:match("%S") == nil then return false end
+		local decompileFailures = {
+			{Code = "empty_source", Text = "empty source", Patterns = {"empty bytecode", "empty bytecode payload", "empty response"}},
+			{Code = "deserialization", Text = "bytecode deserialization or parsing failed", Patterns = {"deserialization failed", "parsing error", "code: eof", "unexpected end of file"}},
+			{Code = "unsupported_version", Text = "unsupported Luau bytecode version", Patterns = {"unsupported bytecode version"}},
+			{Code = "bytecode_unavailable", Text = "executor could not extract script bytecode", Patterns = {"getscriptbytecode is not supported", "failed to get script bytecode"}},
+			{Code = "transport", Text = "decompiler connection or HTTP request failed", Patterns = {"error occurred while requesting", "could not connect to potassium decompiler", "failed to send request", "incomplete request send", "invalid http response", "non-200 status"}},
+			{Code = "decompiler_error", Text = "decompiler rejected the bytecode", Patterns = {"failed to decompile", "decompile failed:", "-- error:"}},
+		}
+
+		local function getDecompileFailure(source)
+			if type(source) ~= "string" or source:match("%S") == nil then
+				return {Code = "empty_source", Text = "decompiler returned no source"}
+			end
 			local lowered = source:lower()
-			if lowered:match("failed to decompile") or lowered:match("empty bytecode") then return false end
-			if lowered:match("getscriptbytecode is not supported") or lowered:match("failed to get script bytecode") then return false end
-			if lowered:match("error occurred while requesting") then return false end
-			return true
+			for _, failure in ipairs(decompileFailures) do
+				for _, pattern in ipairs(failure.Patterns) do
+					if lowered:find(pattern, 1, true) then
+						return {Code = failure.Code, Text = failure.Text, Raw = source}
+					end
+				end
+			end
+			return nil
 		end
+
+		local function isCacheableSource(source)
+			return getDecompileFailure(source) == nil
+		end
+		env.GetDecompileFailure = getDecompileFailure
+		env.IsValidDecompileSource = isCacheableSource
 
 		local function createDecompileCache()
 			local cache = {}
@@ -24723,10 +24775,10 @@ Main = (function()
 				if not env.isfile(path) then return nil, "Cached source file is missing." end
 
 				local success, source = pcall(env.readfile, path)
-				if success and type(source) == "string" then
+				if success and isCacheableSource(source) then
 					return source, entry
 				end
-				return nil, "Unable to read cached source."
+				return nil, "Cached source is empty or contains a decompiler failure."
 			end
 			cache.Write = function(script_instance, source)
 				if not isCacheableSource(source) then return false end
@@ -24777,12 +24829,8 @@ Main = (function()
 
 			if nativeDecompile and tryNative then
 				local success, result = pcall(nativeDecompile, script_instance, ...)
-				-- Check if the native decompiler succeeded and actually returned valid code
-				if success and result and tostring(result) ~= "" then
-					local strResult = tostring(result)
-					if not strResult:match("Failed to decompile") and not strResult:match("Empty bytecode") then
-						return strResult
-					end
+				if success and isCacheableSource(result) then
+					return tostring(result)
 				end
 			end
 
@@ -24816,7 +24864,7 @@ Main = (function()
 								script = encodedBytecode
 							})
 						})
-						if s and res and res.StatusCode == 200 then
+						if s and res and res.StatusCode == 200 and isCacheableSource(res.Body) then
 							return res.Body
 						end
 					end
@@ -24828,7 +24876,7 @@ Main = (function()
 				-- If bytecode isn't supported but we had native decompiler, try it as absolute last resort
 				if nativeDecompile then
 					local success, result = pcall(nativeDecompile, script_instance, ...)
-					if success and result then
+					if success and isCacheableSource(result) then
 						return tostring(result)
 					end
 				end

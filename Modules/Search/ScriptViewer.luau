@@ -597,18 +597,27 @@ local function main()
 		else
 			local oldtick = tick()
 			s,source = pcall(env.decompile or function() end,scr)
-			if s and type(source) == "string" then
+			if s and type(source) == "string" and (not env.IsValidDecompileSource or env.IsValidDecompileSource(source)) then
 				rawSourceCache = source
 			else
 				rawSourceCache = ""
 			end
 		end
 
-		if not s or not source or source == "" then
+		local failure
+		if env.GetDecompileFailure then
+			local ok, result = pcall(env.GetDecompileFailure, source)
+			if ok then failure = result end
+		end
+		local validSource = s and type(source) == "string" and source ~= ""
+			and failure == nil
+			and (not env.IsValidDecompileSource or env.IsValidDecompileSource(source))
+		if not validSource then
+			local failureDetail = type(source) == "string" and source:match("%S") and source or nil
 			PreviousScr = nil
 			rawSourceCache = ""
 			dumpbtn.TextColor3 = Color3.new(0.5,0.5,0.5)
-			source = "-- Unable to view source.\n"
+			source = "-- Decompile failed.\n"
 			
 			if Settings.ScriptViewer.ShowMoreInfo then
 				source = source .. "-- Script Path: "..getPath(scr).."\n"
@@ -616,10 +625,15 @@ local function main()
 					source = source .. "-- Reason: The script is not running on client. (attempt to decompile ServerScript or 'Script' with RunContext Server)\n"
 				elseif not env.isdecompile() then
 					source = source .. "-- Reason: Your executor does not support decompiler. (missing 'decompile' function and 'getscriptbytecode' function as fallback)\n"
+				elseif failure then
+					source = source .. "-- Reason [" .. tostring(failure.Code or "decompiler_error") .. "]: " .. tostring(failure.Text or "Decompiler failed.") .. "\n"
 				else
-					source = source .. "-- Reason: Unknown Error.\n"
+					source = source .. "-- Reason: The decompiler rejected or could not deserialize this bytecode.\n"
 				end
 				source = source .. "-- Executor: "..executorName.." ("..executorVersion..")"
+				if failureDetail then
+					source = source .. "\n\n-- Raw decompiler response:\n--[[\n" .. failureDetail .. "\n--]]"
+				end
 			end
 		else
 			PreviousScr = scr

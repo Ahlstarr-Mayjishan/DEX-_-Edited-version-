@@ -156,6 +156,22 @@ The helper now prevents duplicate instances:
 
 For automated or headless checks, set `DEX_HELPER_NO_DIALOG=1` to suppress startup dialogs and automatic browser opening.
 
+### Stop or clean local services
+
+The dashboard includes:
+
+- `Stop services`: stops DEX++ Helper on port `8080` and Potassium Decompiler on port `56535`;
+- `Clean + stop`: also deletes `dex_helper_index.dat` and helper log files.
+
+Potassium itself is not closed, and the DEX decompile cache in the executor workspace is not deleted.
+
+Closing the `DEX_Helper.exe` console also stops `Decompiler.exe` automatically, releasing both local ports. Persistent index/cache files are kept so the next session can start quickly.
+
+When the dashboard is unavailable, double-click:
+
+- `HelperServer\Stop_Local_Services.bat`;
+- `HelperServer\Clean_Local_Data.bat`.
+
 ## Dashboard guide
 
 The helper dashboard now shows the important startup states directly:

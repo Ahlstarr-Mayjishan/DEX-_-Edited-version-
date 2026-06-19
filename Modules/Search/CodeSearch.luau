@@ -229,6 +229,10 @@ local function main()
 	end
 
 	local function isFailureSource(source)
+		if env.GetDecompileFailure then
+			local ok, failure = pcall(env.GetDecompileFailure, source)
+			if ok then return failure ~= nil end
+		end
 		if not sourceHasText(source) then return true end
 		local lowered = tostring(source):lower()
 		return lowered:find("failed to decompile", 1, true) ~= nil

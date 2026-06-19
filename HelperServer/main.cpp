@@ -8,6 +8,7 @@
 #include <ws2tcpip.h>
 #include <windows.h>
 #include <shellapi.h>
+#include <tlhelp32.h>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -24,6 +25,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstdlib>
+#include <climits>
 
 // Link with ws2_32.lib
 #pragma comment(lib, "ws2_32.lib")
@@ -84,6 +86,65 @@ std::mutex g_log_mutex;
 std::mutex g_tool_state_mutex;
 std::string g_tool_state_json = "{\"ok\":true,\"tools\":{},\"updatedAt\":0}";
 std::atomic<int> g_active_clients{0};
+std::atomic<bool> g_shutdown_requested{false};
+
+bool terminate_process_by_name(const wchar_t* process_name) {
+    HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
+    if (snapshot == INVALID_HANDLE_VALUE) return false;
+
+    bool terminated = false;
+    PROCESSENTRY32W entry{};
+    entry.dwSize = sizeof(entry);
+    if (Process32FirstW(snapshot, &entry)) {
+        do {
+            if (_wcsicmp(entry.szExeFile, process_name) == 0 && entry.th32ProcessID != GetCurrentProcessId()) {
+                HANDLE process = OpenProcess(PROCESS_TERMINATE, FALSE, entry.th32ProcessID);
+                if (process) {
+                    if (TerminateProcess(process, 0)) terminated = true;
+                    CloseHandle(process);
+                }
+            }
+        } while (Process32NextW(snapshot, &entry));
+    }
+    CloseHandle(snapshot);
+    return terminated;
+}
+
+BOOL WINAPI helper_console_control(DWORD control_type) {
+    if (control_type == CTRL_CLOSE_EVENT
+        || control_type == CTRL_C_EVENT
+        || control_type == CTRL_BREAK_EVENT
+        || control_type == CTRL_LOGOFF_EVENT
+        || control_type == CTRL_SHUTDOWN_EVENT) {
+        terminate_process_by_name(L"Decompiler.exe");
+        return FALSE;
+    }
+    return FALSE;
+}
+
+void schedule_local_shutdown(bool clean_data) {
+    if (g_shutdown_requested.exchange(true)) return;
+
+    std::thread([clean_data]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(350));
+        terminate_process_by_name(L"Decompiler.exe");
+
+        if (clean_data) {
+            {
+                std::lock_guard<std::mutex> lock(g_script_index_mutex);
+                g_script_index.clear();
+            }
+            {
+                std::lock_guard<std::mutex> lock(g_tool_state_mutex);
+                g_tool_state_json = "{\"ok\":true,\"tools\":{},\"updatedAt\":0}";
+            }
+            std::remove(INDEX_FILE_PATH);
+            std::remove("dex_server_logs.txt");
+            std::remove("dex_server_logs.txt.old");
+        }
+        ExitProcess(0);
+    }).detach();
+}
 
 // Fast C++ linear-time variable normalizer. This is a source cleanup pass, not a full deobfuscator.
 std::string normalize_source(const std::string& source) {
@@ -1303,6 +1364,14 @@ input,textarea{width:100%;background:#0f1115;border:1px solid var(--line);color:
     <div class="muted">Keep heavy search and analysis here. In DEX, leave Helper logging off while playing. Index scripts only when you are not in a demanding fight/session.</div>
   </div>
   <div class="card">
+    <div class="title">Local services</div>
+    <div class="muted">Stops only DEX++ Helper on port 8080 and Potassium Decompiler on port 56535. Potassium itself stays open.</div>
+    <div class="row" style="margin-top:8px">
+      <button id="stopLocal">Stop services</button>
+      <button id="cleanLocal" class="bad">Clean + stop</button>
+    </div>
+  </div>
+  <div class="card">
     <div class="title">Analyze Source</div>
     <textarea id="sourceBox" placeholder="Paste cached/source text here"></textarea>
     <div class="row" style="margin-top:8px"><button id="analyze" class="primary">Analyze</button><button id="normalize">Normalize</button></div>
@@ -1365,6 +1434,8 @@ $('refresh').onclick=refreshStatus;
 $('copyLoadstring').onclick=async()=>{const text=$('loadstringBox').textContent;try{await navigator.clipboard.writeText(text);$('copyLoadstring').textContent='Copied';setTimeout(()=>$('copyLoadstring').textContent='Copy loadstring',900)}catch(e){$('copyLoadstring').textContent='Copy failed';setTimeout(()=>$('copyLoadstring').textContent='Copy loadstring',900)}};
 $('openScript').onclick=()=>window.open('/script','_blank');
 $('openToolchainSetup').onclick=async()=>{try{const raw=await textFetch('/open-toolchain-setup',{method:'POST'});const j=JSON.parse(raw);if(!j.ok)throw new Error(j.error||'Setup launch failed');$('openToolchainSetup').textContent='Setup opened';setTimeout(refreshToolchain,1200)}catch(e){$('openToolchainSetup').textContent='Open failed';setTimeout(()=>$('openToolchainSetup').textContent='Install / update tools',1200)}};
+$('stopLocal').onclick=async()=>{if(!confirm('Stop DEX++ Helper and Potassium Decompiler?'))return;try{await textFetch('/stop-local-services',{method:'POST'});$('stopLocal').textContent='Stopping...';setStatus('stopping','warn')}catch(e){$('stopLocal').textContent='Stop failed'}};
+$('cleanLocal').onclick=async()=>{if(!confirm('Delete helper index and logs, then stop local services? DEX source cache inside the executor workspace is not deleted.'))return;try{await textFetch('/clean-local',{method:'POST'});$('cleanLocal').textContent='Cleaning...';setStatus('cleaning','warn')}catch(e){$('cleanLocal').textContent='Clean failed'}};
 $('load').onclick=async()=>{await textFetch('/index-load',{method:'POST'});refreshStatus()};
 $('save').onclick=async()=>{await textFetch('/index-save',{method:'POST'});refreshStatus()};
 $('clear').onclick=async()=>{if(confirm('Clear helper index?')){await textFetch('/index-clear',{method:'POST'});refreshStatus();$('resultsView').innerHTML='<div class="hit"><h3>Index cleared</h3></div>'}};
@@ -1451,6 +1522,10 @@ void ensure_decompiler_running() {
 
 // Proxies decompile request to local Rust luau-lifter server
 std::string decompile_bytecode(const std::string& bytecode) {
+    if (bytecode.empty()) {
+        return "-- Decompile failed: empty bytecode payload.";
+    }
+
     ensure_decompiler_running();
 
     std::string boundary = "----DarkDexHelperBoundary";
@@ -1513,10 +1588,19 @@ std::string decompile_bytecode(const std::string& bytecode) {
     }
 
     // Send the request
-    int bytes_sent = send(ConnectSocket, request_str.c_str(), (int)request_str.length(), 0);
-    if (bytes_sent == SOCKET_ERROR) {
-        closesocket(ConnectSocket);
-        return "-- Error: Failed to send request to Decompiler.";
+    size_t total_sent = 0;
+    while (total_sent < request_str.size()) {
+        int bytes_sent = send(
+            ConnectSocket,
+            request_str.data() + total_sent,
+            static_cast<int>(std::min<size_t>(request_str.size() - total_sent, INT_MAX)),
+            0
+        );
+        if (bytes_sent == SOCKET_ERROR || bytes_sent == 0) {
+            closesocket(ConnectSocket);
+            return "-- Decompile failed: incomplete request send to Potassium Decompiler.";
+        }
+        total_sent += static_cast<size_t>(bytes_sent);
     }
 
     // Read the response
@@ -1544,7 +1628,11 @@ std::string decompile_bytecode(const std::string& bytecode) {
         return "-- Error: Decompiler server returned non-200 status:\n-- " + status_line;
     }
 
-    return response.substr(header_end + 4);
+    std::string response_body = response.substr(header_end + 4);
+    if (trim_copy(response_body).empty()) {
+        return "-- Decompile failed: Potassium Decompiler returned an empty response.";
+    }
+    return response_body;
 }
 
 // Send HTTP response helper
@@ -1697,6 +1785,12 @@ void handle_client(SOCKET ClientSocket) {
             g_script_index.clear();
             bool saved = save_index_locked();
             send_response(ClientSocket, 200, "OK", saved ? "{\"ok\":true,\"total\":0,\"persisted\":true}" : "{\"ok\":true,\"total\":0,\"persisted\":false}");
+        } else if (path == "/stop-local-services" && method == "POST") {
+            send_response(ClientSocket, 200, "OK", "{\"ok\":true,\"stopping\":[\"DEX_Helper.exe\",\"Decompiler.exe\"]}", "application/json");
+            schedule_local_shutdown(false);
+        } else if (path == "/clean-local" && method == "POST") {
+            send_response(ClientSocket, 200, "OK", "{\"ok\":true,\"cleaning\":[\"dex_helper_index.dat\",\"dex_server_logs.txt\"],\"stopping\":[\"DEX_Helper.exe\",\"Decompiler.exe\"]}", "application/json");
+            schedule_local_shutdown(true);
         } else if (path == "/assign-role" && method == "POST") {
             send_response(ClientSocket, 200, "OK", assign_role(body));
         } else if (path == "/decompile" && method == "POST") {
@@ -1726,6 +1820,7 @@ int main() {
         CloseHandle(instance_mutex);
         return 0;
     }
+    SetConsoleCtrlHandler(helper_console_control, TRUE);
 
     WSADATA wsaData;
     int iResult;
