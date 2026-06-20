@@ -22,31 +22,115 @@ local function initDeps(data)
 	createSimple = data.createSimple
 end
 
+local History
+
 local function initAfterMain()
+	History = Apps.History
 end
 
 local function main()
 	local Deletion = {}
 
 	Deletion.Delete = function(selectionList, selection)
-		local destroy = game.Destroy
+		local deletedInstances = {}
 		for i = 1, #selectionList do
 			local node = selectionList[i]
 			if node and node.Obj then
-				pcall(destroy, node.Obj)
+				local obj = node.Obj
+				local success, parent = pcall(function() return obj.Parent end)
+				if success and parent then
+					table.insert(deletedInstances, {
+						Obj = obj,
+						OriginalParent = parent
+					})
+				end
 			end
 		end
+
+		if #deletedInstances == 0 then return end
+
+		local function undo()
+			for _, item in ipairs(deletedInstances) do
+				pcall(function() item.Obj.Parent = item.OriginalParent end)
+			end
+		end
+
+		local function redo()
+			for _, item in ipairs(deletedInstances) do
+				pcall(function() item.Obj.Parent = nil end)
+			end
+		end
+
+		local function onDestroy()
+			for _, item in ipairs(deletedInstances) do
+				pcall(game.Destroy, item.Obj)
+			end
+		end
+
+		redo()
+
+		if History and History.Add then
+			History.Add({
+				Name = "Delete",
+				Undo = undo,
+				Redo = redo,
+				OnDestroy = onDestroy
+			})
+		else
+			onDestroy()
+		end
+
 		if selection and selection.Clear then
 			selection:Clear()
 		end
 	end
 
 	Deletion.DeleteChildren = function(selectionList)
+		local deletedInstances = {}
 		for i = 1, #selectionList do
 			local node = selectionList[i]
 			if node and node.Obj then
-				pcall(node.Obj.ClearAllChildren, node.Obj)
+				local children = node.Obj:GetChildren()
+				for _, child in ipairs(children) do
+					table.insert(deletedInstances, {
+						Obj = child,
+						OriginalParent = node.Obj
+					})
+				end
 			end
+		end
+
+		if #deletedInstances == 0 then return end
+
+		local function undo()
+			for _, item in ipairs(deletedInstances) do
+				pcall(function() item.Obj.Parent = item.OriginalParent end)
+			end
+		end
+
+		local function redo()
+			for _, item in ipairs(deletedInstances) do
+				pcall(function() item.Obj.Parent = nil end)
+			end
+		end
+
+		local function onDestroy()
+			for _, item in ipairs(deletedInstances) do
+				pcall(game.Destroy, item.Obj)
+			end
+		end
+
+		redo()
+
+		if History and History.Add then
+			History.Add({
+				Name = "Delete Children",
+				Undo = undo,
+				Redo = redo,
+				OnDestroy = onDestroy
+			})
+		else
+			onDestroy()
 		end
 	end
 

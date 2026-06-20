@@ -22,7 +22,10 @@ local function initDeps(data)
 	createSimple = data.createSimple
 end
 
+local History
+
 local function initAfterMain()
+	History = Apps.History
 end
 
 local function main()
@@ -52,9 +55,11 @@ local function main()
 	end
 
 	Clipboard.Cut = function(selectionList, selection)
-		local destroy, clone = game.Destroy, game.Clone
+		local clone = game.Clone
 		local newClipboard = {}
 		local count = 1
+		local cutInstances = {}
+
 		for i = 1, #selectionList do
 			local node = selectionList[i]
 			if node and node.Obj then
@@ -64,13 +69,54 @@ local function main()
 					newClipboard[count] = cloned
 					count = count + 1
 				end
-				pcall(destroy, inst)
+				local success, parent = pcall(function() return inst.Parent end)
+				if success and parent then
+					table.insert(cutInstances, {
+						Obj = inst,
+						OriginalParent = parent
+					})
+				end
 			end
 		end
+
+		if #cutInstances == 0 then return end
+
 		table.clear(Clipboard.List)
 		for _, v in ipairs(newClipboard) do
 			table.insert(Clipboard.List, v)
 		end
+
+		local function undo()
+			for _, item in ipairs(cutInstances) do
+				pcall(function() item.Obj.Parent = item.OriginalParent end)
+			end
+		end
+
+		local function redo()
+			for _, item in ipairs(cutInstances) do
+				pcall(function() item.Obj.Parent = nil end)
+			end
+		end
+
+		local function onDestroy()
+			for _, item in ipairs(cutInstances) do
+				pcall(game.Destroy, item.Obj)
+			end
+		end
+
+		redo()
+
+		if History and History.Add then
+			History.Add({
+				Name = "Cut",
+				Undo = undo,
+				Redo = redo,
+				OnDestroy = onDestroy
+			})
+		else
+			onDestroy()
+		end
+
 		if selection and selection.Clear then
 			selection:Clear()
 		end
@@ -79,7 +125,9 @@ local function main()
 	Clipboard.Paste = function(selectionList, nodes, selection, ViewNode, MakeNodeVisible)
 		if #Clipboard.List == 0 then return end
 		local newSelection = {}
+		local pastedInstances = {}
 		local count = 1
+
 		for i = 1, #selectionList do
 			local node = selectionList[i]
 			local inst = node.Obj
@@ -90,6 +138,10 @@ local function main()
 				local cloned = Clipboard.List[c]:Clone()
 				if cloned then
 					cloned.Parent = inst
+					table.insert(pastedInstances, {
+						Obj = cloned,
+						OriginalParent = inst
+					})
 					local clonedNode = nodes[cloned]
 					if clonedNode then
 						newSelection[count] = clonedNode
@@ -98,6 +150,49 @@ local function main()
 				end
 			end
 		end
+
+		if #pastedInstances == 0 then return end
+
+		local function undo()
+			for _, item in ipairs(pastedInstances) do
+				pcall(function() item.Obj.Parent = nil end)
+			end
+			if selection and selection.Clear then
+				selection:Clear()
+			end
+		end
+
+		local function redo()
+			for _, item in ipairs(pastedInstances) do
+				pcall(function() item.Obj.Parent = item.OriginalParent end)
+			end
+			local nodesToSelect = {}
+			for _, item in ipairs(pastedInstances) do
+				local node = nodes[item.Obj]
+				if node then
+					table.insert(nodesToSelect, node)
+				end
+			end
+			if selection and selection.SetTable and #nodesToSelect > 0 then
+				selection:SetTable(nodesToSelect)
+			end
+		end
+
+		local function onDestroy()
+			for _, item in ipairs(pastedInstances) do
+				pcall(game.Destroy, item.Obj)
+			end
+		end
+
+		if History and History.Add then
+			History.Add({
+				Name = "Paste",
+				Undo = undo,
+				Redo = redo,
+				OnDestroy = onDestroy
+			})
+		end
+
 		if selection and selection.SetTable then
 			selection:SetTable(newSelection)
 		end

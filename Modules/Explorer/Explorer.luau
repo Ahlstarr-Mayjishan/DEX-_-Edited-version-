@@ -361,7 +361,31 @@ local function main()
 		renameBox.FocusLost:Connect(function()
 			if not renamingNode then return end
 
-			pcall(function() renamingNode.Obj.Name = renameBox.Text end)
+			local instance = renamingNode.Obj
+			local oldName = instance.Name
+			local newName = renameBox.Text
+
+			if oldName ~= newName then
+				local function undo()
+					pcall(function() instance.Name = oldName end)
+				end
+
+				local function redo()
+					pcall(function() instance.Name = newName end)
+				end
+
+				redo()
+
+				local History = Apps.History
+				if History and History.Add then
+					History.Add({
+						Name = "Rename",
+						Undo = undo,
+						Redo = redo
+					})
+				end
+			end
+
 			renamingNode = nil
 			Explorer.Refresh()
 		end)
@@ -607,10 +631,47 @@ local function main()
 							if selection.Map[node] then return end
 							local newPar = node.Obj
 							local sList = selection.List
+							local reparented = {}
+
 							for i = 1,#sList do
 								local n = sList[i]
-								pcall(function() n.Obj.Parent = newPar end)
+								if n and n.Obj then
+									local success, originalParent = pcall(function() return n.Obj.Parent end)
+									if success and originalParent then
+										table.insert(reparented, {
+											Obj = n.Obj,
+											OriginalParent = originalParent,
+											NewParent = newPar
+										})
+									end
+								end
 							end
+
+							if #reparented > 0 then
+								local function undo()
+									for _, item in ipairs(reparented) do
+										pcall(function() item.Obj.Parent = item.OriginalParent end)
+									end
+								end
+
+								local function redo()
+									for _, item in ipairs(reparented) do
+										pcall(function() item.Obj.Parent = item.NewParent end)
+									end
+								end
+
+								redo()
+
+								local History = Apps.History
+								if History and History.Add then
+									History.Add({
+										Name = "Reparent",
+										Undo = undo,
+										Redo = redo
+									})
+								end
+							end
+
 							Explorer.ViewNode(sList[1])
 						end
 						break
@@ -1108,6 +1169,17 @@ local function main()
 		if presentClasses["BasePart"] then
 			context:AddRegistered("COPY_PROPERTIES")
 			context:AddRegistered("PASTE_PROPERTIES", not Apps.PropertyCopier or not Apps.PropertyCopier.HasCache())
+			
+			local hasBackup = false
+			if Apps.PropertyRestorer then
+				for i = 1, #sList do
+					if Apps.PropertyRestorer.HasBackup(sList[i].Obj) then
+						hasBackup = true
+						break
+					end
+				end
+			end
+			context:AddRegistered("RESTORE_PROPERTIES", not hasBackup)
 		end
 		if presentClasses["Tween"] then context:AddRegistered("PLAY_TWEEN") end
 		if presentClasses["Animation"] then
@@ -2202,6 +2274,103 @@ return search]==]
 		window.OnDeactivate:Connect(function() Explorer.Active = false end)
 		window.OnMinimize:Connect(function() Explorer.Active = false end)
 
+		local function isOverDexGui()
+			local pos = service.UserInputService:GetMouseLocation()
+
+			local function isDexGuiObject(obj)
+				local screenGui = obj:FindFirstAncestorOfClass("ScreenGui")
+				if not screenGui then return false end
+
+				local name = screenGui.Name
+				if string.sub(name, 1, 5) == "_DPP_" then
+					return true
+				end
+
+				if gethui then
+					local success, hui = pcall(gethui)
+					if success and hui and (hui ~= service.CoreGui) and screenGui:IsDescendantOf(hui) then
+						return true
+					end
+				end
+
+				local standardNames = {
+					Dex = true, ExplorerSelections = true,
+					Intro = true, UpdatePrompt = true, Notepad = true,
+					ControlCenter = true, IDESync = true, InspectorHub = true,
+					TaskRouter = true, SecurityAuditor = true, RuntimeInspector = true,
+					ClientIntelligence = true, ModelViewer = true, ImageViewer = true,
+					SoundViewer = true, AnimationViewer = true
+				}
+				if standardNames[name] then
+					return true
+				end
+
+				return false
+			end
+
+			local playerGui = plr:FindFirstChildOfClass("PlayerGui")
+			if playerGui and playerGui.GetGuiObjectsAtPosition then
+				local success, res = pcall(function() return playerGui:GetGuiObjectsAtPosition(pos.X, pos.Y) end)
+				if success and res then
+					for _, obj in ipairs(res) do
+						if isDexGuiObject(obj) then
+							return true
+						end
+					end
+				end
+			end
+
+			local coreGui = service.CoreGui
+			if coreGui and coreGui.GetGuiObjectsAtPosition then
+				local success, res = pcall(function() return coreGui:GetGuiObjectsAtPosition(pos.X, pos.Y) end)
+				if success and res then
+					for _, obj in ipairs(res) do
+						if isDexGuiObject(obj) then
+							return true
+						end
+					end
+				end
+			end
+
+			if gethui then
+				local success, hui = pcall(gethui)
+				if success and hui and hui ~= service.CoreGui then
+					if hui.GetGuiObjectsAtPosition then
+						local success2, res = pcall(function() return hui:GetGuiObjectsAtPosition(pos.X, pos.Y) end)
+						if success2 and res then
+							for _, obj in ipairs(res) do
+								if isDexGuiObject(obj) then
+									return true
+								end
+							end
+						end
+					end
+
+					local getDescendantsSuccess, list = pcall(function() return hui:GetDescendants() end)
+					if getDescendantsSuccess and list then
+						for _, obj in ipairs(list) do
+							if obj:IsA("GuiObject") and obj.AbsoluteSize.X > 0 and obj.AbsoluteSize.Y > 0 then
+								local screenGui = obj:FindFirstAncestorOfClass("ScreenGui")
+								if screenGui and screenGui.Enabled then
+									local absPos = obj.AbsolutePosition
+									local absSize = obj.AbsoluteSize
+									if pos.X >= absPos.X and pos.X < absPos.X + absSize.X and
+									   pos.Y >= absPos.Y and pos.Y < absPos.Y + absSize.Y then
+										if isDexGuiObject(obj) then
+											return true
+										end
+									end
+								end
+							end
+						end
+					end
+				end
+			end
+
+			return false
+		end
+		Explorer.isOverDexGui = isOverDexGui
+
 		local viewportBeganCon = nil
 		local viewportEndedCon = nil
 		local mouseBehaviorCon = nil
@@ -2217,24 +2386,6 @@ return search]==]
 			local uis = service.UserInputService
 			local clickStartTime = 0
 			local clickStartPos = Vector3.zero
-
-			local function isOverDexGui()
-				local playerGui = plr:FindFirstChildOfClass("PlayerGui")
-				if not playerGui or not playerGui.GetGuiObjectsAtPosition then return false end
-				local pos = uis:GetMouseLocation()
-				local objects = playerGui:GetGuiObjectsAtPosition(pos.X, pos.Y)
-				for i = 1, #objects do
-					local obj = objects[i]
-					local screenGui = obj:FindFirstAncestorOfClass("ScreenGui")
-					if screenGui then
-						local name = screenGui.Name
-						if name == "Dex" or name == "Context" or name == "ExplorerSelections" or name == "ModelViewer" or name == "ImageViewer" or name == "SoundViewer" or name == "AnimationViewer" or name == "Settings" or name == "Notepad" or name == "Console" or name == "ControlCenter" or name == "IDESync" or name == "InspectorHub" or name == "TaskRouter" or name == "SecurityAuditor" or name == "RuntimeInspector" or name == "ClientIntelligence" then
-							return true
-						end
-					end
-				end
-				return false
-			end
 
 			local function triggerSelect(position)
 				if isOverDexGui() then return end
@@ -2341,6 +2492,7 @@ return search]==]
 			context:AddRegistered("3DVIEW_MODEL")
 			context:AddRegistered("COPY_PROPERTIES")
 			context:AddRegistered("PASTE_PROPERTIES", not Apps.PropertyCopier or not Apps.PropertyCopier.HasCache())
+			context:AddRegistered("RESTORE_PROPERTIES", not Apps.PropertyRestorer or not Apps.PropertyRestorer.HasBackup(targetObj))
 
 			context:AddDivider("Actions")
 			context:AddRegistered("DELETE")
@@ -2407,6 +2559,32 @@ return search]==]
 		-- Auto Scan Nil Instances on startup
 		task.spawn(function()
 			pcall(Explorer.RefreshNilInstances)
+		end)
+
+		-- Global Undo/Redo Keyboard Shortcuts
+		service.UserInputService.InputBegan:Connect(function(input, processed)
+			if service.UserInputService:GetFocusedTextBox() then return end
+
+			local ctrl = service.UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or service.UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
+			local shift = service.UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or service.UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
+
+			if ctrl then
+				if input.KeyCode == Enum.KeyCode.Z then
+					local History = Apps.History
+					if History then
+						if shift then
+							if History.Redo then History.Redo() end
+						else
+							if History.Undo then History.Undo() end
+						end
+					end
+				elseif input.KeyCode == Enum.KeyCode.Y then
+					local History = Apps.History
+					if History and History.Redo then
+						History.Redo()
+					end
+				end
+			end
 		end)
 
 		-- Hook __namecall for Metatable Sniffing

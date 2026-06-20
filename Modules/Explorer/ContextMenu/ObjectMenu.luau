@@ -302,6 +302,18 @@ local function main()
 				end
 			end
 		end})
+
+		context:Register("RESTORE_PROPERTIES",{Name = "Restore Properties", IconMap = Explorer.MiscIcons, Icon = "Undo", DisabledIcon = "Undo_Disabled", OnClick = function()
+			local PropertyRestorer = Apps.PropertyRestorer
+			if PropertyRestorer then
+				for i = 1,#selection.List do
+					local obj = selection.List[i].Obj
+					if obj and PropertyRestorer.HasBackup(obj) then
+						PropertyRestorer.Restore(obj)
+					end
+				end
+			end
+		end})
 	end
 end
 

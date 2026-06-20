@@ -22,7 +22,10 @@ local function initDeps(data)
 	createSimple = data.createSimple
 end
 
+local History
+
 local function initAfterMain()
+	History = Apps.History
 end
 
 local function main()
@@ -31,7 +34,9 @@ local function main()
 	Duplicate.Execute = function(selectionList, nodes, selection, ViewNode, MakeNodeVisible)
 		local clone = game.Clone
 		local newSelection = {}
+		local duplicatedInstances = {}
 		local count = 1
+
 		for i = 1, #selectionList do
 			local node = selectionList[i]
 			local inst = node.Obj
@@ -42,12 +47,58 @@ local function main()
 			local s, cloned = pcall(clone, inst)
 			if s and cloned then
 				cloned.Parent = instPar
+				table.insert(duplicatedInstances, {
+					Obj = cloned,
+					OriginalParent = instPar
+				})
 				local clonedNode = nodes[cloned]
 				if clonedNode then
 					newSelection[count] = clonedNode
 					count = count + 1
 				end
 			end
+		end
+
+		if #duplicatedInstances == 0 then return end
+
+		local function undo()
+			for _, item in ipairs(duplicatedInstances) do
+				pcall(function() item.Obj.Parent = nil end)
+			end
+			if selection and selection.Clear then
+				selection:Clear()
+			end
+		end
+
+		local function redo()
+			for _, item in ipairs(duplicatedInstances) do
+				pcall(function() item.Obj.Parent = item.OriginalParent end)
+			end
+			local nodesToSelect = {}
+			for _, item in ipairs(duplicatedInstances) do
+				local node = nodes[item.Obj]
+				if node then
+					table.insert(nodesToSelect, node)
+				end
+			end
+			if selection and selection.SetTable and #nodesToSelect > 0 then
+				selection:SetTable(nodesToSelect)
+			end
+		end
+
+		local function onDestroy()
+			for _, item in ipairs(duplicatedInstances) do
+				pcall(game.Destroy, item.Obj)
+			end
+		end
+
+		if History and History.Add then
+			History.Add({
+				Name = "Duplicate",
+				Undo = undo,
+				Redo = redo,
+				OnDestroy = onDestroy
+			})
 		end
 
 		if selection and selection.SetTable then

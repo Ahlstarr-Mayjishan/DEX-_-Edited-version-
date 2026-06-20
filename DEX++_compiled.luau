@@ -9954,6 +9954,17 @@ end,
     		if presentClasses["BasePart"] then
     			context:AddRegistered("COPY_PROPERTIES")
     			context:AddRegistered("PASTE_PROPERTIES", not Apps.PropertyCopier or not Apps.PropertyCopier.HasCache())
+    			
+    			local hasBackup = false
+    			if Apps.PropertyRestorer then
+    				for i = 1, #sList do
+    					if Apps.PropertyRestorer.HasBackup(sList[i].Obj) then
+    						hasBackup = true
+    						break
+    					end
+    				end
+    			end
+    			context:AddRegistered("RESTORE_PROPERTIES", not hasBackup)
     		end
     		if presentClasses["Tween"] then context:AddRegistered("PLAY_TWEEN") end
     		if presentClasses["Animation"] then
@@ -11048,6 +11059,103 @@ end,
     		window.OnDeactivate:Connect(function() Explorer.Active = false end)
     		window.OnMinimize:Connect(function() Explorer.Active = false end)
     
+    		local function isOverDexGui()
+    			local pos = service.UserInputService:GetMouseLocation()
+    
+    			local function isDexGuiObject(obj)
+    				local screenGui = obj:FindFirstAncestorOfClass("ScreenGui")
+    				if not screenGui then return false end
+    
+    				local name = screenGui.Name
+    				if string.sub(name, 1, 5) == "_DPP_" then
+    					return true
+    				end
+    
+    				if gethui then
+    					local success, hui = pcall(gethui)
+    					if success and hui and (hui ~= service.CoreGui) and screenGui:IsDescendantOf(hui) then
+    						return true
+    					end
+    				end
+    
+    				local standardNames = {
+    					Dex = true, ExplorerSelections = true,
+    					Intro = true, UpdatePrompt = true, Notepad = true,
+    					ControlCenter = true, IDESync = true, InspectorHub = true,
+    					TaskRouter = true, SecurityAuditor = true, RuntimeInspector = true,
+    					ClientIntelligence = true, ModelViewer = true, ImageViewer = true,
+    					SoundViewer = true, AnimationViewer = true
+    				}
+    				if standardNames[name] then
+    					return true
+    				end
+    
+    				return false
+    			end
+    
+    			local playerGui = plr:FindFirstChildOfClass("PlayerGui")
+    			if playerGui and playerGui.GetGuiObjectsAtPosition then
+    				local success, res = pcall(function() return playerGui:GetGuiObjectsAtPosition(pos.X, pos.Y) end)
+    				if success and res then
+    					for _, obj in ipairs(res) do
+    						if isDexGuiObject(obj) then
+    							return true
+    						end
+    					end
+    				end
+    			end
+    
+    			local coreGui = service.CoreGui
+    			if coreGui and coreGui.GetGuiObjectsAtPosition then
+    				local success, res = pcall(function() return coreGui:GetGuiObjectsAtPosition(pos.X, pos.Y) end)
+    				if success and res then
+    					for _, obj in ipairs(res) do
+    						if isDexGuiObject(obj) then
+    							return true
+    						end
+    					end
+    				end
+    			end
+    
+    			if gethui then
+    				local success, hui = pcall(gethui)
+    				if success and hui and hui ~= service.CoreGui then
+    					if hui.GetGuiObjectsAtPosition then
+    						local success2, res = pcall(function() return hui:GetGuiObjectsAtPosition(pos.X, pos.Y) end)
+    						if success2 and res then
+    							for _, obj in ipairs(res) do
+    								if isDexGuiObject(obj) then
+    									return true
+    								end
+    							end
+    						end
+    					end
+    
+    					local getDescendantsSuccess, list = pcall(function() return hui:GetDescendants() end)
+    					if getDescendantsSuccess and list then
+    						for _, obj in ipairs(list) do
+    							if obj:IsA("GuiObject") and obj.AbsoluteSize.X > 0 and obj.AbsoluteSize.Y > 0 then
+    								local screenGui = obj:FindFirstAncestorOfClass("ScreenGui")
+    								if screenGui and screenGui.Enabled then
+    									local absPos = obj.AbsolutePosition
+    									local absSize = obj.AbsoluteSize
+    									if pos.X >= absPos.X and pos.X < absPos.X + absSize.X and
+    									   pos.Y >= absPos.Y and pos.Y < absPos.Y + absSize.Y then
+    										if isDexGuiObject(obj) then
+    											return true
+    										end
+    									end
+    								end
+    							end
+    						end
+    					end
+    				end
+    			end
+    
+    			return false
+    		end
+    		Explorer.isOverDexGui = isOverDexGui
+    
     		local viewportBeganCon = nil
     		local viewportEndedCon = nil
     		local mouseBehaviorCon = nil
@@ -11063,24 +11171,6 @@ end,
     			local uis = service.UserInputService
     			local clickStartTime = 0
     			local clickStartPos = Vector3.zero
-    
-    			local function isOverDexGui()
-    				local playerGui = plr:FindFirstChildOfClass("PlayerGui")
-    				if not playerGui or not playerGui.GetGuiObjectsAtPosition then return false end
-    				local pos = uis:GetMouseLocation()
-    				local objects = playerGui:GetGuiObjectsAtPosition(pos.X, pos.Y)
-    				for i = 1, #objects do
-    					local obj = objects[i]
-    					local screenGui = obj:FindFirstAncestorOfClass("ScreenGui")
-    					if screenGui then
-    						local name = screenGui.Name
-    						if name == "Dex" or name == "Context" or name == "ExplorerSelections" or name == "ModelViewer" or name == "ImageViewer" or name == "SoundViewer" or name == "AnimationViewer" or name == "Settings" or name == "Notepad" or name == "Console" or name == "ControlCenter" or name == "IDESync" or name == "InspectorHub" or name == "TaskRouter" or name == "SecurityAuditor" or name == "RuntimeInspector" or name == "ClientIntelligence" then
-    							return true
-    						end
-    					end
-    				end
-    				return false
-    			end
     
     			local function triggerSelect(position)
     				if isOverDexGui() then return end
@@ -11187,6 +11277,7 @@ end,
     			context:AddRegistered("3DVIEW_MODEL")
     			context:AddRegistered("COPY_PROPERTIES")
     			context:AddRegistered("PASTE_PROPERTIES", not Apps.PropertyCopier or not Apps.PropertyCopier.HasCache())
+    			context:AddRegistered("RESTORE_PROPERTIES", not Apps.PropertyRestorer or not Apps.PropertyRestorer.HasBackup(targetObj))
     
     			context:AddDivider("Actions")
     			context:AddRegistered("DELETE")
@@ -11897,6 +11988,18 @@ end,
     				for i = 1,#selection.List do
     					local obj = selection.List[i].Obj
     					if obj then PropertyCopier.Paste(obj) end
+    				end
+    			end
+    		end})
+    
+    		context:Register("RESTORE_PROPERTIES",{Name = "Restore Properties", IconMap = Explorer.MiscIcons, Icon = "Undo", DisabledIcon = "Undo_Disabled", OnClick = function()
+    			local PropertyRestorer = Apps.PropertyRestorer
+    			if PropertyRestorer then
+    				for i = 1,#selection.List do
+    					local obj = selection.List[i].Obj
+    					if obj and PropertyRestorer.HasBackup(obj) then
+    						PropertyRestorer.Restore(obj)
+    					end
     				end
     			end
     		end})
@@ -15391,7 +15494,10 @@ end,
     	createSimple = data.createSimple
     end
     
+    local PropertyRestorer
+    
     local function initAfterMain()
+    	PropertyRestorer = Apps.PropertyRestorer
     end
     
     local function main()
@@ -15485,6 +15591,11 @@ end,
     
     	PropertyCopier.Paste = function(targetInstance)
     		if not targetInstance or not copiedCache then return end
+    
+    		-- Backup original properties before pasting
+    		if PropertyRestorer then
+    			PropertyRestorer.Backup(targetInstance)
+    		end
     		
     		for k, v in pairs(copiedCache.Properties) do
     			pcall(function()
@@ -15512,6 +15623,130 @@ end,
     	end
     
     	return PropertyCopier
+    end
+    
+    return {
+    	InitDeps = initDeps,
+    	InitAfterMain = initAfterMain,
+    	Main = main
+    }
+end,
+["PropertyRestorer"] = function()
+    --[[
+    	Property Restorer Core Module
+    	Manages backup and restoration of instance properties modified during copy/paste operations.
+    ]]
+    
+    -- Common Locals
+    local Main, Lib, Apps, Settings
+    local API, RMD, env, service, plr, create, createSimple
+    
+    local function initDeps(data)
+    	Main = data.Main
+    	Lib = data.Lib
+    	Apps = data.Apps
+    	Settings = data.Settings
+    
+    	API = data.API
+    	RMD = data.RMD
+    	env = data.env
+    	service = data.service
+    	plr = data.plr
+    	create = data.create
+    	createSimple = data.createSimple
+    end
+    
+    local function initAfterMain()
+    end
+    
+    local function main()
+    	local PropertyRestorer = {}
+    	local originalPropertiesCache = setmetatable({}, {__mode = "k"})
+    
+    	PropertyRestorer.Backup = function(targetInstance)
+    		if not targetInstance then return end
+    		if originalPropertiesCache[targetInstance] then return end
+    
+    		local backup = {
+    			Properties = {}
+    		}
+    		
+    		local function addBackupProp(name)
+    			pcall(function()
+    				backup.Properties[name] = targetInstance[name]
+    			end)
+    		end
+    		
+    		if targetInstance:IsA("BasePart") then
+    			addBackupProp("Material")
+    			addBackupProp("MaterialVariant")
+    			addBackupProp("Color")
+    			addBackupProp("Transparency")
+    			addBackupProp("Reflectance")
+    			addBackupProp("Size")
+    			addBackupProp("CanCollide")
+    			addBackupProp("Anchored")
+    			addBackupProp("CastShadow")
+    		end
+    		
+    		if targetInstance:IsA("MeshPart") then
+    			addBackupProp("MeshId")
+    			addBackupProp("TextureID")
+    		end
+    		
+    		local specialMesh = targetInstance:FindFirstChildOfClass("SpecialMesh")
+    		if specialMesh then
+    			backup.SpecialMesh = {
+    				MeshId = specialMesh.MeshId,
+    				TextureId = specialMesh.TextureId,
+    				Scale = specialMesh.Scale,
+    				Offset = specialMesh.Offset,
+    				MeshType = specialMesh.MeshType
+    			}
+    		else
+    			backup.HadNoSpecialMesh = true
+    		end
+    		
+    		originalPropertiesCache[targetInstance] = backup
+    	end
+    
+    	PropertyRestorer.Restore = function(targetInstance)
+    		if not targetInstance then return end
+    		local backup = originalPropertiesCache[targetInstance]
+    		if not backup then return end
+    		
+    		-- Restore base properties
+    		for k, v in pairs(backup.Properties) do
+    			pcall(function()
+    				targetInstance[k] = v
+    			end)
+    		end
+    		
+    		-- Restore SpecialMesh
+    		if backup.HadNoSpecialMesh then
+    			local specialMesh = targetInstance:FindFirstChildOfClass("SpecialMesh")
+    			if specialMesh then
+    				specialMesh:Destroy()
+    			end
+    		elseif backup.SpecialMesh then
+    			local specialMesh = targetInstance:FindFirstChildOfClass("SpecialMesh")
+    			if not specialMesh then
+    				specialMesh = Instance.new("SpecialMesh")
+    				specialMesh.Parent = targetInstance
+    			end
+    			for k, v in pairs(backup.SpecialMesh) do
+    				pcall(function()
+    					specialMesh[k] = v
+    				end)
+    			end
+    		end
+    	end
+    
+    	PropertyRestorer.HasBackup = function(targetInstance)
+    		return originalPropertiesCache[targetInstance] ~= nil
+    	end
+    
+    	return PropertyRestorer
     end
     
     return {
@@ -25359,7 +25594,7 @@ end,
 local isFsSupported = readfile and writefile and isfile and isfolder and listfiles and delfile and delfolder
 
 -- Main vars
-local Main, Explorer, Properties, Notepad, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, SoundViewer, AnimationViewer, ClientIndex, ActivityMap, DependencyGraph, SmartSearch, RuntimeInspector, ClientIntelligence, InspectorHub, TaskRouter, ControlCenter, Theme, SmartDecompiler, SecurityAuditor, RemoteFuzzer, PropertyTracker, InstanceSerializer, ThreadManager, IDESync, Clipboard, Duplicate, Deletion, PropertyCopier, Rename--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
+local Main, Explorer, Properties, Notepad, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, SoundViewer, AnimationViewer, ClientIndex, ActivityMap, DependencyGraph, SmartSearch, RuntimeInspector, ClientIntelligence, InspectorHub, TaskRouter, ControlCenter, Theme, SmartDecompiler, SecurityAuditor, RemoteFuzzer, PropertyTracker, InstanceSerializer, ThreadManager, IDESync, Clipboard, Duplicate, Deletion, PropertyCopier, PropertyRestorer, Rename--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
 local API, RMD
 
 -- Default Settings
@@ -25819,7 +26054,7 @@ Main = (function()
 		end
 	end
 
-	Main.ModuleList = {"Theme","Lib","Console","SettingsWindow","ControlCenter","TaskRouter","ThreadManager","Explorer","EditMenu","NavigationMenu","ObjectMenu","ScriptMenu","InteractionMenu","PlayerMenu","NilInstanceMenu","Properties","SaveInstance","ModelViewer","ImageViewer","SoundViewer","AnimationViewer","ObjectLinks","InstanceSerializer","SmartDecompiler","Notepad","ClientIndex","CodeSearch","SmartSearch","DependencyGraph","ScriptRelations","SecurityAuditor","RuntimeInspector","RemoteUsageMap","ActivityMap","PropertyTracker","RemoteFuzzer","ClientIntelligence","InspectorHub","IDESync","Clipboard","Duplicate","Deletion","PropertyCopier","Rename"}
+	Main.ModuleList = {"Theme","Lib","Console","SettingsWindow","ControlCenter","TaskRouter","ThreadManager","Explorer","EditMenu","NavigationMenu","ObjectMenu","ScriptMenu","InteractionMenu","PlayerMenu","NilInstanceMenu","Properties","SaveInstance","ModelViewer","ImageViewer","SoundViewer","AnimationViewer","ObjectLinks","InstanceSerializer","SmartDecompiler","Notepad","ClientIndex","CodeSearch","SmartSearch","DependencyGraph","ScriptRelations","SecurityAuditor","RuntimeInspector","RemoteUsageMap","ActivityMap","PropertyTracker","RemoteFuzzer","ClientIntelligence","InspectorHub","IDESync","Clipboard","Duplicate","Deletion","PropertyCopier","PropertyRestorer","Rename"}
 	Main.ModulePathMap = {
 		Theme = "Core/Theme",
 		Lib = "Core/Lib",
@@ -25864,6 +26099,7 @@ Main = (function()
 		Duplicate = "Explorer/Duplicate",
 		Deletion = "Explorer/Deletion",
 		PropertyCopier = "Explorer/PropertyCopier",
+		PropertyRestorer = "Explorer/PropertyRestorer",
 		Rename = "Explorer/Rename",
 	}
 	Main.Elevated = false
@@ -26296,6 +26532,7 @@ Main = (function()
 		Duplicate = Apps.Duplicate
 		Deletion = Apps.Deletion
 		PropertyCopier = Apps.PropertyCopier
+		PropertyRestorer = Apps.PropertyRestorer
 		Rename = Apps.Rename
 
 
@@ -26337,6 +26574,7 @@ Main = (function()
 			Duplicate = Duplicate,
 			Deletion = Deletion,
 			PropertyCopier = PropertyCopier,
+			PropertyRestorer = PropertyRestorer,
 			Rename = Rename
 		}
 
@@ -28746,6 +28984,7 @@ Main = (function()
 				local mouse = Main.Mouse
 				cptsOnMouseClick = mouse.Button1Down:Connect(function()
 					pcall(function()
+						if Explorer and Explorer.isOverDexGui and Explorer.isOverDexGui() then return end
 						local object = mouse.Target
 						if nodes[object] then
 							selection:Set(nodes[object])

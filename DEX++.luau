@@ -53,7 +53,7 @@ local EmbeddedModules = {
 local isFsSupported = readfile and writefile and isfile and isfolder and listfiles and delfile and delfolder
 
 -- Main vars
-local Main, Explorer, Properties, Notepad, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, SoundViewer, AnimationViewer, ClientIndex, ActivityMap, DependencyGraph, SmartSearch, RuntimeInspector, ClientIntelligence, InspectorHub, TaskRouter, ControlCenter, Theme, SmartDecompiler, SecurityAuditor, RemoteFuzzer, PropertyTracker, InstanceSerializer, ThreadManager, IDESync, Clipboard, Duplicate, Deletion, PropertyCopier, Rename--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
+local Main, Explorer, Properties, Notepad, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, SoundViewer, AnimationViewer, ClientIndex, ActivityMap, DependencyGraph, SmartSearch, RuntimeInspector, ClientIntelligence, InspectorHub, TaskRouter, ControlCenter, Theme, SmartDecompiler, SecurityAuditor, RemoteFuzzer, PropertyTracker, InstanceSerializer, ThreadManager, IDESync, Clipboard, Duplicate, Deletion, PropertyCopier, PropertyRestorer, Rename, History--[[, SecretServicePanel]], DefaultSettings, Notebook, Serializer, Lib local ggv = getgenv or nil
 local API, RMD
 
 -- Default Settings
@@ -513,7 +513,7 @@ Main = (function()
 		end
 	end
 
-	Main.ModuleList = {"Theme","Lib","Console","SettingsWindow","ControlCenter","TaskRouter","ThreadManager","Explorer","EditMenu","NavigationMenu","ObjectMenu","ScriptMenu","InteractionMenu","PlayerMenu","NilInstanceMenu","Properties","SaveInstance","ModelViewer","ImageViewer","SoundViewer","AnimationViewer","ObjectLinks","InstanceSerializer","SmartDecompiler","Notepad","ClientIndex","CodeSearch","SmartSearch","DependencyGraph","ScriptRelations","SecurityAuditor","RuntimeInspector","RemoteUsageMap","ActivityMap","PropertyTracker","RemoteFuzzer","ClientIntelligence","InspectorHub","IDESync","Clipboard","Duplicate","Deletion","PropertyCopier","Rename"}
+	Main.ModuleList = {"Theme","Lib","Console","SettingsWindow","ControlCenter","TaskRouter","ThreadManager","Explorer","EditMenu","NavigationMenu","ObjectMenu","ScriptMenu","InteractionMenu","PlayerMenu","NilInstanceMenu","Properties","SaveInstance","ModelViewer","ImageViewer","SoundViewer","AnimationViewer","ObjectLinks","InstanceSerializer","SmartDecompiler","Notepad","ClientIndex","CodeSearch","SmartSearch","DependencyGraph","ScriptRelations","SecurityAuditor","RuntimeInspector","RemoteUsageMap","ActivityMap","PropertyTracker","RemoteFuzzer","ClientIntelligence","InspectorHub","IDESync","Clipboard","Duplicate","Deletion","PropertyCopier","PropertyRestorer","Rename"}
 	Main.ModulePathMap = {
 		Theme = "Core/Theme",
 		Lib = "Core/Lib",
@@ -558,7 +558,9 @@ Main = (function()
 		Duplicate = "Explorer/Duplicate",
 		Deletion = "Explorer/Deletion",
 		PropertyCopier = "Explorer/PropertyCopier",
+		PropertyRestorer = "Explorer/PropertyRestorer",
 		Rename = "Explorer/Rename",
+		History = "Explorer/History",
 	}
 	Main.Elevated = false
 	Main.AllowDraggableOnMobile = true
@@ -990,7 +992,9 @@ Main = (function()
 		Duplicate = Apps.Duplicate
 		Deletion = Apps.Deletion
 		PropertyCopier = Apps.PropertyCopier
+		PropertyRestorer = Apps.PropertyRestorer
 		Rename = Apps.Rename
+		History = Apps.History
 
 
 		--SecretServicePanel = Apps.SecretServicePanel
@@ -1031,7 +1035,9 @@ Main = (function()
 			Duplicate = Duplicate,
 			Deletion = Deletion,
 			PropertyCopier = PropertyCopier,
-			Rename = Rename
+			PropertyRestorer = PropertyRestorer,
+			Rename = Rename,
+			History = History
 		}
 
 		Main.AppControls.Lib.InitAfterMain(appTable)
@@ -3440,6 +3446,7 @@ Main = (function()
 				local mouse = Main.Mouse
 				cptsOnMouseClick = mouse.Button1Down:Connect(function()
 					pcall(function()
+						if Explorer and Explorer.isOverDexGui and Explorer.isOverDexGui() then return end
 						local object = mouse.Target
 						if nodes[object] then
 							selection:Set(nodes[object])

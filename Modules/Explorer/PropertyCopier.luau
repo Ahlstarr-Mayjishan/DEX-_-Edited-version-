@@ -22,7 +22,11 @@ local function initDeps(data)
 	createSimple = data.createSimple
 end
 
+local PropertyRestorer, History
+
 local function initAfterMain()
+	PropertyRestorer = Apps.PropertyRestorer
+	History = Apps.History
 end
 
 local function main()
@@ -116,25 +120,82 @@ local function main()
 
 	PropertyCopier.Paste = function(targetInstance)
 		if not targetInstance or not copiedCache then return end
-		
-		for k, v in pairs(copiedCache.Properties) do
-			pcall(function()
-				targetInstance[k] = v
-			end)
+
+		-- Backup original properties locally before pasting
+		local oldProperties = {}
+		local function addOldProp(name)
+			pcall(function() oldProperties[name] = targetInstance[name] end)
+		end
+		if targetInstance:IsA("BasePart") then
+			addOldProp("Material")
+			pcall(function() addOldProp("MaterialVariant") end)
+			addOldProp("Color")
+			addOldProp("Transparency")
+			addOldProp("Reflectance")
+			addOldProp("Size")
+			addOldProp("CanCollide")
+			addOldProp("Anchored")
+			addOldProp("CastShadow")
+		end
+		if targetInstance:IsA("MeshPart") then
+			pcall(function() addOldProp("MeshId") end)
+			pcall(function() addOldProp("TextureID") end)
+		end
+		local oldSpecialMesh = nil
+		local specialMesh = targetInstance:FindFirstChildOfClass("SpecialMesh")
+		if specialMesh then
+			oldSpecialMesh = {
+				MeshId = specialMesh.MeshId,
+				TextureId = specialMesh.TextureId,
+				Scale = specialMesh.Scale,
+				Offset = specialMesh.Offset,
+				MeshType = specialMesh.MeshType
+			}
 		end
 
-		local specMesh = copiedCache.SpecialMesh
-		if specMesh then
-			local specialMesh = targetInstance:FindFirstChildOfClass("SpecialMesh")
-			if not specialMesh then
-				specialMesh = Instance.new("SpecialMesh")
-				specialMesh.Parent = targetInstance
+		local function applyNew()
+			for k, v in pairs(copiedCache.Properties) do
+				pcall(function() targetInstance[k] = v end)
 			end
-			for k, v in pairs(specMesh) do
-				pcall(function()
-					specialMesh[k] = v
-				end)
+			local specMesh = copiedCache.SpecialMesh
+			if specMesh then
+				local mesh = targetInstance:FindFirstChildOfClass("SpecialMesh")
+				if not mesh then
+					mesh = Instance.new("SpecialMesh")
+					mesh.Parent = targetInstance
+				end
+				for k, v in pairs(specMesh) do
+					pcall(function() mesh[k] = v end)
+				end
 			end
+		end
+
+		local function applyOld()
+			for k, v in pairs(oldProperties) do
+				pcall(function() targetInstance[k] = v end)
+			end
+			local mesh = targetInstance:FindFirstChildOfClass("SpecialMesh")
+			if oldSpecialMesh then
+				if not mesh then
+					mesh = Instance.new("SpecialMesh")
+					mesh.Parent = targetInstance
+				end
+				for k, v in pairs(oldSpecialMesh) do
+					pcall(function() mesh[k] = v end)
+				end
+			elseif mesh then
+				mesh:Destroy()
+			end
+		end
+
+		applyNew()
+
+		if History and History.Add then
+			History.Add({
+				Name = "Paste Properties",
+				Undo = applyOld,
+				Redo = applyNew
+			})
 		end
 	end
 
