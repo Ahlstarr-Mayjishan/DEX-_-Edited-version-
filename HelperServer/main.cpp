@@ -155,6 +155,239 @@ void close_client(SOCKET client_socket) {
     closesocket(client_socket);
 }
 
+std::mutex g_ws_mutex;
+SOCKET g_roblox_ws = INVALID_SOCKET;
+SOCKET g_dashboard_ws = INVALID_SOCKET;
+
+inline bool recv_all(SOCKET s, char* buf, int len) {
+    int total = 0;
+    while (total < len) {
+        int r = recv(s, buf + total, len - total, 0);
+        if (r <= 0) return false;
+        total += r;
+    }
+    return true;
+}
+
+inline bool read_ws_text_frame(SOCKET client_socket, std::string& out_payload) {
+    while (true) {
+        char header[2];
+        if (!recv_all(client_socket, header, 2)) {
+            int err = WSAGetLastError();
+            if (err != 0 && err != WSAEDISCON) {
+                std::cout << "WS Read: recv_all header failed, error: " << err << std::endl;
+            }
+            return false;
+        }
+        
+        unsigned char first_byte = header[0];
+        unsigned char second_byte = header[1];
+        
+        bool fin = (first_byte & 0x80) != 0;
+        unsigned char opcode = first_byte & 0x0F;
+        
+        if (opcode == 0x08) { // Close
+            std::cout << "WS Read: Received Close frame." << std::endl;
+            return false;
+        }
+        
+        bool masked = (second_byte & 0x80) != 0;
+        uint64_t payload_len = second_byte & 0x7F;
+        
+        if (payload_len == 126) {
+            char len_bytes[2];
+            if (!recv_all(client_socket, len_bytes, 2)) {
+                std::cout << "WS Read: recv_all len_bytes(126) failed" << std::endl;
+                return false;
+            }
+            payload_len = (static_cast<unsigned char>(len_bytes[0]) << 8) | static_cast<unsigned char>(len_bytes[1]);
+        } else if (payload_len == 127) {
+            char len_bytes[8];
+            if (!recv_all(client_socket, len_bytes, 8)) {
+                std::cout << "WS Read: recv_all len_bytes(127) failed" << std::endl;
+                return false;
+            }
+            payload_len = 0;
+            for (int i = 0; i < 8; i++) {
+                payload_len = (payload_len << 8) | static_cast<unsigned char>(len_bytes[i]);
+            }
+        }
+        
+        char mask_key[4] = {0};
+        if (masked) {
+            if (!recv_all(client_socket, mask_key, 4)) {
+                std::cout << "WS Read: recv_all mask_key failed" << std::endl;
+                return false;
+            }
+        }
+        
+        std::vector<char> buffer;
+        if (payload_len > 0) {
+            if (payload_len > 50 * 1024 * 1024) {
+                std::cout << "WS Read: Payload too large: " << payload_len << std::endl;
+                return false;
+            }
+            buffer.resize(payload_len);
+            if (!recv_all(client_socket, buffer.data(), static_cast<int>(payload_len))) {
+                std::cout << "WS Read: recv_all payload failed" << std::endl;
+                return false;
+            }
+            if (masked) {
+                for (size_t i = 0; i < payload_len; i++) {
+                    buffer[i] ^= mask_key[i % 4];
+                }
+            }
+        }
+        
+        if (opcode == 0x09) { // Ping
+            std::vector<char> pong_frame;
+            pong_frame.push_back(static_cast<char>(0x8A));
+            size_t len = buffer.size();
+            if (len <= 125) {
+                pong_frame.push_back(static_cast<char>(len));
+            } else if (len <= 65535) {
+                pong_frame.push_back(static_cast<char>(126));
+                pong_frame.push_back(static_cast<char>((len >> 8) & 0xFF));
+                pong_frame.push_back(static_cast<char>(len & 0xFF));
+            } else {
+                pong_frame.push_back(static_cast<char>(127));
+                for (int i = 7; i >= 0; i--) {
+                    pong_frame.push_back(static_cast<char>((len >> (i * 8)) & 0xFF));
+                }
+            }
+            pong_frame.insert(pong_frame.end(), buffer.begin(), buffer.end());
+            send(client_socket, pong_frame.data(), static_cast<int>(pong_frame.size()), 0);
+            continue;
+        }
+        
+        if (opcode == 0x0A) { // Pong
+            continue;
+        }
+        
+        if (opcode == 0x01 || opcode == 0x02 || opcode == 0x00) {
+            out_payload.assign(buffer.begin(), buffer.end());
+            return true;
+        }
+        
+        std::cout << "WS Read: Unknown opcode: " << static_cast<int>(opcode) << std::endl;
+        return false;
+    }
+}
+
+inline bool perform_ws_handshake(SOCKET ClientSocket, const std::string& request_headers) {
+    size_t key_pos = request_headers.find("Sec-WebSocket-Key:");
+    if (key_pos == std::string::npos) {
+        send_response(ClientSocket, 400, "Bad Request", "Missing Sec-WebSocket-Key");
+        close_client(ClientSocket);
+        return false;
+    }
+    size_t value_start = key_pos + 18;
+    while (value_start < request_headers.size() && std::isspace(static_cast<unsigned char>(request_headers[value_start]))) {
+        value_start++;
+    }
+    size_t value_end = request_headers.find("\r\n", value_start);
+    if (value_end == std::string::npos) value_end = request_headers.size();
+    std::string ws_key = request_headers.substr(value_start, value_end - value_start);
+    while (!ws_key.empty() && std::isspace(static_cast<unsigned char>(ws_key.back()))) {
+        ws_key.pop_back();
+    }
+    
+    std::string concat = ws_key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
+    std::string sha1_hash = sha1::hash(concat);
+    std::string accept_key = base64::encode(sha1_hash);
+    
+    std::stringstream response;
+    response << "HTTP/1.1 101 Switching Protocols\r\n"
+             << "Upgrade: websocket\r\n"
+             << "Connection: Upgrade\r\n"
+             << "Sec-WebSocket-Accept: " << accept_key << "\r\n\r\n";
+    std::string hand_str = response.str();
+    send(ClientSocket, hand_str.data(), static_cast<int>(hand_str.size()), 0);
+    return true;
+}
+
+inline void handle_client_ws(SOCKET ClientSocket, const std::string& request_headers) {
+    if (!perform_ws_handshake(ClientSocket, request_headers)) return;
+    
+    {
+        std::lock_guard<std::mutex> lock(g_ws_mutex);
+        if (g_roblox_ws != INVALID_SOCKET) {
+            closesocket(g_roblox_ws);
+        }
+        g_roblox_ws = ClientSocket;
+    }
+    
+    std::cout << "Roblox client connected via WebSockets." << std::endl;
+    
+    std::string payload;
+    while (read_ws_text_frame(ClientSocket, payload)) {
+        SOCKET dash = INVALID_SOCKET;
+        {
+            std::lock_guard<std::mutex> lock(g_ws_mutex);
+            dash = g_dashboard_ws;
+        }
+        if (dash != INVALID_SOCKET) {
+            if (!send_ws_text_frame(dash, payload)) {
+                std::lock_guard<std::mutex> lock(g_ws_mutex);
+                if (g_dashboard_ws == dash) {
+                    closesocket(g_dashboard_ws);
+                    g_dashboard_ws = INVALID_SOCKET;
+                }
+            }
+        }
+    }
+    
+    {
+        std::lock_guard<std::mutex> lock(g_ws_mutex);
+        if (g_roblox_ws == ClientSocket) {
+            g_roblox_ws = INVALID_SOCKET;
+        }
+    }
+    close_client(ClientSocket);
+    std::cout << "Roblox client disconnected." << std::endl;
+}
+
+inline void handle_dashboard_ws(SOCKET ClientSocket, const std::string& request_headers) {
+    if (!perform_ws_handshake(ClientSocket, request_headers)) return;
+    
+    {
+        std::lock_guard<std::mutex> lock(g_ws_mutex);
+        if (g_dashboard_ws != INVALID_SOCKET) {
+            closesocket(g_dashboard_ws);
+        }
+        g_dashboard_ws = ClientSocket;
+    }
+    
+    std::cout << "Dashboard connected via WebSockets." << std::endl;
+    
+    std::string payload;
+    while (read_ws_text_frame(ClientSocket, payload)) {
+        SOCKET roblox = INVALID_SOCKET;
+        {
+            std::lock_guard<std::mutex> lock(g_ws_mutex);
+            roblox = g_roblox_ws;
+        }
+        if (roblox != INVALID_SOCKET) {
+            if (!send_ws_text_frame(roblox, payload)) {
+                std::lock_guard<std::mutex> lock(g_ws_mutex);
+                if (g_roblox_ws == roblox) {
+                    closesocket(g_roblox_ws);
+                    g_roblox_ws = INVALID_SOCKET;
+                }
+            }
+        }
+    }
+    
+    {
+        std::lock_guard<std::mutex> lock(g_ws_mutex);
+        if (g_dashboard_ws == ClientSocket) {
+            g_dashboard_ws = INVALID_SOCKET;
+        }
+    }
+    close_client(ClientSocket);
+    std::cout << "Dashboard disconnected." << std::endl;
+}
+
 // Handle WebSocket client upgrades and updates
 inline void handle_ws_client(SOCKET ClientSocket, const std::string& request_headers) {
     size_t key_pos = request_headers.find("Sec-WebSocket-Key:");
@@ -406,6 +639,12 @@ void handle_client(SOCKET ClientSocket) {
             send_response(ClientSocket, 204, "No Content", "");
         } else if (path == "/sync-ws" && method == "GET") {
             handle_ws_client(ClientSocket, request_data);
+            return;
+        } else if (path == "/client-ws" && method == "GET") {
+            handle_client_ws(ClientSocket, request_data);
+            return;
+        } else if (path == "/dashboard-ws" && method == "GET") {
+            handle_dashboard_ws(ClientSocket, request_data);
             return;
         } else if ((path == "/" || path == "/app") && method == "GET") {
             send_response(ClientSocket, 200, "OK", helper_dashboard_html(), "text/html; charset=utf-8");
@@ -976,6 +1215,7 @@ int main() {
         }).detach();
     }
 
+    close_db();
     closesocket(ListenSocket);
     WSACleanup();
     return 0;

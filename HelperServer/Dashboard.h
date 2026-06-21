@@ -8,6 +8,7 @@ std::string helper_dashboard_html() {
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DEX++ Helper</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
 <style>
 :root{color-scheme:dark;--bg:#0b0f14;--sidebar:#10151b;--panel:#151b22;--panel2:#1a222b;--panel3:#202a34;--line:#2a3743;--line-soft:#202a34;--text:#f2f5f7;--muted:#8fa0b1;--accent:#52b69a;--accent2:#68c7a9;--warn:#d7ad56;--bad:#e66a73}
 *{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:#53606c transparent}*::-webkit-scrollbar{width:8px;height:8px}*::-webkit-scrollbar-track{background:transparent}*::-webkit-scrollbar-thumb{background:#4a5662;border:2px solid transparent;background-clip:padding-box;border-radius:8px}*::-webkit-scrollbar-thumb:hover{background:#65727e;border:2px solid transparent;background-clip:padding-box}*::-webkit-scrollbar-button{display:none;width:0;height:0}
@@ -29,6 +30,13 @@ input,textarea{width:100%;background:#0d1217;border:1px solid var(--line);color:
 .muted{color:var(--muted)}.ok{color:var(--accent2)}.warn{color:var(--warn)}.bad{color:var(--bad)}.hidden{display:none!important}
 @media(max-width:980px){main{grid-template-columns:1fr;height:auto;min-height:calc(100vh - 48px);overflow:visible}.hero{grid-template-columns:1fr}aside{border-right:0;border-bottom:1px solid var(--line);max-height:46vh}section{height:70vh}.searchWorkspace{grid-template-columns:minmax(240px,38%) 1fr}}
 @media(max-width:700px){.searchWorkspace{grid-template-columns:1fr}.resultList{border-right:0}.resultInspector{display:none}}
+.tree-node-wrapper { margin: 2px 0; }
+.tree-node-row { display: flex; align-items: center; gap: 6px; padding: 3px 6px; border-radius: 4px; color: #cbd5e1; }
+.tree-node-row:hover { background: var(--panel2); }
+.tree-node-row.active { background: #182822; box-shadow: inset 2px 0 var(--accent); color: white; }
+.tree-expander { display: inline-block; width: 14px; height: 14px; text-align: center; font-size: 10px; line-height: 14px; color: var(--muted); cursor: pointer; }
+.tree-expander:hover { color: white; }
+.tree-node-children { padding-left: 12px; border-left: 1px dashed var(--line); margin-left: 6px; }
 </style>
 </head>
 <body>
@@ -106,8 +114,10 @@ input,textarea{width:100%;background:#0d1217;border:1px solid var(--line);color:
   </div>
   <div class="tabs">
     <button class="tab active" data-view="resultsView">Results</button>
+    <button class="tab" data-view="virtualExplorerView">Virtual Explorer</button>
     <button class="tab" data-view="analysisView">Analysis</button>
     <button class="tab" data-view="remoteView">Remotes</button>
+    <button class="tab" data-view="chartsView">Visualizations</button>
     <button class="tab" data-view="aiChatView">AI Chat</button>
     <button class="tab" data-view="accountsView">Accounts</button>
     <button class="tab" data-view="mcpView">MCP & IDEs</button>
@@ -122,8 +132,88 @@ input,textarea{width:100%;background:#0d1217;border:1px solid var(--line);color:
       <div class="emptyInspector">Select a script to preview its source and use quick actions.</div>
     </div>
   </div>
+  <div id="virtualExplorerView" class="searchWorkspace hidden">
+    <div id="virtualTree" class="resultList" style="padding: 10px; font-family: monospace; font-size: 13px; line-height: 1.6; user-select: none;">
+      <div class="tree-node-wrapper" data-path="game">
+        <div class="tree-node-row" style="padding-left: 0px; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+          <span class="tree-expander" style="width: 12px;">▶</span>
+          <span class="tree-icon">📁</span>
+          <span class="tree-node" data-path="game" data-class="DataModel">game</span>
+        </div>
+        <div class="tree-node-children" style="display: none;"></div>
+      </div>
+    </div>
+    <div id="virtualInspector" class="resultInspector">
+      <div id="virtualInspectorHead" class="inspectorHead">
+        <h2 id="selectedNodeName">No selection</h2>
+        <span id="selectedNodeClass" class="pill">None</span>
+        <span id="selectedNodePath" style="font-family: monospace; font-size: 11px; color: var(--muted); margin-left: 8px;"></span>
+      </div>
+      <div class="inspectorActions">
+        <span style="font-size: 12px; font-weight: 600;">Context Actions</span>
+      </div>
+      <div style="display: grid; grid-template-rows: 1fr auto; height: 100%; min-height: 0; overflow: hidden;">
+        <div style="overflow: auto; padding: 14px; border-bottom: 1px solid var(--line-soft);">
+          <table style="width: 100%; border-collapse: collapse; font-family: monospace; font-size: 12px;">
+            <thead>
+              <tr style="text-align: left; border-bottom: 1px solid var(--line);">
+                <th style="padding: 6px 8px; width: 40%;">Property</th>
+                <th style="padding: 6px 8px; width: 40%;">Value</th>
+                <th style="padding: 6px 8px; width: 20%;">Type</th>
+              </tr>
+            </thead>
+            <tbody id="virtualPropertiesBody">
+              <tr><td colspan="3" style="padding:12px;text-align:center;color:var(--muted)">Select a node in the tree to display properties</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div style="padding: 14px; background: var(--sidebar); display: flex; flex-direction: column; gap: 8px;">
+          <div style="font-weight: 600; font-size: 12px;">Execute Luau in Selected Context</div>
+          <textarea id="virtualExecutorSource" placeholder="print(owner:GetFullName())" style="height: 100px; font-family: Consolas, monospace; font-size: 12px;"></textarea>
+          <div class="row">
+            <button id="runVirtualScriptBtn" class="primary">Execute</button>
+            <span id="virtualRunStatus" style="font-size: 11px; color: var(--muted);"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
   <div id="analysisView" class="results hidden"><div class="hit"><h3>No analysis yet</h3><pre id="analysisOut">Paste source and click Analyze or Normalize.</pre></div></div>
   <div id="remoteView" class="results hidden"><div class="hit"><h3>No remote analysis yet</h3><pre>Paste RemoteSpy logs and click Analyze Remotes.</pre></div></div>
+  <div id="chartsView" class="results hidden" style="height:100%; overflow:auto; padding:18px;">
+    <div style="max-width:1000px; margin:0 auto; display:flex; flex-direction:column; gap:24px">
+      <div style="display:flex; justify-content:space-between; align-items:center">
+        <h2 style="margin:0; font-size:18px; font-weight:650">RemoteSpy Log Visualizations</h2>
+        <button id="refreshChartsBtn" class="primary" style="height:30px; padding:0 12px; font-size:11px">Refresh Graphs</button>
+      </div>
+      <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(420px, 1fr)); gap:20px;">
+        <div style="background:var(--sidebar); border:1px solid var(--line-soft); border-radius:8px; padding:18px; display:flex; flex-direction:column; height:340px">
+          <div style="font-weight:600; font-size:14px; margin-bottom:12px; color:var(--muted)">Top Remote Invocation Frequencies (calls)</div>
+          <div style="flex:1; position:relative; min-height:0">
+            <canvas id="topRemotesChart"></canvas>
+          </div>
+        </div>
+        <div style="background:var(--sidebar); border:1px solid var(--line-soft); border-radius:8px; padding:18px; display:flex; flex-direction:column; height:340px">
+          <div style="font-weight:600; font-size:14px; margin-bottom:12px; color:var(--muted)">Protocol Methods (Fire vs Invoke)</div>
+          <div style="flex:1; position:relative; min-height:0">
+            <canvas id="protocolsChart"></canvas>
+          </div>
+        </div>
+        <div style="background:var(--sidebar); border:1px solid var(--line-soft); border-radius:8px; padding:18px; display:flex; flex-direction:column; height:340px">
+          <div style="font-weight:600; font-size:14px; margin-bottom:12px; color:var(--muted)">Risk Classification Profile</div>
+          <div style="flex:1; position:relative; min-height:0">
+            <canvas id="riskLevelsChart"></canvas>
+          </div>
+        </div>
+        <div style="background:var(--sidebar); border:1px solid var(--line-soft); border-radius:8px; padding:18px; display:flex; flex-direction:column; height:340px">
+          <div style="font-weight:600; font-size:14px; margin-bottom:12px; color:var(--muted)">Direct Data Flow Activity (Incoming vs Outgoing)</div>
+          <div style="flex:1; position:relative; min-height:0">
+            <canvas id="directionsChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
   <div id="aiChatView" class="results hidden" style="height:100%">
     <div style="display:grid;grid-template-rows:1fr auto auto;height:100%;padding:14px;gap:10px;min-height:0">
       <div id="chatHistory" style="border:1px solid var(--line-soft);border-radius:6px;background:#0d1217;padding:14px;display:flex;flex-direction:column;gap:10px;min-height:0;overflow-y:auto">
@@ -373,8 +463,9 @@ function updateSession(j){const game=j.game||{};const session=j.session||{};cons
 async function refreshToolState(){try{const raw=await textFetch('/tool-state');const j=JSON.parse(raw);updateSession(j);const tools=j.tools||{};const names=Object.keys(tools).sort((a,b)=>Number(tools[b].UpdatedAt||0)-Number(tools[a].UpdatedAt||0));$('liveDex').innerHTML=names.length?names.slice(0,6).map(n=>toolLine(n,tools[n]||{})).join(''):'<div class="stateRow"><b>No live tool state</b><span>DEX has not reported yet.</span></div>'}catch(e){$('liveDex').innerHTML='<div class="stateRow"><b class="bad">Live state unavailable</b><span>'+esc(e.message)+'</span></div>'}}
 function show(view){
   document.querySelectorAll('.tab').forEach(b=>b.classList.toggle('active',b.dataset.view===view));
-  ['resultsView','analysisView','remoteView','helpView','aiChatView','accountsView','mcpView'].forEach(id=>$(id).classList.toggle('hidden',id!==view));
+  ['resultsView','analysisView','remoteView','helpView','aiChatView','accountsView','mcpView','virtualExplorerView','chartsView'].forEach(id=>$(id).classList.toggle('hidden',id!==view));
   if(view==='mcpView')refreshIdes();
+  if(view==='chartsView')renderCharts();
 }
 
 async function refreshIdes() {
@@ -627,6 +718,8 @@ function remoteHtml(item) {
         <h3 style="margin:0 0 4px">${esc(item.path)} <span class="${Number(item.risk||0)>0?'warn':'ok'}">risk ${esc(item.risk||0)}</span></h3>
       </div>
       <div style="display:flex;gap:6px">
+        <button onclick="aiAuditRemote('${esc(item.path)}', '${esc(methods)}', ${esc(samplesJson)})" style="height:22px;padding:0 8px;font-size:11px;background:var(--accent);color:#000;font-weight:bold">AI Audit</button>
+        <button onclick="aiExplainRemote('${esc(item.path)}', '${esc(methods)}', ${esc(samplesJson)})" style="height:22px;padding:0 8px;font-size:11px;background:var(--panel3)">AI Explain</button>
         <button onclick="copyWebFuzzer('${esc(item.path)}', '${esc(methods)}', ${esc(samplesJson)}, this)" style="height:22px;padding:0 8px;font-size:11px;background:var(--panel3)">Copy Fuzzer</button>
         <button onclick="copyWebMock('${esc(item.path)}', '${esc(methods)}', this)" style="height:22px;padding:0 8px;font-size:11px;background:var(--panel3)">Copy Mock Hook</button>
       </div>
@@ -636,6 +729,23 @@ function remoteHtml(item) {
     <pre>${esc(samples||'no args sample')}</pre>
   </div>`;
 }
+
+function aiAuditRemote(path, methods, samples) {
+  show('aiChatView');
+  const prompt = `Perform a security audit on the Roblox remote:\nPath: ${path}\nMethods: ${methods}\nSamples:\n${JSON.stringify(samples, null, 2)}\n\nIdentify potential vulnerabilities (e.g. lack of server-side validation, remote parameter injection, spam exploit) and write a secure Luau fuzzer script to test it.`;
+  $('chatInput').value = prompt;
+  $('sendChat').click();
+}
+
+function aiExplainRemote(path, methods, samples) {
+  show('aiChatView');
+  const prompt = `Explain the logic and purpose of the Roblox remote:\nPath: ${path}\nMethods: ${methods}\nSamples:\n${JSON.stringify(samples, null, 2)}\n\nWhat kind of game action does this remote represent, and what does it indicate about the game's architecture?`;
+  $('chatInput').value = prompt;
+  $('sendChat').click();
+}
+
+window.aiAuditRemote = aiAuditRemote;
+window.aiExplainRemote = aiExplainRemote;
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 
 function formatMarkdownToHtml(md) {
@@ -1312,7 +1422,230 @@ $('search').onclick=async()=>{const q=$('query').value.trim();if(!q)return;show(
 $('query').addEventListener('keydown',e=>{if(e.key==='Enter')$('search').click()});
 $('analyze').onclick=async()=>{show('analysisView');try{$('analysisOut').textContent=await textFetch('/analyze-source-auto',{method:'POST',headers:{'Content-Type':'text/plain'},body:$('sourceBox').value})}catch(e){$('analysisOut').textContent=e.message}};
 $('normalize').onclick=async()=>{show('analysisView');try{$('analysisOut').textContent=await textFetch('/normalize-source',{method:'POST',headers:{'Content-Type':'text/plain'},body:$('sourceBox').value})}catch(e){$('analysisOut').textContent=e.message}};
-$('remoteAnalyze').onclick=async()=>{show('remoteView');$('remoteView').innerHTML='<div class="hit"><h3>Analyzing remotes...</h3></div>';try{const raw=await textFetch('/analyze-remotes',{method:'POST',headers:{'Content-Type':'text/plain'},body:$('remoteBox').value});const j=JSON.parse(raw);const head=`<div class="hit"><h3>Remote Contract Summary</h3><div class="meta">lines ${esc(j.lines||0)} | parsed ${esc(j.parsed||0)} | remotes ${esc(j.remotes||0)}</div></div>`;$('remoteView').innerHTML=head+((j.results||[]).map(remoteHtml).join('')||'<div class="hit"><h3>No RemoteSpy lines parsed</h3></div>')}catch(e){$('remoteView').innerHTML='<div class="hit"><h3 class="bad">Remote analysis failed</h3><pre>'+esc(e.message)+'</pre></div>'}};
+let lastRemoteSpyData = null;
+let charts = {};
+
+function renderCharts() {
+  if (!window.Chart) {
+    console.error("Chart.js is not loaded yet.");
+    return;
+  }
+  
+  const data = lastRemoteSpyData;
+
+  function destroyChart(id) {
+    if (charts[id]) {
+      charts[id].destroy();
+      charts[id] = null;
+    }
+  }
+
+  // --- Chart 1: Top Remotes ---
+  destroyChart('topRemotesChart');
+  const remotesList = (data && data.results) ? data.results.slice(0, 8) : [
+    { path: "ReplicatedStorage.RemoteEvent1", calls: 42 },
+    { path: "ReplicatedStorage.RemoteFunctionA", calls: 28 },
+    { path: "Workspace.Part.RemoteEvent", calls: 19 },
+    { path: "ReplicatedStorage.BuyItem", calls: 15 },
+    { path: "ReplicatedStorage.AdminEvent", calls: 8 },
+  ];
+  
+  const topRemotesLabels = remotesList.map(r => {
+    const parts = r.path.split('.');
+    return parts.length > 2 ? parts.slice(-2).join('.') : r.path;
+  });
+  const topRemotesValues = remotesList.map(r => r.calls);
+
+  const ctx1 = $('topRemotesChart').getContext('2d');
+  charts['topRemotesChart'] = new Chart(ctx1, {
+    type: 'bar',
+    data: {
+      labels: topRemotesLabels,
+      datasets: [{
+        label: 'Invocations',
+        data: topRemotesValues,
+        backgroundColor: 'rgba(82, 182, 154, 0.65)',
+        borderColor: 'rgba(82, 182, 154, 1)',
+        borderWidth: 1.5,
+        borderRadius: 4
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        y: {
+          beginAtZero: true,
+          grid: { color: 'rgba(255, 255, 255, 0.08)' },
+          ticks: { color: '#8fa0b1' }
+        },
+        x: {
+          grid: { display: false },
+          ticks: { color: '#8fa0b1', maxRotation: 45, minRotation: 45 }
+        }
+      },
+      plugins: {
+        legend: { display: false }
+      }
+    }
+  });
+
+  // --- Chart 2: Protocol Methods ---
+  destroyChart('protocolsChart');
+  let fireCount = 0;
+  let invokeCount = 0;
+  let otherCount = 0;
+  if (data && data.methodCounts) {
+    fireCount = (data.methodCounts.FireServer || 0) + (data.methodCounts.Fire || 0);
+    invokeCount = (data.methodCounts.InvokeServer || 0) + (data.methodCounts.Invoke || 0);
+    otherCount = Object.entries(data.methodCounts).reduce((acc, [k, v]) => {
+      if (k !== 'FireServer' && k !== 'Fire' && k !== 'InvokeServer' && k !== 'Invoke') {
+        return acc + v;
+      }
+      return acc;
+    }, 0);
+  } else {
+    fireCount = 85;
+    invokeCount = 20;
+    otherCount = 7;
+  }
+
+  const ctx2 = $('protocolsChart').getContext('2d');
+  charts['protocolsChart'] = new Chart(ctx2, {
+    type: 'doughnut',
+    data: {
+      labels: ['Fire / Event', 'Invoke / Function', 'Other'],
+      datasets: [{
+        data: [fireCount, invokeCount, otherCount],
+        backgroundColor: [
+          'rgba(82, 182, 154, 0.7)',
+          'rgba(215, 173, 86, 0.7)',
+          'rgba(143, 160, 177, 0.7)'
+        ],
+        borderColor: [
+          '#52b69a',
+          '#d7ad56',
+          '#8fa0b1'
+        ],
+        borderWidth: 1.5
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: { color: '#f2f5f7', boxWidth: 12 }
+        }
+      },
+      cutout: '65%'
+    }
+  });
+
+  // --- Chart 3: Risk Classification ---
+  destroyChart('riskLevelsChart');
+  let riskHigh = 0;
+  let riskMedium = 0;
+  let riskLow = 0;
+  if (data && data.results) {
+    data.results.forEach(r => {
+      if (r.risk >= 5) riskHigh++;
+      else if (r.risk >= 2) riskMedium++;
+      else riskLow++;
+    });
+  } else {
+    riskHigh = 3;
+    riskMedium = 12;
+    riskLow = 35;
+  }
+
+  const ctx3 = $('riskLevelsChart').getContext('2d');
+  charts['riskLevelsChart'] = new Chart(ctx3, {
+    type: 'polarArea',
+    data: {
+      labels: ['High Risk (>=5)', 'Medium Risk (2-4)', 'Low Risk (<2)'],
+      datasets: [{
+        data: [riskHigh, riskMedium, riskLow],
+        backgroundColor: [
+          'rgba(230, 106, 115, 0.65)',
+          'rgba(215, 173, 86, 0.65)',
+          'rgba(82, 182, 154, 0.65)'
+        ],
+        borderColor: [
+          '#e66a73',
+          '#d7ad56',
+          '#52b69a'
+        ],
+        borderWidth: 1.5
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        r: {
+          grid: { color: 'rgba(255, 255, 255, 0.08)' },
+          angleLines: { color: 'rgba(255, 255, 255, 0.08)' },
+          ticks: { color: '#8fa0b1', backdropColor: 'transparent' }
+        }
+      },
+      plugins: {
+        legend: {
+          position: 'right',
+          labels: { color: '#f2f5f7', boxWidth: 12 }
+        }
+      }
+    }
+  });
+
+  // --- Chart 4: Directions ---
+  destroyChart('directionsChart');
+  let outgoingTotal = 0;
+  let incomingTotal = 0;
+  if (data && data.results) {
+    data.results.forEach(r => {
+      outgoingTotal += r.outgoing || 0;
+      incomingTotal += r.incoming || 0;
+    });
+  } else {
+    outgoingTotal = 95;
+    incomingTotal = 17;
+  }
+
+  const ctx4 = $('directionsChart').getContext('2d');
+  charts['directionsChart'] = new Chart(ctx4, {
+    type: 'pie',
+    data: {
+      labels: ['Outgoing (Client -> Server)', 'Incoming (Server -> Client)'],
+      datasets: [{
+        data: [outgoingTotal, incomingTotal],
+        backgroundColor: [
+          'rgba(82, 182, 154, 0.7)',
+          'rgba(104, 199, 169, 0.4)'
+        ],
+        borderColor: [
+          '#52b69a',
+          '#68c7a9'
+        ],
+        borderWidth: 1.5
+      }]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { color: '#f2f5f7', boxWidth: 12 }
+        }
+      }
+    }
+  });
+}
+
+$('remoteAnalyze').onclick=async()=>{show('remoteView');$('remoteView').innerHTML='<div class="hit"><h3>Analyzing remotes...</h3></div>';try{const raw=await textFetch('/analyze-remotes',{method:'POST',headers:{'Content-Type':'text/plain'},body:$('remoteBox').value});const j=JSON.parse(raw);lastRemoteSpyData=j;const head=`<div class="hit"><h3>Remote Contract Summary</h3><div class="meta">lines ${esc(j.lines||0)} | parsed ${esc(j.parsed||0)} | remotes ${esc(j.remotes||0)}</div></div>`;$('remoteView').innerHTML=head+((j.results||[]).map(remoteHtml).join('')||'<div class="hit"><h3>No RemoteSpy lines parsed</h3></div>');try{renderCharts();}catch(e){console.error(e)}}catch(e){$('remoteView').innerHTML='<div class="hit"><h3 class="bad">Remote analysis failed</h3><pre>'+esc(e.message)+'</pre></div>'}};
+$('refreshChartsBtn').onclick=()=>renderCharts();
 $('script').onclick=()=>window.open('/script','_blank');
 
 // Accounts view logic
@@ -2007,6 +2340,277 @@ setInterval(refreshScriptStatus,5000);
 setInterval(refreshWorkers,5000);
 setInterval(refreshToolchain,10000);
 setInterval(refreshToolState,1000);
+
+// Live WS Client & Virtual Tree Logic
+let dashWs = null;
+let wsRequests = {};
+let wsRequestIdCounter = 0;
+let selectedPath = "";
+let selectedNodeElement = null;
+
+function connectDashboardWs() {
+  const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  const url = `${protocol}//${window.location.host}/dashboard-ws`;
+  dashWs = new WebSocket(url);
+  
+  dashWs.onopen = () => {
+    console.log("Dashboard WS connected.");
+    document.getElementById("dexPill").textContent = "Roblox Live Connected";
+    document.getElementById("dexPill").classList.add("ok");
+    document.getElementById("dexPill").classList.remove("warn");
+  };
+  
+  dashWs.onclose = () => {
+    console.log("Dashboard WS disconnected.");
+    document.getElementById("dexPill").textContent = "Roblox waiting";
+    document.getElementById("dexPill").classList.remove("ok");
+    document.getElementById("dexPill").classList.add("warn");
+    setTimeout(connectDashboardWs, 3000);
+  };
+  
+  dashWs.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      if (data.id && wsRequests[data.id]) {
+        const resolve = wsRequests[data.id];
+        delete wsRequests[data.id];
+        resolve(data);
+      }
+    } catch (e) {
+      console.error("Error parsing WS message:", e);
+    }
+  };
+}
+
+function sendWsRequest(action, payload = {}) {
+  return new Promise((resolve, reject) => {
+    if (!dashWs || dashWs.readyState !== WebSocket.OPEN) {
+      reject("WebSocket is not connected.");
+      return;
+    }
+    const requestId = "req_" + action + "_" + wsRequestIdCounter++;
+    wsRequests[requestId] = resolve;
+    
+    const msg = Object.assign({ id: requestId, action: action }, payload);
+    dashWs.send(JSON.stringify(msg));
+    
+    setTimeout(() => {
+      if (wsRequests[requestId]) {
+        delete wsRequests[requestId];
+        reject("Request timeout: " + action);
+      }
+    }, 10000);
+  });
+}
+
+async function toggleVirtualNode(expanderBtn) {
+  const row = expanderBtn.parentElement;
+  const wrapper = row.parentElement;
+  const childrenContainer = wrapper.querySelector('.tree-node-children');
+  const path = row.querySelector('.tree-node').dataset.path;
+  
+  if (childrenContainer.style.display === 'block') {
+    childrenContainer.style.display = 'none';
+    expanderBtn.textContent = '▶';
+  } else {
+    expanderBtn.textContent = '⌛';
+    try {
+      const res = await sendWsRequest('get_children', { path: path });
+      childrenContainer.innerHTML = '';
+      if (res.ok && res.children) {
+        if (res.children.length === 0) {
+          childrenContainer.innerHTML = `<div style="padding: 4px 18px; color: var(--muted); font-style: italic; font-size: 11px;">No children</div>`;
+        } else {
+          res.children.forEach(child => {
+            const childWrapper = document.createElement('div');
+            childWrapper.className = 'tree-node-wrapper';
+            childWrapper.dataset.path = child.Path;
+            
+            const childRow = document.createElement('div');
+            childRow.className = 'tree-node-row';
+            childRow.style.cursor = 'pointer';
+            
+            const hasChildren = child.HasChildren;
+            const expanderSpan = document.createElement('span');
+            expanderSpan.className = 'tree-expander';
+            expanderSpan.textContent = hasChildren ? '▶' : '•';
+            if (hasChildren) {
+              expanderSpan.onclick = (e) => {
+                e.stopPropagation();
+                toggleVirtualNode(expanderSpan);
+              };
+            }
+            
+            const iconSpan = document.createElement('span');
+            iconSpan.textContent = getIconForClass(child.ClassName);
+            
+            const nameSpan = document.createElement('span');
+            nameSpan.className = 'tree-node';
+            nameSpan.textContent = child.Name;
+            nameSpan.dataset.path = child.Path;
+            nameSpan.dataset.class = child.ClassName;
+            
+            childRow.appendChild(expanderSpan);
+            childRow.appendChild(iconSpan);
+            childRow.appendChild(nameSpan);
+            
+            childRow.onclick = () => {
+              selectVirtualNode(childRow, child.Path, child.ClassName);
+            };
+            
+            childWrapper.appendChild(childRow);
+            
+            const grandchildrenContainer = document.createElement('div');
+            grandchildrenContainer.className = 'tree-node-children';
+            grandchildrenContainer.style.display = 'none';
+            childWrapper.appendChild(grandchildrenContainer);
+            
+            childrenContainer.appendChild(childWrapper);
+          });
+        }
+      } else {
+        childrenContainer.innerHTML = `<div style="padding: 4px 18px; color: var(--bad); font-size: 11px;">Error: ${res.error || 'unknown'}</div>`;
+      }
+      childrenContainer.style.display = 'block';
+      expanderBtn.textContent = '▼';
+    } catch (err) {
+      childrenContainer.innerHTML = `<div style="padding: 4px 18px; color: var(--bad); font-size: 11px;">Error: ${err}</div>`;
+      childrenContainer.style.display = 'block';
+      expanderBtn.textContent = '▶';
+    }
+  }
+}
+
+function getIconForClass(className) {
+  const map = {
+    Workspace: '🌐',
+    Players: '👥',
+    Lighting: '💡',
+    ReplicatedStorage: '📦',
+    ServerStorage: '🗄️',
+    StarterGui: '🖥️',
+    StarterPack: '🎒',
+    SoundService: '🔊',
+    HttpService: '🌐',
+    Script: '📜',
+    LocalScript: '📜',
+    ModuleScript: '⚙️',
+    Part: '🧱',
+    Folder: '📁',
+    Model: '👾',
+    RemoteEvent: '⚡',
+    RemoteFunction: '📞'
+  };
+  return map[className] || '📄';
+}
+
+async function selectVirtualNode(rowEl, path, className) {
+  if (selectedNodeElement) {
+    selectedNodeElement.classList.remove('active');
+  }
+  selectedNodeElement = rowEl;
+  selectedNodeElement.classList.add('active');
+  
+  selectedPath = path;
+  
+  $('selectedNodeName').textContent = path.split('.').pop();
+  $('selectedNodeClass').textContent = className;
+  $('selectedNodePath').textContent = path;
+  
+  $('virtualPropertiesBody').innerHTML = `<tr><td colspan="3" style="padding:12px;text-align:center;color:var(--muted)">Loading properties...</td></tr>`;
+  
+  try {
+    const res = await sendWsRequest('get_properties', { path: path });
+    if (res.ok && res.properties) {
+      if (res.properties.length === 0) {
+        $('virtualPropertiesBody').innerHTML = `<tr><td colspan="3" style="padding:12px;text-align:center;color:var(--muted)">No properties found</td></tr>`;
+      } else {
+        let html = '';
+        res.properties.forEach(prop => {
+          html += `
+            <tr style="border-bottom: 1px solid var(--line-soft);">
+              <td style="padding: 6px 8px; font-weight: 600;">${esc(prop.Name)}</td>
+              <td style="padding: 6px 8px; color: var(--accent2);">
+                <input type="text" class="prop-input" value="${esc(prop.Value)}" data-prop="${esc(prop.Name)}" data-type="${esc(prop.Type)}" style="height: 24px; padding: 2px 6px; font-size: 11px; background: #070a0e; border: 1px solid var(--line);">
+              </td>
+              <td style="padding: 6px 8px; color: var(--muted); font-size: 11px;">${esc(prop.Type)}</td>
+            </tr>
+          `;
+        });
+        $('virtualPropertiesBody').innerHTML = html;
+        
+        document.querySelectorAll('.prop-input').forEach(input => {
+          input.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter') {
+              const propName = input.dataset.prop;
+              const propType = input.dataset.type;
+              const val = input.value;
+              input.style.borderColor = 'var(--warn)';
+              try {
+                const setRes = await sendWsRequest('set_property', {
+                  path: selectedPath,
+                  name: propName,
+                  value: val,
+                  valueType: propType
+                });
+                if (setRes.ok) {
+                  input.style.borderColor = 'var(--accent)';
+                  setTimeout(() => { input.style.borderColor = 'var(--line)'; }, 1000);
+                } else {
+                  input.style.borderColor = 'var(--bad)';
+                  alert('Set property failed: ' + setRes.error);
+                }
+              } catch (err) {
+                input.style.borderColor = 'var(--bad)';
+                alert('Set property error: ' + err);
+              }
+            }
+          });
+        });
+      }
+    } else {
+      $('virtualPropertiesBody').innerHTML = `<tr><td colspan="3" style="padding:12px;text-align:center;color:var(--bad)">Error: ${res.error || 'unknown'}</td></tr>`;
+    }
+  } catch (err) {
+    $('virtualPropertiesBody').innerHTML = `<tr><td colspan="3" style="padding:12px;text-align:center;color:var(--bad)">Error: ${err}</td></tr>`;
+  }
+}
+
+$('runVirtualScriptBtn').onclick = async () => {
+  if (!selectedPath) {
+    alert('Please select an Instance first.');
+    return;
+  }
+  const source = $('virtualExecutorSource').value;
+  if (!source) return;
+  
+  $('virtualRunStatus').textContent = 'Executing...';
+  try {
+    const res = await sendWsRequest('run_script', {
+      path: selectedPath,
+      source: source
+    });
+    if (res.ok) {
+      $('virtualRunStatus').textContent = 'Executed successfully';
+      setTimeout(() => { $('virtualRunStatus').textContent = ''; }, 2000);
+    } else {
+      $('virtualRunStatus').textContent = 'Failed: ' + res.error;
+    }
+  } catch (err) {
+    $('virtualRunStatus').textContent = 'Error: ' + err;
+  }
+};
+
+// Initialize Virtual Tree Game Expander
+$('virtualTree').querySelector('.tree-expander').onclick = (e) => {
+  e.stopPropagation();
+  toggleVirtualNode($('virtualTree').querySelector('.tree-expander'));
+};
+$('virtualTree').querySelector('.tree-node-row').onclick = () => {
+  selectVirtualNode($('virtualTree').querySelector('.tree-node-row'), 'game', 'DataModel');
+};
+
+connectDashboardWs();
 </script>
 </body>
 </html>)DEXAPP";

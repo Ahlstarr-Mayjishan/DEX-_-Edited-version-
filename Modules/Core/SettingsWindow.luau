@@ -353,6 +353,11 @@ local function main()
 		copypathUseChildren.OnInput:Connect(function()
 			Settings.Explorer.CopyPathUseGetChildren = copypathUseChildren.Toggled
 		end)
+		
+		local spoofAntiCheat = AddCheckbox("Anti-Cheat Spoofing (Stealth)", Settings.Explorer.AntiCheatSpoofing == true)
+		spoofAntiCheat.OnInput:Connect(function()
+			Settings.Explorer.AntiCheatSpoofing = spoofAntiCheat.Toggled
+		end)
 
 		AddSeperator("Viewport Interaction")
 

@@ -276,6 +276,8 @@ std::string analyze_source(const std::string& source) {
         }
     }
 
+    std::string ast_json = ast_analyze_source(source);
+
     std::stringstream json;
     json << "{";
     json << "\"ok\":true,";
@@ -303,7 +305,8 @@ std::string analyze_source(const std::string& source) {
         if (i > 0) json << ",";
         json << "\"" << escape_json(ids[i]) << "\"";
     }
-    json << "]";
+    json << "],";
+    json << "\"ast\":" << ast_json;
     json << "}";
     return json.str();
 }
@@ -614,6 +617,109 @@ std::string assign_role(const std::string& task) {
     return json.str();
 }
 
+static std::string sanitize_fts_query(const std::string& query) {
+    std::string sanitized = "";
+    bool in_word = false;
+    for (char c : query) {
+        if (std::isalnum(static_cast<unsigned char>(c)) || c == '_') {
+            sanitized += c;
+            in_word = true;
+        } else {
+            if (in_word) {
+                sanitized += "* ";
+                in_word = false;
+            }
+        }
+    }
+    if (in_word) {
+        sanitized += "*";
+    }
+    while (!sanitized.empty() && sanitized.back() == ' ') {
+        sanitized.pop_back();
+    }
+    return sanitized;
+}
+
+static bool write_script_to_db(const IndexedScript& entry) {
+    if (!g_db && !init_db()) {
+        std::cerr << "write_script_to_db error: init_db failed" << std::endl;
+        return false;
+    }
+
+    char* err_msg = nullptr;
+    sqlite3_exec(g_db, "BEGIN TRANSACTION;", nullptr, nullptr, &err_msg);
+    if (err_msg) {
+        std::cerr << "write_script_to_db error: BEGIN failed: " << err_msg << std::endl;
+        sqlite3_free(err_msg);
+    }
+
+    const char* insert_sql = "INSERT OR REPLACE INTO indexed_scripts (key, path, name, class_name, source, analysis, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?);";
+    sqlite3_stmt* stmt = nullptr;
+    int rc = sqlite3_prepare_v2(g_db, insert_sql, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        std::cerr << "write_script_to_db error: prepare insert failed: " << sqlite3_errmsg(g_db) << std::endl;
+        sqlite3_exec(g_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
+
+    sqlite3_bind_text(stmt, 1, entry.key.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 2, entry.path.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 3, entry.name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 4, entry.class_name.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 5, entry.source.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, 6, entry.analysis.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int64(stmt, 7, static_cast<sqlite3_int64>(entry.updated_at));
+
+    rc = sqlite3_step(stmt);
+    sqlite3_finalize(stmt);
+
+    if (rc != SQLITE_DONE) {
+        std::cerr << "write_script_to_db error: step insert failed: " << sqlite3_errmsg(g_db) << std::endl;
+        sqlite3_exec(g_db, "ROLLBACK;", nullptr, nullptr, nullptr);
+        return false;
+    }
+
+    const char* delete_fts = "DELETE FROM indexed_scripts_fts WHERE key = ?;";
+    sqlite3_stmt* stmt_del = nullptr;
+    rc = sqlite3_prepare_v2(g_db, delete_fts, -1, &stmt_del, nullptr);
+    if (rc == SQLITE_OK) {
+        sqlite3_bind_text(stmt_del, 1, entry.key.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(stmt_del);
+        sqlite3_finalize(stmt_del);
+    } else {
+        std::cerr << "write_script_to_db warning: prepare delete FTS failed: " << sqlite3_errmsg(g_db) << std::endl;
+    }
+
+    const char* insert_fts = "INSERT INTO indexed_scripts_fts (key, path, name, source) VALUES (?, ?, ?, ?);";
+    sqlite3_stmt* stmt_fts = nullptr;
+    rc = sqlite3_prepare_v2(g_db, insert_fts, -1, &stmt_fts, nullptr);
+    if (rc == SQLITE_OK) {
+        sqlite3_bind_text(stmt_fts, 1, entry.key.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt_fts, 2, entry.path.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt_fts, 3, entry.name.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_bind_text(stmt_fts, 4, entry.source.c_str(), -1, SQLITE_TRANSIENT);
+        sqlite3_step(stmt_fts);
+        sqlite3_finalize(stmt_fts);
+    } else {
+        std::cerr << "write_script_to_db warning: prepare insert FTS failed: " << sqlite3_errmsg(g_db) << std::endl;
+    }
+
+    sqlite3_exec(g_db, "COMMIT;", nullptr, nullptr, nullptr);
+    return true;
+}
+
+static bool clear_db() {
+    if (!g_db && !init_db()) return false;
+    char* err_msg = nullptr;
+    int rc = sqlite3_exec(g_db, "DELETE FROM indexed_scripts; DELETE FROM indexed_scripts_fts;", nullptr, nullptr, &err_msg);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Error clearing db: " << (err_msg ? err_msg : "unknown") << std::endl;
+        sqlite3_free(err_msg);
+        return false;
+    }
+    return true;
+}
+
 std::string index_source_payload(const std::string& body) {
     auto parts = split_header_payload(body, 4);
     if (parts.size() != 5 || parts[0].empty()) {
@@ -633,6 +739,9 @@ std::string index_source_payload(const std::string& body) {
     entry.updated_at = std::time(nullptr);
     std::time_t updated_at = entry.updated_at;
 
+    // Write to SQLite database
+    bool persisted = write_script_to_db(entry);
+
     std::lock_guard<std::mutex> lock(g_script_index_mutex);
     g_script_index[entry.key] = std::move(entry);
 
@@ -643,7 +752,7 @@ std::string index_source_payload(const std::string& body) {
     json << "{\"ok\":true,\"total\":" << g_script_index.size()
          << ",\"bytes\":" << bytes
          << ",\"updatedAt\":" << static_cast<long long>(updated_at)
-         << ",\"persisted\":false"
+         << ",\"persisted\":" << (persisted ? "true" : "false")
          << "}";
     return json.str();
 }
@@ -689,13 +798,50 @@ std::string search_index(const std::string& body) {
     }
 
     std::string query = lower_copy(parts[1]);
-    std::lock_guard<std::mutex> lock(g_script_index_mutex);
     if (query.empty()) {
+        std::lock_guard<std::mutex> lock(g_script_index_mutex);
         return "{\"ok\":true,\"indexed\":" + std::to_string(g_script_index.size()) + ",\"total\":0,\"results\":[]}";
     }
 
+    if (!g_db && !init_db()) {
+        return "{\"ok\":false,\"error\":\"database not initialized\",\"results\":[]}";
+    }
+
+    std::string fts_query = sanitize_fts_query(query);
+    std::string like_pattern = "%" + query + "%";
+
+    std::string sql;
+    bool use_fts = !fts_query.empty();
+    if (use_fts) {
+        sql = "SELECT key, path, name, class_name, source, analysis, updated_at FROM indexed_scripts "
+              "WHERE key IN (SELECT key FROM indexed_scripts_fts WHERE indexed_scripts_fts MATCH ?) "
+              "UNION "
+              "SELECT key, path, name, class_name, source, analysis, updated_at FROM indexed_scripts "
+              "WHERE path LIKE ? OR source LIKE ? OR name LIKE ? "
+              "LIMIT ?;";
+    } else {
+        sql = "SELECT key, path, name, class_name, source, analysis, updated_at FROM indexed_scripts "
+              "WHERE path LIKE ? OR source LIKE ? OR name LIKE ? "
+              "LIMIT ?;";
+    }
+
+    sqlite3_stmt* stmt = nullptr;
+    int rc = sqlite3_prepare_v2(g_db, sql.c_str(), -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        return "{\"ok\":false,\"error\":\"prepare search query failed: " + std::string(sqlite3_errmsg(g_db)) + "\",\"results\":[]}";
+    }
+
+    int bind_idx = 1;
+    if (use_fts) {
+        sqlite3_bind_text(stmt, bind_idx++, fts_query.c_str(), -1, SQLITE_TRANSIENT);
+    }
+    sqlite3_bind_text(stmt, bind_idx++, like_pattern.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, bind_idx++, like_pattern.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_text(stmt, bind_idx++, like_pattern.c_str(), -1, SQLITE_TRANSIENT);
+    sqlite3_bind_int(stmt, bind_idx++, limit * 2);
+
     struct Hit {
-        const IndexedScript* entry;
+        IndexedScript entry;
         int score;
         size_t pos;
         std::string match_type;
@@ -703,10 +849,28 @@ std::string search_index(const std::string& body) {
         double confidence;
     };
     std::vector<Hit> hits;
-    hits.reserve(std::min<size_t>(g_script_index.size(), static_cast<size_t>(limit)));
 
-    for (const auto& item : g_script_index) {
-        const IndexedScript& entry = item.second;
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
+        IndexedScript entry;
+        const char* key_text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        const char* path_text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        const char* name_text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        const char* class_text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        const char* source_text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+        const char* analysis_text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+
+        if (key_text) entry.key = key_text;
+        if (path_text) entry.path = path_text;
+        if (name_text) entry.name = name_text;
+        if (class_text) entry.class_name = class_text;
+        if (source_text) entry.source = source_text;
+        if (analysis_text) entry.analysis = analysis_text;
+
+        entry.updated_at = static_cast<std::time_t>(sqlite3_column_int64(stmt, 6));
+        entry.lower_source = lower_copy(entry.source);
+        entry.lower_path = lower_copy(entry.path);
+        entry.top_identifiers = top_identifiers(entry.source, 12);
+
         size_t path_pos = entry.lower_path.find(query);
         size_t source_pos = entry.lower_source.find(query);
         std::string lower_name = lower_copy(entry.name);
@@ -721,7 +885,12 @@ std::string search_index(const std::string& body) {
                 break;
             }
         }
-        if (path_pos == std::string::npos && source_pos == std::string::npos && name_pos == std::string::npos && identifier_pos == std::string::npos) continue;
+
+        if (path_pos == std::string::npos && source_pos == std::string::npos && name_pos == std::string::npos && identifier_pos == std::string::npos) {
+            int score = 5;
+            hits.push_back({std::move(entry), score, 0, "source", query, confidence_for_match("source", score)});
+            continue;
+        }
 
         int score = 10;
         if (path_pos != std::string::npos) score += 30;
@@ -748,19 +917,26 @@ std::string search_index(const std::string& body) {
             if (source_pos != std::string::npos) pos = source_pos;
         }
 
-        hits.push_back({&entry, score, pos, match_type, matched_token, confidence_for_match(match_type, score)});
+        hits.push_back({std::move(entry), score, pos, match_type, matched_token, confidence_for_match(match_type, score)});
     }
+    sqlite3_finalize(stmt);
 
     std::sort(hits.begin(), hits.end(), [](const Hit& a, const Hit& b) {
-        if (a.score == b.score) return a.entry->path < b.entry->path;
+        if (a.score == b.score) return a.entry.path < b.entry.path;
         return a.score > b.score;
     });
 
+    size_t total_indexed = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_script_index_mutex);
+        total_indexed = g_script_index.size();
+    }
+
     std::stringstream json;
-    json << "{\"ok\":true,\"indexed\":" << g_script_index.size()
+    json << "{\"ok\":true,\"indexed\":" << total_indexed
          << ",\"total\":" << hits.size() << ",\"results\":[";
     for (int i = 0; i < static_cast<int>(hits.size()) && i < limit; ++i) {
-        const IndexedScript& entry = *hits[i].entry;
+        const IndexedScript& entry = hits[i].entry;
         if (i > 0) json << ",";
         json << "{\"key\":\"" << escape_json(entry.key) << "\",";
         json << "\"path\":\"" << escape_json(entry.path) << "\",";
@@ -828,94 +1004,116 @@ bool read_field(std::istream& in, std::string& value) {
     return newline == '\n';
 }
 
-bool save_index_locked() {
-    std::ofstream out(INDEX_FILE_PATH, std::ios::binary | std::ios::trunc);
-    if (!out.is_open()) return false;
+sqlite3* g_db = nullptr;
 
-    out << INDEX_MAGIC << "\n";
-    out << g_script_index.size() << "\n";
-    for (const auto& item : g_script_index) {
-        const IndexedScript& entry = item.second;
-        write_field(out, entry.key);
-        write_field(out, entry.path);
-        write_field(out, entry.name);
-        write_field(out, entry.class_name);
-        write_field(out, entry.source);
-        out << static_cast<long long>(entry.updated_at) << "\n";
+bool init_db() {
+    if (g_db) return true;
+    int rc = sqlite3_open("dex_helper.db", &g_db);
+    if (rc != SQLITE_OK) {
+        std::cerr << "Cannot open database: " << sqlite3_errmsg(g_db) << std::endl;
+        return false;
     }
-    return out.good();
+    
+    const char* sql = "CREATE TABLE IF NOT EXISTS indexed_scripts ("
+                      "key TEXT PRIMARY KEY, "
+                      "path TEXT, "
+                      "name TEXT, "
+                      "class_name TEXT, "
+                      "source TEXT, "
+                      "analysis TEXT, "
+                      "updated_at INTEGER"
+                      ");";
+    char* err_msg = nullptr;
+    rc = sqlite3_exec(g_db, sql, nullptr, nullptr, &err_msg);
+    if (rc != SQLITE_OK) {
+        std::cerr << "SQL error creating table: " << err_msg << std::endl;
+        sqlite3_free(err_msg);
+        return false;
+    }
+    
+    const char* fts_sql = "CREATE VIRTUAL TABLE IF NOT EXISTS indexed_scripts_fts USING fts4("
+                          "key, path, name, source"
+                          ");";
+    rc = sqlite3_exec(g_db, fts_sql, nullptr, nullptr, &err_msg);
+    if (rc != SQLITE_OK) {
+        std::cerr << "FTS4 warning: " << err_msg << std::endl;
+        sqlite3_free(err_msg);
+    }
+    return true;
+}
+
+void close_db() {
+    if (g_db) {
+        sqlite3_close(g_db);
+        g_db = nullptr;
+    }
+}
+
+bool save_index_locked() {
+    if (!g_db && !init_db()) return false;
+    if (g_script_index.empty()) {
+        clear_db();
+    }
+    return true;
 }
 
 std::string save_index_response() {
     std::lock_guard<std::mutex> lock(g_script_index_mutex);
-    bool ok = save_index_locked();
     std::stringstream json;
-    json << "{\"ok\":" << (ok ? "true" : "false")
-         << ",\"scripts\":" << g_script_index.size()
-         << ",\"file\":\"" << escape_json(INDEX_FILE_PATH) << "\"}";
+    json << "{\"ok\":true,\"scripts\":" << g_script_index.size()
+         << ",\"file\":\"dex_helper.db\"}";
     return json.str();
 }
 
 std::string load_index_response() {
-    std::ifstream in(INDEX_FILE_PATH, std::ios::binary);
-    if (!in.is_open()) {
-        return "{\"ok\":false,\"error\":\"index file not found\",\"scripts\":0}";
+    if (!g_db && !init_db()) {
+        return "{\"ok\":false,\"error\":\"could not initialize database\",\"scripts\":0}";
     }
-
-    std::string magic;
-    if (!std::getline(in, magic) || magic != INDEX_MAGIC) {
-        return "{\"ok\":false,\"error\":\"invalid index file\",\"scripts\":0}";
+    
+    const char* query = "SELECT key, path, name, class_name, source, analysis, updated_at FROM indexed_scripts;";
+    sqlite3_stmt* stmt = nullptr;
+    int rc = sqlite3_prepare_v2(g_db, query, -1, &stmt, nullptr);
+    if (rc != SQLITE_OK) {
+        return "{\"ok\":false,\"error\":\"prepare statement failed: " + std::string(sqlite3_errmsg(g_db)) + "\",\"scripts\":0}";
     }
-
-    std::string count_line;
-    if (!std::getline(in, count_line)) {
-        return "{\"ok\":false,\"error\":\"missing index count\",\"scripts\":0}";
-    }
-
-    size_t count = 0;
-    try {
-        count = static_cast<size_t>(std::stoull(count_line));
-    } catch (...) {
-        return "{\"ok\":false,\"error\":\"invalid index count\",\"scripts\":0}";
-    }
-
+    
     std::unordered_map<std::string, IndexedScript> loaded;
-    for (size_t i = 0; i < count; ++i) {
+    size_t count = 0;
+    
+    while (sqlite3_step(stmt) == SQLITE_ROW) {
         IndexedScript entry;
-        if (!read_field(in, entry.key) ||
-            !read_field(in, entry.path) ||
-            !read_field(in, entry.name) ||
-            !read_field(in, entry.class_name) ||
-            !read_field(in, entry.source)) {
-            return "{\"ok\":false,\"error\":\"truncated index entry\",\"scripts\":0}";
-        }
-
-        std::string updated_line;
-        if (!std::getline(in, updated_line)) {
-            return "{\"ok\":false,\"error\":\"missing index timestamp\",\"scripts\":0}";
-        }
-        try {
-            entry.updated_at = static_cast<std::time_t>(std::stoll(updated_line));
-        } catch (...) {
-            entry.updated_at = std::time(nullptr);
-        }
-
+        const char* key_text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 0));
+        const char* path_text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 1));
+        const char* name_text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 2));
+        const char* class_text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 3));
+        const char* source_text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 4));
+        const char* analysis_text = reinterpret_cast<const char*>(sqlite3_column_text(stmt, 5));
+        
+        if (key_text) entry.key = key_text;
+        if (path_text) entry.path = path_text;
+        if (name_text) entry.name = name_text;
+        if (class_text) entry.class_name = class_text;
+        if (source_text) entry.source = source_text;
+        if (analysis_text) entry.analysis = analysis_text;
+        
+        entry.updated_at = static_cast<std::time_t>(sqlite3_column_int64(stmt, 6));
         entry.lower_source = lower_copy(entry.source);
         entry.lower_path = lower_copy(entry.path);
-        entry.analysis = analyze_source(entry.source);
         entry.top_identifiers = top_identifiers(entry.source, 12);
+        
         if (!entry.key.empty()) {
             loaded[entry.key] = std::move(entry);
+            count++;
         }
     }
-
+    sqlite3_finalize(stmt);
+    
     {
         std::lock_guard<std::mutex> lock(g_script_index_mutex);
         g_script_index = std::move(loaded);
     }
-
+    
     std::stringstream json;
-    json << "{\"ok\":true,\"scripts\":" << count
-         << ",\"file\":\"" << escape_json(INDEX_FILE_PATH) << "\"}";
+    json << "{\"ok\":true,\"scripts\":" << count << ",\"file\":\"dex_helper.db\"}";
     return json.str();
 }

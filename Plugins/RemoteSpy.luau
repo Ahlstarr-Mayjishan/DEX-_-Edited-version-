@@ -579,6 +579,22 @@ local function main()
 		}
 		local _, created_remote = note_remote(inst, entry)
 
+		if main_ref and main_ref.GetInitDeps then
+			local env = main_ref.GetInitDeps().env
+			if env and env.HelperServer and env.HelperServer.SendWSMessage then
+				pcall(env.HelperServer.SendWSMessage, {
+					type = "remote_log",
+					time = entry.time,
+					dir = entry.dir,
+					path = entry.path,
+					class = entry.class,
+					method = entry.method,
+					args = entry.args,
+					argTypes = entry.argTypes
+				})
+			end
+		end
+
 		logs[#logs + 1] = entry
 		if #logs > log_limit then
 			table.remove(logs, 1)

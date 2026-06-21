@@ -1,6 +1,11 @@
 #pragma once
 #include "Common.h"
+#include "AST.h"
+#include "sqlite3.h"
 
+extern sqlite3* g_db;
+bool init_db();
+void close_db();
 extern const char* INDEX_FILE_PATH;
 extern const char* INDEX_MAGIC;
 

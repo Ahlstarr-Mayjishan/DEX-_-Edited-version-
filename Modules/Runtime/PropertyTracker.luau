@@ -136,6 +136,16 @@ local function main()
 		end
 
 		local logStr = string.format("[%s] %s.%s: %s -> %s", timestamp, instPath, propName, tostring(oldVal), tostring(newVal))
+		if env.HelperServer and env.HelperServer.SendWSMessage then
+			local sent = false
+			pcall(function()
+				sent = env.HelperServer.SendWSMessage({
+					type = "property_log",
+					message = logStr
+				})
+			end)
+			if sent then return end
+		end
 		if env.HelperServer and env.HelperServer.Log then
 			local spawnFunc = (task and task.spawn) or function(f) coroutine.wrap(f)() end
 			spawnFunc(function()

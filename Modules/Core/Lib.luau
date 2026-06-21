@@ -6451,6 +6451,19 @@ local function main()
 		return {new = new}
 	end)()
 
+	Lib.GetDescendantsParallel = function(root)
+		local descs = {}
+		local ok = pcall(function()
+			task.desynchronize()
+			descs = root:GetDescendants()
+			task.synchronize()
+		end)
+		if not ok then
+			descs = root:GetDescendants()
+		end
+		return descs
+	end
+
 	return Lib
 end
 
