@@ -298,3 +298,37 @@ std::string detect_running_ides_json() {
     return json.str();
 }
 
+std::string start_mcp_bridger() {
+    std::string mcp_path = "";
+    const char* candidates[] = {
+        "antigravity_mcp.py",
+        "../HelperServer/antigravity_mcp.py",
+        "HelperServer/antigravity_mcp.py"
+    };
+    for (const char* candidate : candidates) {
+        if (file_exists(candidate)) {
+            mcp_path = candidate;
+            break;
+        }
+    }
+    if (mcp_path.empty()) {
+        return "{\"ok\":false,\"error\":\"antigravity_mcp.py was not found\"}";
+    }
+
+    std::string py_cmd = "python";
+    if (!command_available("python")) {
+        if (command_available("py")) {
+            py_cmd = "py";
+        } else {
+            return "{\"ok\":false,\"error\":\"Python is not installed or not in PATH\"}";
+        }
+    }
+
+    std::string params = "/k " + py_cmd + " " + mcp_path;
+    HINSTANCE result = ShellExecuteA(NULL, "open", "cmd.exe", params.c_str(), NULL, SW_SHOWNORMAL);
+    if (reinterpret_cast<INT_PTR>(result) <= 32) {
+        return "{\"ok\":false,\"error\":\"Failed to start MCP Bridger process\"}";
+    }
+    return "{\"ok\":true}";
+}
+

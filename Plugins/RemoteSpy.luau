@@ -207,6 +207,7 @@ local function main()
 				count = 0,
 				last = "",
 				inst = inst,
+				callHistory = {},
 			}
 			remote_stats[path] = stat
 		end
@@ -215,6 +216,15 @@ local function main()
 			stat.last = entry.time .. " " .. entry.method
 			stat.class = entry.class
 			stat.inst = inst
+			if not stat.callHistory then
+				stat.callHistory = {}
+			end
+			if entry.argTypes then
+				table.insert(stat.callHistory, entry.argTypes)
+				if #stat.callHistory > 10 then
+					table.remove(stat.callHistory, 1)
+				end
+			end
 		end
 		return stat, created
 	end
@@ -552,6 +562,12 @@ local function main()
 		if not active or paused then return end
 		if not can_capture_log() then return end
 
+		local argTypes = {}
+		local n = raw_args.n or #raw_args
+		for i = 1, n do
+			table.insert(argTypes, typeof(raw_args[i]))
+		end
+
 		local entry = {
 			time   = os.date("%H:%M:%S"),
 			dir    = dir,
@@ -559,6 +575,7 @@ local function main()
 			class  = inst.ClassName,
 			method = method,
 			args   = args_str(raw_args),
+			argTypes = argTypes,
 		}
 		local _, created_remote = note_remote(inst, entry)
 
@@ -1234,6 +1251,9 @@ local function main()
 
 	spy.Uninit = function()
 		stop()
+	end
+	spy.GetRemoteStats = function(path)
+		return remote_stats[path]
 	end
 	return spy
 end

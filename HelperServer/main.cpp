@@ -566,6 +566,11 @@ void handle_client(SOCKET ClientSocket) {
             json << "{\"ok\":true,\"ides\":" << detect_running_ides_json() << ",\"mcpActive\":" << (mcp_active ? "true" : "false") << "}";
             send_response(ClientSocket, 200, "OK", json.str(), "application/json");
             return;
+        } else if (path == "/api/mcp/start" && (method == "POST" || method == "GET")) {
+            std::lock_guard<std::mutex> lock(g_auth_mutex);
+            std::string res = start_mcp_bridger();
+            send_response(ClientSocket, 200, "OK", res, "application/json");
+            return;
         } else if (path == "/api/accounts" && method == "POST") {
             std::lock_guard<std::mutex> lock(g_auth_mutex);
             g_accounts_json = body;

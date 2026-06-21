@@ -27,4 +27,4 @@ std::string script_status_response();
 std::string set_tool_state_response(const std::string& body);
 void rotate_log_if_needed(const char* path);
 std::string detect_running_ides_json();
-
+std::string start_mcp_bridger();

@@ -300,18 +300,22 @@ input,textarea{width:100%;background:#0d1217;border:1px solid var(--line);color:
   <div id="mcpView" class="results hidden" style="height:100%">
     <div style="display:grid;grid-template-columns:repeat(auto-fit, minmax(340px, 1fr));height:100%;padding:18px;gap:18px;min-height:0;overflow:auto">
       <div style="background:var(--sidebar);border:1px solid var(--line-soft);border-radius:8px;padding:18px;display:flex;flex-direction:column;gap:14px;height:fit-content">
-        <div class="title" style="margin-bottom:0">Antigravity MCP Bridge</div>
+        <div class="title" style="margin-bottom:0">MCP Bridger</div>
         <div style="display:flex;align-items:center;gap:12px;background:var(--panel);border:1px solid var(--line-soft);border-radius:6px;padding:12px">
           <div style="width:48px;height:48px;border-radius:50%;background:var(--panel2);border:1px solid var(--line);overflow:hidden;display:grid;place-items:center">
             <span id="mcpDot" class="dot bad" style="width:16px;height:16px;margin:0"></span>
           </div>
           <div>
-            <b id="mcpStatusText" style="display:block;font-size:15px">Bridge Inactive</b>
+            <b id="mcpStatusText" style="display:block;font-size:15px">Bridger Inactive</b>
             <span id="mcpMeta" style="color:var(--muted);font-size:12px">Launch python bridge to connect agent.</span>
           </div>
         </div>
+        <div style="display:flex;gap:8px;align-items:center;margin-top:-4px">
+          <button id="startMcpBtn" class="primary" style="height:28px;padding:0 12px;font-size:11px">Start MCP Bridger</button>
+          <span id="mcpLaunchStatus" style="font-size:11px;color:var(--muted)"></span>
+        </div>
         <div class="meta" style="color:var(--muted);font-size:11px;line-height:1.4">
-          Antigravity runs the bridge locally as a stdio server. Start it via:
+          Runs the bridge locally as a stdio server. Click the button above to launch automatically, or start manually via:
           <pre style="background:var(--panel);padding:6px;border-radius:4px;overflow-x:auto;margin:6px 0;font:11px Consolas,monospace">python antigravity_mcp.py</pre>
           Make sure your AI client is configured with this command in its MCP settings.
         </div>
@@ -380,7 +384,7 @@ async function refreshIdes() {
     
     const active = !!j.mcpActive;
     $('mcpDot').className = 'dot ' + (active ? 'ok' : 'bad');
-    $('mcpStatusText').textContent = active ? 'Bridge Active (Connected)' : 'Bridge Inactive';
+    $('mcpStatusText').textContent = active ? 'Bridger Active (Connected)' : 'Bridger Inactive';
     $('mcpMeta').textContent = active ? 'Antigravity AI Agent is connected via MCP.' : 'Launch python bridge to connect agent.';
     
     const ides = j.ides || [];
@@ -413,6 +417,29 @@ setTimeout(() => {
       setTimeout(() => btn.textContent = 'Copy prompt', 2000);
     };
   }
+  const startBtn = $('startMcpBtn');
+  if (startBtn) {
+    startBtn.onclick = async () => {
+      $('mcpLaunchStatus').textContent = 'Launching...';
+      $('mcpLaunchStatus').style.color = 'var(--muted)';
+      try {
+        const raw = await textFetch('/api/mcp/start', { method: 'POST' });
+        const res = JSON.parse(raw);
+        if (res.ok) {
+          $('mcpLaunchStatus').textContent = 'Launched successfully!';
+          $('mcpLaunchStatus').style.color = 'var(--accent)';
+          setTimeout(() => { $('mcpLaunchStatus').textContent = ''; }, 3000);
+          refreshIdes();
+        } else {
+          $('mcpLaunchStatus').textContent = 'Error: ' + (res.error || 'Failed');
+          $('mcpLaunchStatus').style.color = 'var(--bad)';
+        }
+      } catch (e) {
+        $('mcpLaunchStatus').textContent = 'Error: ' + e.message;
+        $('mcpLaunchStatus').style.color = 'var(--bad)';
+      }
+    };
+  }
 }, 500);
 
 setInterval(() => {
@@ -427,7 +454,188 @@ function resultItemHtml(item){const active=item.key===selectedResultKey?' active
 function renderResultList(total){$('resultList').innerHTML=`<div class="resultSummary">${fmt(total)} result${Number(total)===1?'':'s'} | ${fmt(searchResults.length)} shown</div>`+(searchResults.map(resultItemHtml).join('')||'<div class="hit"><h3>No results</h3><div class="meta">Try a path, remote name, require target, or identifier.</div></div>');document.querySelectorAll('[data-result-key]').forEach(button=>button.onclick=()=>selectResult(button.dataset.resultKey))}
 async function copyText(text,button,label){try{await navigator.clipboard.writeText(text);button.textContent='Copied';setTimeout(()=>button.textContent=label,900)}catch(e){button.textContent='Copy failed';setTimeout(()=>button.textContent=label,900)}}
 async function selectResult(key){selectedResultKey=key;renderResultList(searchResults.length);const item=searchResults.find(entry=>entry.key===key);if(!item)return;$('resultInspector').innerHTML=`<div class="inspectorHead"><h2>${esc(item.name||item.key)}</h2><div class="meta">${esc(item.path||'')}</div></div><div class="inspectorActions"><button disabled>Loading source...</button></div><div class="emptyInspector">Select a script to preview its source and use quick actions.</div>`;try{const raw=await textFetch('/index-entry',{method:'POST',headers:{'Content-Type':'text/plain'},body:key});const entry=JSON.parse(raw);if(!entry.ok)throw new Error(entry.error||'Script unavailable');$('resultInspector').innerHTML=`<div class="inspectorHead"><h2>${esc(entry.name||entry.key)} <span class="muted">[${esc(entry.className||'')}]</span></h2><div class="meta">${esc(entry.path||'')}</div></div><div class="inspectorActions"><button id="copyResultPath">Copy path</button><button id="copyResultSource" class="primary">Copy source</button><button id="analyzeResult">Analyze</button><button id="askAiResult" style="border-color:var(--accent);color:var(--accent)">Ask AI</button><button id="aiExplainResult">Explain</button><button id="aiAuditResult">Audit Security</button><span id="resultActionStatus" class="actionStatus">${fmt((entry.source||'').length)} chars</span></div><pre class="sourcePreview">${esc(entry.source||'-- Empty source')}</pre>`;$('copyResultPath').onclick=event=>copyText(entry.path||'',event.currentTarget,'Copy path');$('copyResultSource').onclick=event=>copyText(entry.source||'',event.currentTarget,'Copy source');$('analyzeResult').onclick=()=>{show('analysisView');$('sourceBox').value=entry.source||'';$('analyze').click()};$('askAiResult').onclick=()=>{show('aiChatView');$('chatInput').value=`What does this script do? Path: ${entry.path}`;activeScriptContext=entry};$('aiExplainResult').onclick=()=>{show('aiChatView');activeScriptContext=entry;sendAiPrompt(`Explain the logic, architectural design, and flow of this script:\nPath: ${entry.path}\nName: ${entry.name}\nSource:\n\`\`\`luau\n${entry.source}\n\`\`\``)};$('aiAuditResult').onclick=()=>{show('aiChatView');activeScriptContext=entry;sendAiPrompt(`Perform a rigorous security audit of the following script. Scan for backdoors, potential remote event vulnerabilities, security exploits, or unsafe coding practices:\nPath: ${entry.path}\nName: ${entry.name}\nSource:\n\`\`\`luau\n${entry.source}\n\`\`\``)};}catch(e){$('resultInspector').innerHTML=`<div class="emptyInspector"><div><b class="bad">Could not load script</b><br>${esc(e.message)}</div></div>`}}
-function remoteHtml(item){const methods=Object.entries(item.methods||{}).map(([k,v])=>`${k}:${v}`).join(' ');const flags=(item.flags||[]).join(', ')||'none';const samples=(item.samples||[]).map(s=>`- ${s}`).join('\n');return `<div class="hit"><h3>${esc(item.path)} <span class="${Number(item.risk||0)>0?'warn':'ok'}">risk ${esc(item.risk||0)}</span></h3><div class="meta">calls ${esc(item.calls||0)} | out ${esc(item.outgoing||0)} | in ${esc(item.incoming||0)} | ${esc(methods)}</div><div class="meta">flags: ${esc(flags)}</div><pre>${esc(samples||'no args sample')}</pre></div>`}
+function copyToClipboard(text) {
+  const el = document.createElement('textarea');
+  el.value = text;
+  document.body.appendChild(el);
+  el.select();
+  document.execCommand('copy');
+  document.body.removeChild(el);
+}
+
+function copyWebFuzzer(path, methods, samples, btn) {
+  let fireMethod = "FireServer";
+  if (methods.includes("InvokeServer")) {
+    fireMethod = "InvokeServer";
+  } else if (methods.includes("Invoke")) {
+    fireMethod = "Invoke";
+  } else if (methods.includes("Fire")) {
+    fireMethod = "Fire";
+  }
+
+  let detectedTypes = [];
+  if (samples && samples.length > 0) {
+    let sample = samples[0];
+    let parts = sample.split(",");
+    for (let part of parts) {
+      part = part.trim();
+      if (part === "true" || part === "false") {
+        detectedTypes.push("boolean");
+      } else if (part.startsWith('"') || part.startsWith("'")) {
+        detectedTypes.push("string");
+      } else if (!isNaN(Number(part))) {
+        detectedTypes.push("number");
+      } else if (part.startsWith("Vector3")) {
+        detectedTypes.push("Vector3");
+      } else if (part.startsWith("CFrame")) {
+        detectedTypes.push("CFrame");
+      } else if (part.startsWith("Color3")) {
+        detectedTypes.push("Color3");
+      } else {
+        detectedTypes.push("Instance");
+      }
+    }
+  }
+
+  let sigStr = JSON.stringify(detectedTypes);
+  let isFunction = fireMethod === "InvokeServer" || fireMethod === "Invoke";
+  
+  let code = `-- Auto-generated Smart Remote Fuzzer Payload
+-- Target: ${path}
+-- Guessed signature: ${sigStr}
+
+local target = ${path}
+if not target then
+    warn("Fuzzer target not found!")
+    return
+end
+
+local signature = ${sigStr}
+local typeFuzzers = {
+    ["number"] = {0, 1, -1, 999999, -999999, 1.00001, 0/0, math.huge, -math.huge},
+    ["string"] = {"", string.rep("A", 10000), "%s%s%s%s%d%x", "\\0\\n\\r\\t!@#$%^&*()"},
+    ["boolean"] = {true, false},
+    ["Vector3"] = {Vector3.new(0,0,0), Vector3.new(1e9,1e9,1e9), Vector3.new(-1e9,-1e9,-1e9), Vector3.new(0/0,0/0,0/0)},
+    ["CFrame"] = {CFrame.new(0,0,0), CFrame.new(1e9,1e9,1e9)},
+    ["Color3"] = {Color3.new(0,0,0), Color3.new(1,1,1)},
+    ["table"] = {{}, {1, 2, 3}, {key = "value"}},
+    ["Instance"] = {workspace, nil},
+}
+
+local genericFuzzers = {0, "", {}, true, nil, Vector3.new(0,0,0)}
+
+local defaultNormals = {
+    ["number"] = 1,
+    ["string"] = "test",
+    ["boolean"] = true,
+    ["Vector3"] = Vector3.new(0, 0, 0),
+    ["CFrame"] = CFrame.new(0, 0, 0),
+    ["Color3"] = Color3.new(1, 0, 0),
+    ["table"] = {},
+    ["Instance"] = workspace,
+}
+
+local baseArgs = {}
+for i, t in ipairs(signature) do
+    baseArgs[i] = defaultNormals[t]
+    if baseArgs[i] == nil then
+        baseArgs[i] = "placeholder"
+    end
+end
+
+local function cloneTable(t)
+    local nt = {}
+    for k, v in pairs(t) do nt[k] = v end
+    return nt
+end
+
+print("=== Starting Smart Remote Fuzzer ===")
+for paramIdx = 1, #signature do
+    local paramType = signature[paramIdx]
+    local fuzzers = typeFuzzers[paramType] or genericFuzzers
+    print("Fuzzing parameter " .. paramIdx .. " [" .. paramType .. "]...")
+    for _, fuzzVal in ipairs(fuzzers) do
+        local testArgs = cloneTable(baseArgs)
+        testArgs[paramIdx] = fuzzVal
+        task.spawn(function()
+            local ok, result = pcall(function()
+                ${isFunction ? 'return target:' + fireMethod + '(unpack(testArgs))' : 'target:' + fireMethod + '(unpack(testArgs))'}
+            end)
+            if not ok then
+                warn("  Error: " .. tostring(result))
+            ${isFunction ? 'else print("  Success. Return: " .. tostring(result))' : ''}
+            end
+        end)
+        task.wait(0.08)
+    end
+end
+print("=== Remote Fuzzing Finished ===")`;
+
+  copyToClipboard(code);
+  const orig = btn.textContent;
+  btn.textContent = "Copied!";
+  btn.style.color = "var(--accent)";
+  setTimeout(() => {
+    btn.textContent = orig;
+    btn.style.color = "";
+  }, 2000);
+}
+
+function copyWebMock(path, methods, btn) {
+  let hookCode = `-- Auto-generated Remote Interception Hook for metatable hooking
+-- Target: ${path}
+
+local targetPath = "${path}"
+local originalNamecall
+originalNamecall = hookmetamethod(game, "__namecall", function(self, ...)
+    local method = getnamecallmethod()
+    if typeof(self) == "Instance" and self:GetFullName() == targetPath then
+        -- Intercept and inspect arguments
+        local args = {...}
+        print("Intercepted call to: " .. targetPath)
+        for i, v in ipairs(args) do
+            print("  Arg " .. i .. ": " .. tostring(v) .. " (" .. typeof(v) .. ")")
+        end
+        
+        -- Modify arguments or block call here:
+        -- return originalNamecall(self, new_arg1, new_arg2)
+        -- return -- block Event
+        -- return "mocked_return" -- mock Function return
+    end
+    return originalNamecall(self, ...)
+end)`;
+
+  copyToClipboard(hookCode);
+  const orig = btn.textContent;
+  btn.textContent = "Copied!";
+  btn.style.color = "var(--accent)";
+  setTimeout(() => {
+    btn.textContent = orig;
+    btn.style.color = "";
+  }, 2000);
+}
+
+function remoteHtml(item) {
+  const methods = Object.entries(item.methods||{}).map(([k,v])=>`${k}:${v}`).join(' ');
+  const flags = (item.flags||[]).join(', ')||'none';
+  const samples = (item.samples||[]).map(s=>`- ${s}`).join('\n');
+  const samplesJson = JSON.stringify(item.samples || []);
+  
+  return `<div class="hit">
+    <div style="display:flex;justify-content:space-between;align-items:start">
+      <div>
+        <h3 style="margin:0 0 4px">${esc(item.path)} <span class="${Number(item.risk||0)>0?'warn':'ok'}">risk ${esc(item.risk||0)}</span></h3>
+      </div>
+      <div style="display:flex;gap:6px">
+        <button onclick="copyWebFuzzer('${esc(item.path)}', '${esc(methods)}', ${esc(samplesJson)}, this)" style="height:22px;padding:0 8px;font-size:11px;background:var(--panel3)">Copy Fuzzer</button>
+        <button onclick="copyWebMock('${esc(item.path)}', '${esc(methods)}', this)" style="height:22px;padding:0 8px;font-size:11px;background:var(--panel3)">Copy Mock Hook</button>
+      </div>
+    </div>
+    <div class="meta">calls ${esc(item.calls||0)} | out ${esc(item.outgoing||0)} | in ${esc(item.incoming||0)} | ${esc(methods)}</div>
+    <div class="meta">flags: ${esc(flags)}</div>
+    <pre>${esc(samples||'no args sample')}</pre>
+  </div>`;
+}
 function esc(v){return String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]))}
 
 function formatMarkdownToHtml(md) {
