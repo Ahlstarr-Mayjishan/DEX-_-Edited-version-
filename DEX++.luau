@@ -53,7 +53,7 @@ local EmbeddedModules = {
 local isFsSupported = readfile and writefile and isfile and isfolder and listfiles and delfile and delfolder
 
 -- Main vars
-local Main, Explorer, Properties, Notepad, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, SoundViewer, AnimationViewer, ClientIndex, ActivityMap, DependencyGraph, SmartSearch, RuntimeInspector, ClientIntelligence, InspectorHub, TaskRouter, ControlCenter, Theme, SmartDecompiler, SecurityAuditor, RemoteFuzzer, PropertyTracker, InstanceSerializer, ThreadManager, IDESync, Clipboard, Duplicate, Deletion, PropertyCopier, PropertyRestorer, Rename, History, DefaultSettings, Lib, State local ggv = getgenv or nil
+local Main, Explorer, Properties, Notepad, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, SoundViewer, AnimationViewer, ClientIndex, ActivityMap, DependencyGraph, SmartSearch, RuntimeInspector, ClientIntelligence, InspectorHub, TaskRouter, ControlCenter, Theme, SmartDecompiler, SecurityAuditor, RemoteFuzzer, PropertyTracker, InstanceSerializer, ThreadManager, IDESync, Clipboard, Duplicate, Deletion, PropertyCopier, PropertyRestorer, Rename, History, DefaultSettings, Lib, State, Logger local ggv = getgenv or nil
 local API, RMD
 
 -- Default Settings
@@ -518,10 +518,11 @@ Main = (function()
 		end
 	end
 
-	Main.ModuleList = {"Theme","State","IconData","Lib","Console","SettingsWindow","ControlCenter","TaskRouter","ThreadManager","Explorer","EditMenu","NavigationMenu","ObjectMenu","ScriptMenu","InteractionMenu","PlayerMenu","NilInstanceMenu","Properties","SaveInstance","ModelViewer","ImageViewer","SoundViewer","AnimationViewer","ObjectLinks","InstanceSerializer","SmartDecompiler","Notepad","ClientIndex","CodeSearch","SmartSearch","DependencyGraph","ScriptRelations","SecurityAuditor","RuntimeInspector","RemoteUsageMap","ActivityMap","PropertyTracker","RemoteFuzzer","ClientIntelligence","InspectorHub","IDESync","Clipboard","Duplicate","Deletion","PropertyCopier","PropertyRestorer","Rename","History"}
+	Main.ModuleList = {"Theme","State","Logger","IconData","Lib","Console","SettingsWindow","ControlCenter","TaskRouter","ThreadManager","Explorer","EditMenu","NavigationMenu","ObjectMenu","ScriptMenu","InteractionMenu","PlayerMenu","NilInstanceMenu","Properties","SaveInstance","ModelViewer","ImageViewer","SoundViewer","AnimationViewer","ObjectLinks","InstanceSerializer","SmartDecompiler","Notepad","ClientIndex","CodeSearch","SmartSearch","DependencyGraph","ScriptRelations","SecurityAuditor","RuntimeInspector","RemoteUsageMap","ActivityMap","PropertyTracker","RemoteFuzzer","ClientIntelligence","InspectorHub","IDESync","Clipboard","Duplicate","Deletion","PropertyCopier","PropertyRestorer","Rename","History"}
 	Main.ModulePathMap = {
 		Theme = "Core/Theme",
 		State = "Core/State",
+		Logger = "Core/Logger",
 		IconData = "Core/IconData",
 		Lib = "Core/Lib",
 		Console = "Core/Console",

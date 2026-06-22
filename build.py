@@ -2,18 +2,31 @@ import os
 import subprocess
 import sys
 
-LIB_PARTS_MARKER = "\t-- Signal + Set live in Modules/Core/Lib/SignalSet.luau (merged at build time)\n"
+LIB_REPLACEMENTS = [
+    ("\t-- Signal + Set live in Modules/Core/Lib/SignalSet.luau (merged at build time)", "SignalSet.luau"),
+    ("\t-- ScrollBar lives in Modules/Core/Lib/ScrollBar.luau (merged at build time)", "ScrollBar.luau"),
+    ("\t-- Window lives in Modules/Core/Lib/Window.luau (merged at build time)", "Window.luau"),
+    ("\t-- ContextMenu lives in Modules/Core/Lib/ContextMenu.luau (merged at build time)", "ContextMenu.luau"),
+    ("\t-- Checkbox lives in Modules/Core/LibParts/Checkbox.luau (merged at build time)", "Checkbox.luau"),
+    ("\t-- ColorPicker lives in Modules/Core/LibParts/ColorPicker.luau (merged at build time)", "ColorPicker.luau"),
+    ("\t-- SequenceEditors lives in Modules/Core/LibParts/SequenceEditors.luau (merged at build time)", "SequenceEditors.luau"),
+    ("\t-- BasicUI lives in Modules/Core/LibParts/BasicUI.luau (merged at build time)", "BasicUI.luau"),
+    ("\t-- DropDown lives in Modules/Core/LibParts/DropDown.luau (merged at build time)", "DropDown.luau"),
+    ("\t-- ClickSystem lives in Modules/Core/LibParts/ClickSystem.luau (merged at build time)", "ClickSystem.luau"),
+]
 
 def read_module_source(name, filepath):
     with open(filepath, "r", encoding="utf-8") as mf:
         m_code = mf.read().strip()
 
     if name == "Lib":
-        part_path = os.path.join("Modules", "Core", "Lib", "SignalSet.luau")
-        if os.path.exists(part_path):
-            with open(part_path, "r", encoding="utf-8") as pf:
-                part_code = pf.read().strip()
-            m_code = m_code.replace(LIB_PARTS_MARKER, part_code + "\n\n")
+        for marker, filename in LIB_REPLACEMENTS:
+            part_path = os.path.join("Modules", "Core", "LibParts", filename)
+            if os.path.exists(part_path):
+                with open(part_path, "r", encoding="utf-8") as pf:
+                    part_code = pf.read().strip()
+                m_code = m_code.replace(marker + "\n", part_code + "\n\n")
+                m_code = m_code.replace(marker, part_code + "\n\n")
 
     return m_code
 
@@ -25,6 +38,16 @@ def lua_long_string(value):
     return f"[{eq}[\n{value}\n]{eq}]"
 
 def build():
+    # Run unit tests first
+    test_script = os.path.join("scripts", "run_tests.py")
+    if os.path.exists(test_script):
+        print("Running unit tests...")
+        result = subprocess.run([sys.executable, test_script], check=False)
+        if result.returncode != 0:
+            print("[-] Unit tests failed! Aborting compilation.")
+            sys.exit(1)
+        print("[+] All unit tests passed!")
+
     print("Building DEX++_compiled.luau...")
     
     # Read the hollow shell
@@ -41,7 +64,7 @@ def build():
     # grouped by ownership so the repo is easier to navigate.
     module_groups = {
         "Core": [
-            "Theme", "State", "IconData", "Lib", "Console", "SettingsWindow", "ControlCenter",
+            "Theme", "State", "Logger", "IconData", "Lib", "Console", "SettingsWindow", "ControlCenter",
             "TaskRouter", "ThreadManager",
         ],
         "Explorer": [

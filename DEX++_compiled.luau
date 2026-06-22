@@ -48,6 +48,7 @@ end
 
 local EmbeddedModules = {
     ["Theme"] = function()
+    --!strict
     --[[
     	Theme Module
     	
@@ -55,36 +56,42 @@ local EmbeddedModules = {
     ]]
     
     -- Common Locals
-    local Main, Lib, Apps, Settings -- Main Containers
-    local Explorer, Properties, Notepad -- Major Apps
-    local API, RMD, env, service, plr, create, createSimple -- Main Locals
+    local _Main, _Lib, _Apps, Settings -- Main Containers
+    local _Explorer, _Properties, _Notepad -- Major Apps
+    local _API, _RMD, _env, service, _plr, _create, _createSimple -- Main Locals
     
-    local function initDeps(data)
-    	Main = data.Main
-    	Lib = data.Lib
-    	Apps = data.Apps
+    -- Silence standard Luau CLI environment issues
+    local Enum = ((_G :: any).Enum or getfenv().Enum) :: any
+    local Instance = ((_G :: any).Instance or getfenv().Instance) :: any
+    local UDim = ((_G :: any).UDim or getfenv().UDim) :: any
+    local TweenInfo = ((_G :: any).TweenInfo or getfenv().TweenInfo) :: any
+    
+    local function initDeps(data: any)
+    	_Main = data.Main
+    	_Lib = data.Lib
+    	_Apps = data.Apps
     	Settings = data.Settings
     
-    	API = data.API
-    	RMD = data.RMD
-    	env = data.env
+    	_API = data.API
+    	_RMD = data.RMD
+    	_env = data.env
     	service = data.service
-    	plr = data.plr
-    	create = data.create
-    	createSimple = data.createSimple
+    	_plr = data.plr
+    	_create = data.create
+    	_createSimple = data.createSimple
     end
     
-    local function initAfterMain(t)
-    	Explorer = t.Explorer
-    	Properties = t.Properties
-    	Notepad = t.Notepad
+    local function initAfterMain(t: any)
+    	_Explorer = t.Explorer
+    	_Properties = t.Properties
+    	_Notepad = t.Notepad
     end
     
     local function main()
     	local Theme = {}
     
     	-- Font Mapping: Upgrades basic SourceSans font to modern Gotham family
-    	function Theme.MapFont(font)
+    	function Theme.MapFont(font: any): any
     		if font == Enum.Font.SourceSans then
     			return Enum.Font.Gotham
     		elseif font == Enum.Font.SourceSansBold then
@@ -96,7 +103,7 @@ local EmbeddedModules = {
     	end
     
     	-- Rounded Corners Helper
-    	function Theme.ApplyRounding(guiInstance, radius)
+    	function Theme.ApplyRounding(guiInstance: any, radius: number?): any
     		local corner = guiInstance:FindFirstChildOfClass("UICorner")
     		if not corner then
     			corner = Instance.new("UICorner")
@@ -107,14 +114,15 @@ local EmbeddedModules = {
     	end
     
     	-- Outline Stroke Helper (Replaces ugly BordersizePixel)
-    	function Theme.ApplyStroke(guiInstance, color, thickness, transparency)
+    	function Theme.ApplyStroke(guiInstance: any, color: any, thickness: number?, transparency: number?): any
     		guiInstance.BorderSizePixel = 0
     		local stroke = guiInstance:FindFirstChildOfClass("UIStroke")
     		if not stroke then
     			stroke = Instance.new("UIStroke")
     			stroke.Parent = guiInstance
     		end
-    		stroke.Color = color or Settings.Theme.Outline1
+    		local activeTheme = Settings and (Settings :: any).Theme
+    		stroke.Color = color or (activeTheme and activeTheme.Outline1)
     		stroke.Thickness = thickness or 1
     		stroke.Transparency = transparency or 0
     		stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
@@ -122,85 +130,87 @@ local EmbeddedModules = {
     	end
     
     	-- Standardized Button Styling with Smooth Tweens
-    	function Theme.StyleButton(button, isAccent)
+    	function Theme.StyleButton(button: any, isAccent: boolean?)
     		Theme.ApplyRounding(button, 6)
     		button.Font = Theme.MapFont(button.Font)
     		button.BorderSizePixel = 0
     
-    		local theme = Settings.Theme
-    		local startCol = isAccent and theme.ListSelection or theme.Button
-    		local hoverCol = theme.ButtonHover
-    		local pressCol = theme.ButtonPress
+    		local theme = Settings and (Settings :: any).Theme
+    		local startCol = isAccent and (theme and theme.ListSelection) or (theme and theme.Button)
+    		local hoverCol = theme and theme.ButtonHover
+    		local pressCol = theme and theme.ButtonPress
     
     		button.BackgroundColor3 = startCol
-    		button.TextColor3 = theme.Text
-    		Theme.ApplyStroke(button, isAccent and theme.Highlight or theme.Outline2, 1, isAccent and 0.25 or 0.45)
+    		button.TextColor3 = theme and theme.Text
+    		Theme.ApplyStroke(button, isAccent and (theme and theme.Highlight) or (theme and theme.Outline2), 1, isAccent and 0.25 or 0.45)
     
     		button.MouseEnter:Connect(function()
-    			service.TweenService:Create(button, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+    			(service :: any).TweenService:Create(button, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
     				BackgroundColor3 = hoverCol
     			}):Play()
     		end)
     		button.MouseLeave:Connect(function()
-    			service.TweenService:Create(button, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+    			(service :: any).TweenService:Create(button, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
     				BackgroundColor3 = startCol
     			}):Play()
     		end)
     		button.MouseButton1Down:Connect(function()
-    			service.TweenService:Create(button, TweenInfo.new(0.05, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+    			(service :: any).TweenService:Create(button, TweenInfo.new(0.05, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
     				BackgroundColor3 = pressCol
     			}):Play()
     		end)
     		button.MouseButton1Up:Connect(function()
-    			service.TweenService:Create(button, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+    			(service :: any).TweenService:Create(button, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
     				BackgroundColor3 = hoverCol
     			}):Play()
     		end)
     	end
     
     	-- Standardized TextBox Styling
-    	function Theme.StyleTextBox(textBox)
+    	function Theme.StyleTextBox(textBox: any)
     		Theme.ApplyRounding(textBox, 6)
-    		Theme.ApplyStroke(textBox, Settings.Theme.Outline3, 1, 0.25)
+    		local theme = Settings and (Settings :: any).Theme
+    		Theme.ApplyStroke(textBox, theme and theme.Outline3, 1, 0.25)
     		textBox.Font = Theme.MapFont(textBox.Font)
-    		textBox.BackgroundColor3 = Settings.Theme.TextBox
-    		textBox.TextColor3 = Settings.Theme.Text
-    		textBox.PlaceholderColor3 = Settings.Theme.PlaceholderText
+    		textBox.BackgroundColor3 = theme and theme.TextBox
+    		textBox.TextColor3 = theme and theme.Text
+    		textBox.PlaceholderColor3 = theme and theme.PlaceholderText
     		textBox.BorderSizePixel = 0
     	end
     
     	-- Standardized Frame Styling
-    	function Theme.StyleFrame(frame, mainType)
+    	function Theme.StyleFrame(frame: any, mainType: number?)
     		Theme.ApplyRounding(frame, 8)
-    		local theme = Settings.Theme
-    		local bgCol = (mainType == 1) and theme.Main1 or ((mainType == 2) and theme.Main2 or theme.Menu)
+    		local theme = Settings and (Settings :: any).Theme
+    		local bgCol = (mainType == 1) and (theme and theme.Main1) or ((mainType == 2) and (theme and theme.Main2) or (theme and theme.Menu))
     		frame.BackgroundColor3 = bgCol
     		frame.BorderSizePixel = 0
-    		Theme.ApplyStroke(frame, theme.Outline1, 1, 0.4)
+    		Theme.ApplyStroke(frame, theme and theme.Outline1, 1, 0.4)
     	end
     
-    	function Theme.StyleWindow(window)
+    	-- Standardized Window Styling
+    	function Theme.StyleWindow(window: any)
     		if not window or not window.GuiElems then return end
-    		local theme = Settings.Theme
-    		local main = window.GuiElems.Main
-    		local topBar = window.GuiElems.TopBar
-    		local content = window.GuiElems.Content
-    		local line = window.GuiElems.Line
+    		local theme = Settings and (Settings :: any).Theme
+    		local main = (window.GuiElems :: any).Main
+    		local topBar = (window.GuiElems :: any).TopBar
+    		local content = (window.GuiElems :: any).Content
+    		local line = (window.GuiElems :: any).Line
     		if main then
     			main.BackgroundTransparency = 0
     			Theme.ApplyRounding(main, 8)
-    			Theme.ApplyStroke(main, theme.Outline1, 1, 0.2)
+    			Theme.ApplyStroke(main, theme and theme.Outline1, 1, 0.2)
     		end
     		if topBar then
-    			topBar.BackgroundColor3 = theme.Menu
+    			topBar.BackgroundColor3 = theme and theme.Menu
     			topBar.BorderSizePixel = 0
     		end
     		if content then
-    			content.BackgroundColor3 = theme.Main2
+    			content.BackgroundColor3 = theme and theme.Main2
     			content.BorderSizePixel = 0
     		end
     		if line then
-    			line.BackgroundColor3 = theme.Outline1
+    			line.BackgroundColor3 = theme and theme.Outline1
     		end
     	end
     
@@ -210,31 +220,66 @@ local EmbeddedModules = {
     return {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
 end,
 ["State"] = function()
+    --!strict
     --[[
     	Declarative UI State & Reactivity Module
     ]]
     
     -- Common Locals
-    local Main, Lib, Apps, Settings -- Main Containers
-    local API, RMD, env, service, plr, create, createSimple -- Main Locals
+    local _Main, _Lib, _Apps, _Settings -- Main Containers
+    local _API, _RMD, _env, _service, _plr, _create, _createSimple -- Main Locals
     
-    local function initDeps(data)
-    	Main = data.Main
-    	Lib = data.Lib
-    	Apps = data.Apps
-    	Settings = data.Settings
+    -- Default to global environment
+    local task = ((_G :: any).task or getfenv().task) :: any
+    local warn = ((_G :: any).warn or getfenv().warn) :: any
     
-    	API = data.API
-    	RMD = data.RMD
-    	env = data.env
-    	service = data.service
-    	plr = data.plr
-    	create = data.create
-    	createSimple = data.createSimple
+    local function initDeps(data: any)
+    	_Main = data.Main
+    	_Lib = data.Lib
+    	_Apps = data.Apps
+    	_Settings = data.Settings
+    
+    	_API = data.API
+    	_RMD = data.RMD
+    	_env = data.env
+    	_service = data.service
+    	_plr = data.plr
+    	_create = data.create
+    	_createSimple = data.createSimple
+    
+    	-- Support injection for unit testing
+    	if data.task then
+    		task = data.task
+    	end
+    	if data.warn then
+    		warn = data.warn
+    	end
     end
     
     local function initAfterMain()
     end
+    
+    export type Connection = {
+    	Disconnect: (self: Connection) -> ()
+    }
+    
+    export type StateCell<T> = {
+    	_value: T,
+    	_listeners: { (newValue: T) -> () },
+    	get: (self: StateCell<T>) -> T,
+    	set: (self: StateCell<T>, newValue: T) -> (),
+    	onChange: (self: StateCell<T>, callback: (newValue: T) -> ()) -> Connection,
+    }
+    
+    export type ComputedCell<T> = {
+    	_value: T,
+    	_callback: () -> T,
+    	_dependencies: { any },
+    	_listeners: { (newValue: T) -> () },
+    	_connections: { Connection },
+    	get: (self: ComputedCell<T>) -> T,
+    	onChange: (self: ComputedCell<T>, callback: (newValue: T) -> ()) -> Connection,
+    }
     
     local function main()
     	local State = {}
@@ -242,19 +287,19 @@ end,
     	local StateCell = {}
     	StateCell.__index = StateCell
     
-    	function StateCell.new(initialValue)
+    	function StateCell.new<T>(initialValue: T): StateCell<T>
     		local self = setmetatable({
     			_value = initialValue,
     			_listeners = {}
     		}, StateCell)
-    		return self
+    		return (self :: any) :: StateCell<T>
     	end
     
-    	function StateCell:get()
+    	function StateCell.get<T>(self: StateCell<T>): T
     		return self._value
     	end
     
-    	function StateCell:set(newValue)
+    	function StateCell.set<T>(self: StateCell<T>, newValue: T)
     		if self._value == newValue then return end
     		self._value = newValue
     		for _, listener in ipairs(self._listeners) do
@@ -262,7 +307,7 @@ end,
     		end
     	end
     
-    	function StateCell:onChange(callback)
+    	function StateCell.onChange<T>(self: StateCell<T>, callback: (newValue: T) -> ()): Connection
     		table.insert(self._listeners, callback)
     		return {
     			Disconnect = function()
@@ -274,28 +319,28 @@ end,
     		}
     	end
     
-    	function StateCell:__call()
-    		return self:get()
+    	function StateCell.__call<T>(self: StateCell<T>): T
+    		return (self :: any):get()
     	end
     
     	local ComputedCell = {}
     	ComputedCell.__index = ComputedCell
     
-    	function ComputedCell.new(dependencies, callback)
+    	function ComputedCell.new<T>(dependencies: { any }, callback: () -> T): ComputedCell<T>
     		local self = setmetatable({
     			_callback = callback,
     			_dependencies = dependencies,
     			_listeners = {},
-    			_value = nil,
+    			_value = (nil :: any) :: T,
     			_connections = {}
     		}, ComputedCell)
     
     		local function update()
     			local ok, newVal = pcall(self._callback)
     			if ok then
-    				if self._value ~= newVal then
-    					self._value = newVal
-    					for _, listener in ipairs(self._listeners) do
+    				if (self :: any)._value ~= newVal then
+    					(self :: any)._value = newVal
+    					for _, listener in ipairs((self :: any)._listeners) do
     						task.spawn(listener, newVal)
     					end
     				end
@@ -306,20 +351,20 @@ end,
     
     		for _, dep in ipairs(dependencies) do
     			if type(dep) == "table" and dep.onChange then
-    				local conn = dep:onChange(update)
-    				table.insert(self._connections, conn)
+    				local conn = (dep :: any):onChange(update)
+    				table.insert((self :: any)._connections, conn)
     			end
     		end
     
-    		self._value = callback()
-    		return self
+    		(self :: any)._value = callback()
+    		return (self :: any) :: ComputedCell<T>
     	end
     
-    	function ComputedCell:get()
+    	function ComputedCell.get<T>(self: ComputedCell<T>): T
     		return self._value
     	end
     
-    	function ComputedCell:onChange(callback)
+    	function ComputedCell.onChange<T>(self: ComputedCell<T>, callback: (newValue: T) -> ()): Connection
     		table.insert(self._listeners, callback)
     		return {
     			Disconnect = function()
@@ -331,20 +376,20 @@ end,
     		}
     	end
     
-    	function ComputedCell:__call()
-    		return self:get()
+    	function ComputedCell.__call<T>(self: ComputedCell<T>): T
+    		return (self :: any):get()
     	end
     
-    	local function Bind(instance, properties)
-    		local connections = {}
+    	local function Bind(instance: any, properties: { [string]: any }): Connection
+    		local connections: { Connection } = {}
     
     		for propName, propValue in pairs(properties) do
     			if type(propValue) == "table" and propValue.get and propValue.onChange then
     				-- It's a state or computed object
-    				local function update(val)
+    				local function update(val: any)
     					if instance and instance.Parent then
     						local ok, err = pcall(function()
-    							instance[propName] = val
+    							(instance :: any)[propName] = val
     						end)
     						if not ok then
     							warn("Failed to update bound property " .. propName .. " on " .. tostring(instance) .. ": " .. tostring(err))
@@ -353,19 +398,19 @@ end,
     				end
     
     				-- Initial update
-    				update(propValue:get())
+    				update((propValue :: any):get())
     
     				-- Connect listener
-    				local conn = propValue:onChange(update)
+    				local conn = (propValue :: any):onChange(update)
     				table.insert(connections, conn)
     			else
     				-- Standard value assignment
-    				instance[propName] = propValue
+    				(instance :: any)[propName] = propValue
     			end
     		end
     
     		-- Clean up when the GuiInstance is destroyed
-    		local destroyConn
+    		local destroyConn: any = nil
     		local hasDestroying = pcall(function() return instance.Destroying end)
     		if hasDestroying then
     			destroyConn = instance.Destroying:Connect(function()
@@ -375,7 +420,7 @@ end,
     				end
     			end)
     		else
-    			destroyConn = instance.AncestryChanged:Connect(function(_, parent)
+    			destroyConn = instance.AncestryChanged:Connect(function(_: any, parent: any)
     				if parent == nil then
     					if destroyConn then destroyConn:Disconnect() end
     					for _, conn in ipairs(connections) do
@@ -402,8 +447,132 @@ end,
     	return State
     end
     
-    if gethsfuncs then
-    	_G.moduleData = {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
+    local getgenv = (_G :: any).getgenv or getfenv().getgenv
+    if getgenv and (getgenv :: any)().gethsfuncs then
+    	((getgenv :: any)()._G :: any).moduleData = {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
+    else
+    	return {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
+    end
+end,
+["Logger"] = function()
+    --!strict
+    --[[
+    	Centralized Logger Module for DarkDEX++
+    ]]
+    
+    -- Common Locals
+    local _Main: any, _Lib: any, _Apps: any, _Settings: any
+    local _API: any, _RMD: any, _env: any, _service: any, _plr: any, _create: any, _createSimple: any
+    
+    local function initDeps(data: any)
+    	_Main = data.Main
+    	_Lib = data.Lib
+    	_Apps = data.Apps
+    	_Settings = data.Settings
+    
+    	_API = data.API
+    	_RMD = data.RMD
+    	_env = data.env
+    	_service = data.service
+    	_plr = data.plr
+    	_create = data.create
+    	_createSimple = data.createSimple
+    end
+    
+    local function initAfterMain()
+    end
+    
+    export type LogLevel = number
+    
+    export type Logger = {
+    	Levels: {
+    		DEBUG: LogLevel,
+    		INFO: LogLevel,
+    		WARN: LogLevel,
+    		ERROR: LogLevel,
+    	},
+    	setLogLevel: (level: LogLevel) -> (),
+    	addCustomOutput: (callback: (level: LogLevel, message: string) -> ()) -> (),
+    	debug: (...any) -> (),
+    	info: (...any) -> (),
+    	warn: (...any) -> (),
+    	error: (...any) -> (),
+    }
+    
+    local function main(): Logger
+    	local Logger = {}
+    	
+    	local Levels = {
+    		DEBUG = 0,
+    		INFO = 1,
+    		WARN = 2,
+    		ERROR = 3
+    	}
+    	Logger.Levels = Levels
+    	
+    	local currentLevel = Levels.INFO
+    	local customOutputs: { (level: LogLevel, message: string) -> () } = {}
+    	
+    	function Logger.setLogLevel(level: LogLevel)
+    		currentLevel = level
+    	end
+    	
+    	function Logger.addCustomOutput(callback: (level: LogLevel, message: string) -> ())
+    		table.insert(customOutputs, callback)
+    	end
+    	
+    	local function formatMessage(...)
+    		local parts = {}
+    		for i = 1, select("#", ...) do
+    			table.insert(parts, tostring(select(i, ...)))
+    		end
+    		return table.concat(parts, " ")
+    	end
+    	
+    	local function log(level: LogLevel, prefix: string, ...)
+    		if level < currentLevel then return end
+    		local msg = "[" .. prefix .. "] " .. formatMessage(...)
+    		
+    		-- Default standard outputs
+    		if level == Levels.ERROR then
+    			local warnFunc = (_G :: any).warn or getfenv().warn or print
+    			warnFunc(msg)
+    		elseif level == Levels.WARN then
+    			local warnFunc = (_G :: any).warn or getfenv().warn or print
+    			warnFunc(msg)
+    		else
+    			local printFunc = (_G :: any).print or getfenv().print or print
+    			printFunc(msg)
+    		end
+    		
+    		-- Custom outputs
+    		for _, output in ipairs(customOutputs) do
+    			pcall(output, level, msg)
+    		end
+    	end
+    	
+    	function Logger.debug(...)
+    		log(Levels.DEBUG, "DEBUG", ...)
+    	end
+    	
+    	function Logger.info(...)
+    		log(Levels.INFO, "INFO", ...)
+    	end
+    	
+    	function Logger.warn(...)
+    		log(Levels.WARN, "WARN", ...)
+    	end
+    	
+    	function Logger.error(...)
+    		log(Levels.ERROR, "ERROR", ...)
+    	end
+    	
+    	return Logger :: Logger
+    end
+    
+    local getgenv = (_G :: any).getgenv or getfenv().getgenv
+    if getgenv and (getgenv :: any)().gethsfuncs then
+    	((getgenv :: any)()._G :: any).moduleData = {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
     else
     	return {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
     end
@@ -1605,18 +1774,48 @@ end,
     end
 end,
 ["Lib"] = function()
+    --!strict
     --[[
     	Lib Module
     	
     	Container for functions and classes
     ]]
     
-    -- Common Locals
-    local Main,Lib,Apps,Settings -- Main Containers
-    local Explorer, Properties, Notepad, Notebook -- Major Apps
-    local API,RMD,env,service,plr,create,createSimple -- Main Locals
+    -- CLI Mocks for unit tests
+    local Color3 = (Color3 :: any) or {
+    	fromRGB = function(r, g, b) return {r=r, g=g, b=b} end,
+    	new = function(r, g, b) return {r=r, g=g, b=b} end
+    }
+    local Vector2 = (Vector2 :: any) or {
+    	new = function(x, y) return {x=x, y=y} end
+    }
+    local UDim2 = (UDim2 :: any) or {
+    	fromScale = function(x, y) return {X = {Scale = x, Offset = 0}, Y = {Scale = y, Offset = 0}} end,
+    	fromOffset = function(x, y) return {X = {Scale = 0, Offset = x}, Y = {Scale = 0, Offset = y}} end,
+    	new = function(xs, xo, ys, yo) return {X = {Scale = xs, Offset = xo}, Y = {Scale = ys, Offset = yo}} end
+    }
+    local UDim = (UDim :: any) or {
+    	new = function(s, o) return {Scale = s, Offset = o} end
+    }
+    local Instance = (Instance :: any) or {
+    	new = function(className)
+    		return {
+    			TweenSize = function(...) end,
+    			GetChildren = function() return {} end,
+    			GetDescendants = function() return {} end,
+    		}
+    	end
+    }
+    local TweenInfo = (TweenInfo :: any) or {
+    	new = function(...) return {} end
+    }
     
-    local function initDeps(data)
+    -- Common Locals
+    local Main: any, Lib: any, Apps: any, Settings: any -- Main Containers
+    local Explorer: any, Properties: any, Notepad: any -- Major Apps
+    local API: any, RMD: any, env: any, service: any, plr: any, create: any, createSimple: any -- Main Locals
+    
+    local function initDeps(data: any)
     	Main = data.Main
     	Lib = data.Lib
     	Apps = data.Apps
@@ -1635,7 +1834,6 @@ end,
     	Explorer = Apps.Explorer
     	Properties = Apps.Properties
     	Notepad = Apps.Notepad
-    	Notebook = Apps.Notebook
     
     	local stateModule = Apps.State
     	if stateModule then
@@ -1696,12 +1894,12 @@ end,
     			cleanTable[char(i)] = "\\"..format("%03d",i)
     		end
     
-    		return function(str)
+    		return function(str: string): string
     			return gsub(str,"[\"\\\0-\31\127-\255]",cleanTable)
     		end
     	end)()
     
-    	Lib.getSafePath = function(obj)
+    	Lib.getSafePath = function(obj: any): string
     		if not obj then return "?" end
     		if obj.Parent == nil then return "Nil parented" end
     		local ok, path = pcall(function()
@@ -1712,7 +1910,7 @@ end,
     		return ok and tostring(path) or tostring(obj)
     	end
     
-    	Lib.CheckMouseInGui = function(gui)
+    	Lib.CheckMouseInGui = function(gui: any): boolean
     		if gui == nil then return false end
     		
     		-- Support SurfaceGui coordinates by raycasting to the Adornee part
@@ -1742,15 +1940,15 @@ end,
     		return mouse.X >= guiPosition.X and mouse.X < guiPosition.X + guiSize.X and mouse.Y >= guiPosition.Y and mouse.Y < guiPosition.Y + guiSize.Y
     	end
     
-    	Lib.IsShiftDown = function()
+    	Lib.IsShiftDown = function(): boolean
     		return service.UserInputService:IsKeyDown(Enum.KeyCode.LeftShift) or service.UserInputService:IsKeyDown(Enum.KeyCode.RightShift)
     	end
     
-    	Lib.IsCtrlDown = function()
+    	Lib.IsCtrlDown = function(): boolean
     		return service.UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) or service.UserInputService:IsKeyDown(Enum.KeyCode.RightControl)
     	end
     
-    	Lib.CreateArrow = function(size,num,dir)
+    	Lib.CreateArrow = function(size: number, num: number, dir: string): any
     		local max = num
     		local arrowFrame = createSimple("Frame",{
     			BackgroundTransparency = 1,
@@ -1823,6 +2021,7 @@ end,
     			local D = string.byte('D', 1)
     			local E = string.byte('E', 1)
     
+    			local parse: (s: string, evalEntities: boolean?) -> any
     			function parse(s, evalEntities)
     				-- remove comments
     				s = s:gsub('<!%-%-(.-)%-%->', '')
@@ -1898,7 +2097,7 @@ end,
     				return {children=t, entities=entities, tentities=tentities}
     			end
     
-    			function parseText(txt)
+    			local function parseText(txt: string): any
     				return parse(txt)
     			end
     
@@ -1926,13 +2125,13 @@ end,
     		return func()
     	end)()
     
-    	Lib.FastWait = function(s)
+    	Lib.FastWait = function(s: number?)
     		if not s then return signalWait(renderStepped) end
     		local start = tick()
     		while tick() - start < s do signalWait(renderStepped) end
     	end
     
-    	Lib.ButtonAnim = function(button,data)
+    	Lib.ButtonAnim = function(button: any, data: any?): any
     		local holding = false
     		local disabled = false
     		local mode = data and data.Mode or 1
@@ -2009,12 +2208,12 @@ end,
     		return control
     	end
     
-    	Lib.FindAndRemove = function(t,item)
+    	Lib.FindAndRemove = function(t: { any }, item: any)
     		local pos = table.find(t,item)
     		if pos then table.remove(t,pos) end
     	end
     
-    	Lib.AttachTo = function(obj,data)
+    	Lib.AttachTo = function(obj: any, data: any?): any
     		local target,posOffX,posOffY,sizeOffX,sizeOffY,resize,con
     		local disabled = false
     
@@ -2072,30 +2271,30 @@ end,
     
     	Lib.ShowGui = Main.SecureGui
     
-    	Lib.ColorToBytes = function(col)
+    	Lib.ColorToBytes = function(col: any): string
     		local round = math.round
     		return string.format("%d, %d, %d",round(col.r*255),round(col.g*255),round(col.b*255))
     	end
     
-    	Lib.ReadFile = function(filename)
+    	Lib.ReadFile = function(filename: string): string?
     		if not env.readfile then return end
     
     		local s,contents = pcall(env.readfile,filename)
     		if s and contents then return contents end
     	end
     
-    	Lib.DeferFunc = function(f,...)
+    	Lib.DeferFunc = function(f: (...any) -> ...any, ...: any): any
     		signalWait(renderStepped)
     		return f(...)
     	end
     
-    	Lib.LoadCustomAsset = function(filepath)
-    		if not env.getcustomasset or not env.isfile or not env.isfile(filepath) then return end
+    	Lib.LoadCustomAsset = function(filepath: string): string?
+    		if not env.getcustomasset or not env.isfile or not env.isfile(filepath) then return nil end
     
     		return env.getcustomasset(filepath)
     	end
     
-    	Lib.FetchCustomAsset = function(url,filepath)
+    	Lib.FetchCustomAsset = function(url: string, filepath: string): string?
     		if not env.writefile then return end
     
     		local data
@@ -2117,7 +2316,7 @@ end,
     	
     	local currentfilename, currentextension, currentclickhandler
     	currentclickhandler = function() end
-    	Lib.SaveAsPrompt = function(filename, codeToSave, ext)		
+    	Lib.SaveAsPrompt = function(filename: string, codeToSave: any, ext: string?)		
     		local win = Notepad.SaveAsWindow
     		if not win then
     			win = Lib.Window.new()
@@ -2219,7 +2418,7 @@ end,
     	
     	-- Classes
     
-    	Lib.Signal = (function()
+    Lib.Signal = (function()
     		local funcs = {}
     
     		local disconnect = function(con)
@@ -2356,6 +2555,7 @@ end,
     
     		return {new = new}
     	end)()
+    
     	
     	Lib.IconMap = (function()
     		local funcs = {}
@@ -2499,7 +2699,7 @@ end,
     		return {new = new, newLinear = newLinear, getIconDataFromName = getIconDataFromName}
     	end)()
     
-    	Lib.ScrollBar = (function()
+    Lib.ScrollBar = (function()
     		local funcs = {}
     		local user = service.UserInputService
     		local mouse = plr:GetMouse()
@@ -2966,7 +3166,8 @@ end,
     		return {new = new}
     	end)()
     
-    	Lib.Window = (function()
+    
+    Lib.Window = (function()
     		local funcs = {}
     		local static = {MinWidth = 200, FreeWidth = 200}
     		local mouse = plr:GetMouse()
@@ -3062,11 +3263,11 @@ end,
     
     		local updateWindows
     
-    		local function moveToTop(window)
-    			local found = table.find(visibleWindows,window)
+    		local function moveToTop(self)
+    			local found = table.find(visibleWindows,self)
     			if found then
     				table.remove(visibleWindows,found)
-    				table.insert(visibleWindows,1,window)
+    				table.insert(visibleWindows,1,self)
     				updateWindows()
     			end
     		end
@@ -4035,7 +4236,8 @@ end,
     		return static
     	end)()
     
-    	Lib.ContextMenu = (function()
+    
+    Lib.ContextMenu = (function()
     		local funcs = {}
     		local mouse
     
@@ -4798,7 +5000,8 @@ end,
     	end)()
     
     
-    	Lib.Checkbox = (function()
+    
+    Lib.Checkbox = (function()
     		local funcs = {}
     		local c3 = Color3.fromRGB
     		local v2 = Vector2.new
@@ -5073,7 +5276,8 @@ end,
     		return {new = new, fromFrame}
     	end)()
     
-    	Lib.BrickColorPicker = (function()
+    
+    Lib.BrickColorPicker = (function()
     		local funcs = {}
     		local paletteCount = 0
     		local mouse = service.Players.LocalPlayer:GetMouse()
@@ -5327,9 +5531,9 @@ end,
     				{75,"Frame",{BackgroundColor3=Color3.new(0.86274510622025,0.86274510622025,0.86274510622025),BorderSizePixel=0,Parent={72},Position=UDim2.new(0,6,0,5),Size=UDim2.new(0,5,0,1),}},
     				{76,"TextButton",{AutoButtonColor=false,BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,BorderSizePixel=0,Font=3,Name="Down",Parent={70},Position=UDim2.new(0,0,0,8),Size=UDim2.new(1,0,0,8),Text="",TextSize=14,}},
     				{77,"Frame",{BackgroundTransparency=1,Name="Arrow",Parent={76},Size=UDim2.new(0,16,0,8),}},
-    				{78,"Frame",{BackgroundColor3=Color3.new(0.86274510622025,0.86274510622025,0.86274510622025),BorderSizePixel=0,Parent={77},Position=UDim2.new(0,8,0,5),Size=UDim2.new(0,1,0,1),}},
-    				{79,"Frame",{BackgroundColor3=Color3.new(0.86274510622025,0.86274510622025,0.86274510622025),BorderSizePixel=0,Parent={77},Position=UDim2.new(0,7,0,4),Size=UDim2.new(0,3,0,1),}},
-    				{80,"Frame",{BackgroundColor3=Color3.new(0.86274510622025,0.86274510622025,0.86274510622025),BorderSizePixel=0,Parent={77},Position=UDim2.new(0,6,0,3),Size=UDim2.new(0,5,0,1),}},
+    				{78,"Frame",{BackgroundColor3=Color3.new(0.86274510622025,0.86274510622025,0.86274510622025),BorderSizePixel=0,Parent={78},Position=UDim2.new(0,8,0,5),Size=UDim2.new(0,1,0,1),}},
+    				{79,"Frame",{BackgroundColor3=Color3.new(0.86274510622025,0.86274510622025,0.86274510622025),BorderSizePixel=0,Parent={78},Position=UDim2.new(0,7,0,4),Size=UDim2.new(0,3,0,1),}},
+    				{80,"Frame",{BackgroundColor3=Color3.new(0.86274510622025,0.86274510622025,0.86274510622025),BorderSizePixel=0,Parent={78},Position=UDim2.new(0,6,0,3),Size=UDim2.new(0,5,0,1),}},
     				{81,"TextLabel",{BackgroundColor3=Color3.new(1,1,1),BackgroundTransparency=1,Font=3,Name="Title",Parent={68},Position=UDim2.new(0,-40,0,0),Size=UDim2.new(0,34,1,0),Text="Sat:",TextColor3=Color3.new(0.86274516582489,0.86274516582489,0.86274516582489),TextSize=14,TextXAlignment=1,}},
     				{82,"Frame",{BackgroundColor3=Color3.new(0.14901961386204,0.14901961386204,0.14901961386204),BorderColor3=Color3.new(0.12549020349979,0.12549020349979,0.12549020349979),Name="Val",Parent={1},Position=UDim2.new(1,-180,0,255),Size=UDim2.new(0,52,0,16),}},
     				{83,"TextBox",{BackgroundColor3=Color3.new(0.25098040699959,0.25098040699959,0.25098040699959),BackgroundTransparency=1,BorderColor3=Color3.new(0.37647062540054,0.37647062540054,0.37647062540054),Font=3,Name="Input",Parent={82},Position=UDim2.new(0,2,0,0),Size=UDim2.new(0,50,0,16),Text="255",TextColor3=Color3.new(0.86274516582489,0.86274516582489,0.86274516582489),TextSize=14,TextXAlignment=0,}},
@@ -5685,7 +5889,8 @@ end,
     		return {new = new}
     	end)()
     
-    	Lib.NumberSequenceEditor = (function()
+    
+    Lib.NumberSequenceEditor = (function()
     		local function new() -- TODO: Convert to newer class model
     			local newMt = setmetatable({},{})
     			newMt.OnSelect = Lib.Signal.new()
@@ -6506,7 +6711,8 @@ end,
     		return {new = new}
     	end)()
     
-    	Lib.ViewportTextBox = (function()
+    
+    Lib.ViewportTextBox = (function()
     		local textService = service.TextService
     
     		local props = {
@@ -6716,7 +6922,8 @@ end,
     		return {new = new}
     	end)()
     
-    	Lib.DropDown = (function()
+    
+    Lib.DropDown = (function()
     		local props = {
     			Gui = PH,
     			Anim = PH,
@@ -6821,7 +7028,8 @@ end,
     		return {new = new}
     	end)()
     
-    	Lib.ClickSystem = (function()
+    
+    Lib.ClickSystem = (function()
     		local props = {
     			LastItem = PH,
     			OnDown = SIGNAL,
@@ -6922,7 +7130,8 @@ end,
     		return {new = new}
     	end)()
     
-    	Lib.GetDescendantsParallel = function(root)
+    
+    	Lib.GetDescendantsParallel = function(root: any): { any }
     		local descs = {}
     		local ok = pcall(function()
     			task.desynchronize()
@@ -27242,7 +27451,7 @@ end,
 local isFsSupported = readfile and writefile and isfile and isfolder and listfiles and delfile and delfolder
 
 -- Main vars
-local Main, Explorer, Properties, Notepad, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, SoundViewer, AnimationViewer, ClientIndex, ActivityMap, DependencyGraph, SmartSearch, RuntimeInspector, ClientIntelligence, InspectorHub, TaskRouter, ControlCenter, Theme, SmartDecompiler, SecurityAuditor, RemoteFuzzer, PropertyTracker, InstanceSerializer, ThreadManager, IDESync, Clipboard, Duplicate, Deletion, PropertyCopier, PropertyRestorer, Rename, History, DefaultSettings, Lib, State local ggv = getgenv or nil
+local Main, Explorer, Properties, Notepad, Console, SaveInstance, ModelViewer, SettingsWindow, CodeSearch, ScriptRelations, RemoteUsageMap, ObjectLinks, ImageViewer, SoundViewer, AnimationViewer, ClientIndex, ActivityMap, DependencyGraph, SmartSearch, RuntimeInspector, ClientIntelligence, InspectorHub, TaskRouter, ControlCenter, Theme, SmartDecompiler, SecurityAuditor, RemoteFuzzer, PropertyTracker, InstanceSerializer, ThreadManager, IDESync, Clipboard, Duplicate, Deletion, PropertyCopier, PropertyRestorer, Rename, History, DefaultSettings, Lib, State, Logger local ggv = getgenv or nil
 local API, RMD
 
 -- Default Settings
@@ -27707,10 +27916,11 @@ Main = (function()
 		end
 	end
 
-	Main.ModuleList = {"Theme","State","IconData","Lib","Console","SettingsWindow","ControlCenter","TaskRouter","ThreadManager","Explorer","EditMenu","NavigationMenu","ObjectMenu","ScriptMenu","InteractionMenu","PlayerMenu","NilInstanceMenu","Properties","SaveInstance","ModelViewer","ImageViewer","SoundViewer","AnimationViewer","ObjectLinks","InstanceSerializer","SmartDecompiler","Notepad","ClientIndex","CodeSearch","SmartSearch","DependencyGraph","ScriptRelations","SecurityAuditor","RuntimeInspector","RemoteUsageMap","ActivityMap","PropertyTracker","RemoteFuzzer","ClientIntelligence","InspectorHub","IDESync","Clipboard","Duplicate","Deletion","PropertyCopier","PropertyRestorer","Rename","History"}
+	Main.ModuleList = {"Theme","State","Logger","IconData","Lib","Console","SettingsWindow","ControlCenter","TaskRouter","ThreadManager","Explorer","EditMenu","NavigationMenu","ObjectMenu","ScriptMenu","InteractionMenu","PlayerMenu","NilInstanceMenu","Properties","SaveInstance","ModelViewer","ImageViewer","SoundViewer","AnimationViewer","ObjectLinks","InstanceSerializer","SmartDecompiler","Notepad","ClientIndex","CodeSearch","SmartSearch","DependencyGraph","ScriptRelations","SecurityAuditor","RuntimeInspector","RemoteUsageMap","ActivityMap","PropertyTracker","RemoteFuzzer","ClientIntelligence","InspectorHub","IDESync","Clipboard","Duplicate","Deletion","PropertyCopier","PropertyRestorer","Rename","History"}
 	Main.ModulePathMap = {
 		Theme = "Core/Theme",
 		State = "Core/State",
+		Logger = "Core/Logger",
 		IconData = "Core/IconData",
 		Lib = "Core/Lib",
 		Console = "Core/Console",

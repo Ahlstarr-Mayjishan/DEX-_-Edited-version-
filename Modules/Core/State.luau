@@ -1,28 +1,63 @@
+--!strict
 --[[
 	Declarative UI State & Reactivity Module
 ]]
 
 -- Common Locals
-local Main, Lib, Apps, Settings -- Main Containers
-local API, RMD, env, service, plr, create, createSimple -- Main Locals
+local _Main, _Lib, _Apps, _Settings -- Main Containers
+local _API, _RMD, _env, _service, _plr, _create, _createSimple -- Main Locals
 
-local function initDeps(data)
-	Main = data.Main
-	Lib = data.Lib
-	Apps = data.Apps
-	Settings = data.Settings
+-- Default to global environment
+local task = ((_G :: any).task or getfenv().task) :: any
+local warn = ((_G :: any).warn or getfenv().warn) :: any
 
-	API = data.API
-	RMD = data.RMD
-	env = data.env
-	service = data.service
-	plr = data.plr
-	create = data.create
-	createSimple = data.createSimple
+local function initDeps(data: any)
+	_Main = data.Main
+	_Lib = data.Lib
+	_Apps = data.Apps
+	_Settings = data.Settings
+
+	_API = data.API
+	_RMD = data.RMD
+	_env = data.env
+	_service = data.service
+	_plr = data.plr
+	_create = data.create
+	_createSimple = data.createSimple
+
+	-- Support injection for unit testing
+	if data.task then
+		task = data.task
+	end
+	if data.warn then
+		warn = data.warn
+	end
 end
 
 local function initAfterMain()
 end
+
+export type Connection = {
+	Disconnect: (self: Connection) -> ()
+}
+
+export type StateCell<T> = {
+	_value: T,
+	_listeners: { (newValue: T) -> () },
+	get: (self: StateCell<T>) -> T,
+	set: (self: StateCell<T>, newValue: T) -> (),
+	onChange: (self: StateCell<T>, callback: (newValue: T) -> ()) -> Connection,
+}
+
+export type ComputedCell<T> = {
+	_value: T,
+	_callback: () -> T,
+	_dependencies: { any },
+	_listeners: { (newValue: T) -> () },
+	_connections: { Connection },
+	get: (self: ComputedCell<T>) -> T,
+	onChange: (self: ComputedCell<T>, callback: (newValue: T) -> ()) -> Connection,
+}
 
 local function main()
 	local State = {}
@@ -30,19 +65,19 @@ local function main()
 	local StateCell = {}
 	StateCell.__index = StateCell
 
-	function StateCell.new(initialValue)
+	function StateCell.new<T>(initialValue: T): StateCell<T>
 		local self = setmetatable({
 			_value = initialValue,
 			_listeners = {}
 		}, StateCell)
-		return self
+		return (self :: any) :: StateCell<T>
 	end
 
-	function StateCell:get()
+	function StateCell.get<T>(self: StateCell<T>): T
 		return self._value
 	end
 
-	function StateCell:set(newValue)
+	function StateCell.set<T>(self: StateCell<T>, newValue: T)
 		if self._value == newValue then return end
 		self._value = newValue
 		for _, listener in ipairs(self._listeners) do
@@ -50,7 +85,7 @@ local function main()
 		end
 	end
 
-	function StateCell:onChange(callback)
+	function StateCell.onChange<T>(self: StateCell<T>, callback: (newValue: T) -> ()): Connection
 		table.insert(self._listeners, callback)
 		return {
 			Disconnect = function()
@@ -62,28 +97,28 @@ local function main()
 		}
 	end
 
-	function StateCell:__call()
-		return self:get()
+	function StateCell.__call<T>(self: StateCell<T>): T
+		return (self :: any):get()
 	end
 
 	local ComputedCell = {}
 	ComputedCell.__index = ComputedCell
 
-	function ComputedCell.new(dependencies, callback)
+	function ComputedCell.new<T>(dependencies: { any }, callback: () -> T): ComputedCell<T>
 		local self = setmetatable({
 			_callback = callback,
 			_dependencies = dependencies,
 			_listeners = {},
-			_value = nil,
+			_value = (nil :: any) :: T,
 			_connections = {}
 		}, ComputedCell)
 
 		local function update()
 			local ok, newVal = pcall(self._callback)
 			if ok then
-				if self._value ~= newVal then
-					self._value = newVal
-					for _, listener in ipairs(self._listeners) do
+				if (self :: any)._value ~= newVal then
+					(self :: any)._value = newVal
+					for _, listener in ipairs((self :: any)._listeners) do
 						task.spawn(listener, newVal)
 					end
 				end
@@ -94,20 +129,20 @@ local function main()
 
 		for _, dep in ipairs(dependencies) do
 			if type(dep) == "table" and dep.onChange then
-				local conn = dep:onChange(update)
-				table.insert(self._connections, conn)
+				local conn = (dep :: any):onChange(update)
+				table.insert((self :: any)._connections, conn)
 			end
 		end
 
-		self._value = callback()
-		return self
+		(self :: any)._value = callback()
+		return (self :: any) :: ComputedCell<T>
 	end
 
-	function ComputedCell:get()
+	function ComputedCell.get<T>(self: ComputedCell<T>): T
 		return self._value
 	end
 
-	function ComputedCell:onChange(callback)
+	function ComputedCell.onChange<T>(self: ComputedCell<T>, callback: (newValue: T) -> ()): Connection
 		table.insert(self._listeners, callback)
 		return {
 			Disconnect = function()
@@ -119,20 +154,20 @@ local function main()
 		}
 	end
 
-	function ComputedCell:__call()
-		return self:get()
+	function ComputedCell.__call<T>(self: ComputedCell<T>): T
+		return (self :: any):get()
 	end
 
-	local function Bind(instance, properties)
-		local connections = {}
+	local function Bind(instance: any, properties: { [string]: any }): Connection
+		local connections: { Connection } = {}
 
 		for propName, propValue in pairs(properties) do
 			if type(propValue) == "table" and propValue.get and propValue.onChange then
 				-- It's a state or computed object
-				local function update(val)
+				local function update(val: any)
 					if instance and instance.Parent then
 						local ok, err = pcall(function()
-							instance[propName] = val
+							(instance :: any)[propName] = val
 						end)
 						if not ok then
 							warn("Failed to update bound property " .. propName .. " on " .. tostring(instance) .. ": " .. tostring(err))
@@ -141,19 +176,19 @@ local function main()
 				end
 
 				-- Initial update
-				update(propValue:get())
+				update((propValue :: any):get())
 
 				-- Connect listener
-				local conn = propValue:onChange(update)
+				local conn = (propValue :: any):onChange(update)
 				table.insert(connections, conn)
 			else
 				-- Standard value assignment
-				instance[propName] = propValue
+				(instance :: any)[propName] = propValue
 			end
 		end
 
 		-- Clean up when the GuiInstance is destroyed
-		local destroyConn
+		local destroyConn: any = nil
 		local hasDestroying = pcall(function() return instance.Destroying end)
 		if hasDestroying then
 			destroyConn = instance.Destroying:Connect(function()
@@ -163,7 +198,7 @@ local function main()
 				end
 			end)
 		else
-			destroyConn = instance.AncestryChanged:Connect(function(_, parent)
+			destroyConn = instance.AncestryChanged:Connect(function(_: any, parent: any)
 				if parent == nil then
 					if destroyConn then destroyConn:Disconnect() end
 					for _, conn in ipairs(connections) do
@@ -190,8 +225,9 @@ local function main()
 	return State
 end
 
-if gethsfuncs then
-	_G.moduleData = {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
+local getgenv = (_G :: any).getgenv or getfenv().getgenv
+if getgenv and (getgenv :: any)().gethsfuncs then
+	((getgenv :: any)()._G :: any).moduleData = {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
 else
 	return {InitDeps = initDeps, InitAfterMain = initAfterMain, Main = main}
 end

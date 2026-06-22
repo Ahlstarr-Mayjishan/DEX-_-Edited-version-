@@ -1,3 +1,4 @@
+--!strict
 --[[
 	Theme Module
 	
@@ -5,36 +6,42 @@
 ]]
 
 -- Common Locals
-local Main, Lib, Apps, Settings -- Main Containers
-local Explorer, Properties, Notepad -- Major Apps
-local API, RMD, env, service, plr, create, createSimple -- Main Locals
+local _Main, _Lib, _Apps, Settings -- Main Containers
+local _Explorer, _Properties, _Notepad -- Major Apps
+local _API, _RMD, _env, service, _plr, _create, _createSimple -- Main Locals
 
-local function initDeps(data)
-	Main = data.Main
-	Lib = data.Lib
-	Apps = data.Apps
+-- Silence standard Luau CLI environment issues
+local Enum = ((_G :: any).Enum or getfenv().Enum) :: any
+local Instance = ((_G :: any).Instance or getfenv().Instance) :: any
+local UDim = ((_G :: any).UDim or getfenv().UDim) :: any
+local TweenInfo = ((_G :: any).TweenInfo or getfenv().TweenInfo) :: any
+
+local function initDeps(data: any)
+	_Main = data.Main
+	_Lib = data.Lib
+	_Apps = data.Apps
 	Settings = data.Settings
 
-	API = data.API
-	RMD = data.RMD
-	env = data.env
+	_API = data.API
+	_RMD = data.RMD
+	_env = data.env
 	service = data.service
-	plr = data.plr
-	create = data.create
-	createSimple = data.createSimple
+	_plr = data.plr
+	_create = data.create
+	_createSimple = data.createSimple
 end
 
-local function initAfterMain(t)
-	Explorer = t.Explorer
-	Properties = t.Properties
-	Notepad = t.Notepad
+local function initAfterMain(t: any)
+	_Explorer = t.Explorer
+	_Properties = t.Properties
+	_Notepad = t.Notepad
 end
 
 local function main()
 	local Theme = {}
 
 	-- Font Mapping: Upgrades basic SourceSans font to modern Gotham family
-	function Theme.MapFont(font)
+	function Theme.MapFont(font: any): any
 		if font == Enum.Font.SourceSans then
 			return Enum.Font.Gotham
 		elseif font == Enum.Font.SourceSansBold then
@@ -46,7 +53,7 @@ local function main()
 	end
 
 	-- Rounded Corners Helper
-	function Theme.ApplyRounding(guiInstance, radius)
+	function Theme.ApplyRounding(guiInstance: any, radius: number?): any
 		local corner = guiInstance:FindFirstChildOfClass("UICorner")
 		if not corner then
 			corner = Instance.new("UICorner")
@@ -57,14 +64,15 @@ local function main()
 	end
 
 	-- Outline Stroke Helper (Replaces ugly BordersizePixel)
-	function Theme.ApplyStroke(guiInstance, color, thickness, transparency)
+	function Theme.ApplyStroke(guiInstance: any, color: any, thickness: number?, transparency: number?): any
 		guiInstance.BorderSizePixel = 0
 		local stroke = guiInstance:FindFirstChildOfClass("UIStroke")
 		if not stroke then
 			stroke = Instance.new("UIStroke")
 			stroke.Parent = guiInstance
 		end
-		stroke.Color = color or Settings.Theme.Outline1
+		local activeTheme = Settings and (Settings :: any).Theme
+		stroke.Color = color or (activeTheme and activeTheme.Outline1)
 		stroke.Thickness = thickness or 1
 		stroke.Transparency = transparency or 0
 		stroke.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
@@ -72,85 +80,87 @@ local function main()
 	end
 
 	-- Standardized Button Styling with Smooth Tweens
-	function Theme.StyleButton(button, isAccent)
+	function Theme.StyleButton(button: any, isAccent: boolean?)
 		Theme.ApplyRounding(button, 6)
 		button.Font = Theme.MapFont(button.Font)
 		button.BorderSizePixel = 0
 
-		local theme = Settings.Theme
-		local startCol = isAccent and theme.ListSelection or theme.Button
-		local hoverCol = theme.ButtonHover
-		local pressCol = theme.ButtonPress
+		local theme = Settings and (Settings :: any).Theme
+		local startCol = isAccent and (theme and theme.ListSelection) or (theme and theme.Button)
+		local hoverCol = theme and theme.ButtonHover
+		local pressCol = theme and theme.ButtonPress
 
 		button.BackgroundColor3 = startCol
-		button.TextColor3 = theme.Text
-		Theme.ApplyStroke(button, isAccent and theme.Highlight or theme.Outline2, 1, isAccent and 0.25 or 0.45)
+		button.TextColor3 = theme and theme.Text
+		Theme.ApplyStroke(button, isAccent and (theme and theme.Highlight) or (theme and theme.Outline2), 1, isAccent and 0.25 or 0.45)
 
 		button.MouseEnter:Connect(function()
-			service.TweenService:Create(button, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			(service :: any).TweenService:Create(button, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 				BackgroundColor3 = hoverCol
 			}):Play()
 		end)
 		button.MouseLeave:Connect(function()
-			service.TweenService:Create(button, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			(service :: any).TweenService:Create(button, TweenInfo.new(0.15, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 				BackgroundColor3 = startCol
 			}):Play()
 		end)
 		button.MouseButton1Down:Connect(function()
-			service.TweenService:Create(button, TweenInfo.new(0.05, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			(service :: any).TweenService:Create(button, TweenInfo.new(0.05, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 				BackgroundColor3 = pressCol
 			}):Play()
 		end)
 		button.MouseButton1Up:Connect(function()
-			service.TweenService:Create(button, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
+			(service :: any).TweenService:Create(button, TweenInfo.new(0.1, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {
 				BackgroundColor3 = hoverCol
 			}):Play()
 		end)
 	end
 
 	-- Standardized TextBox Styling
-	function Theme.StyleTextBox(textBox)
+	function Theme.StyleTextBox(textBox: any)
 		Theme.ApplyRounding(textBox, 6)
-		Theme.ApplyStroke(textBox, Settings.Theme.Outline3, 1, 0.25)
+		local theme = Settings and (Settings :: any).Theme
+		Theme.ApplyStroke(textBox, theme and theme.Outline3, 1, 0.25)
 		textBox.Font = Theme.MapFont(textBox.Font)
-		textBox.BackgroundColor3 = Settings.Theme.TextBox
-		textBox.TextColor3 = Settings.Theme.Text
-		textBox.PlaceholderColor3 = Settings.Theme.PlaceholderText
+		textBox.BackgroundColor3 = theme and theme.TextBox
+		textBox.TextColor3 = theme and theme.Text
+		textBox.PlaceholderColor3 = theme and theme.PlaceholderText
 		textBox.BorderSizePixel = 0
 	end
 
 	-- Standardized Frame Styling
-	function Theme.StyleFrame(frame, mainType)
+	function Theme.StyleFrame(frame: any, mainType: number?)
 		Theme.ApplyRounding(frame, 8)
-		local theme = Settings.Theme
-		local bgCol = (mainType == 1) and theme.Main1 or ((mainType == 2) and theme.Main2 or theme.Menu)
+		local theme = Settings and (Settings :: any).Theme
+		local bgCol = (mainType == 1) and (theme and theme.Main1) or ((mainType == 2) and (theme and theme.Main2) or (theme and theme.Menu))
 		frame.BackgroundColor3 = bgCol
 		frame.BorderSizePixel = 0
-		Theme.ApplyStroke(frame, theme.Outline1, 1, 0.4)
+		Theme.ApplyStroke(frame, theme and theme.Outline1, 1, 0.4)
 	end
 
-	function Theme.StyleWindow(window)
+	-- Standardized Window Styling
+	function Theme.StyleWindow(window: any)
 		if not window or not window.GuiElems then return end
-		local theme = Settings.Theme
-		local main = window.GuiElems.Main
-		local topBar = window.GuiElems.TopBar
-		local content = window.GuiElems.Content
-		local line = window.GuiElems.Line
+		local theme = Settings and (Settings :: any).Theme
+		local main = (window.GuiElems :: any).Main
+		local topBar = (window.GuiElems :: any).TopBar
+		local content = (window.GuiElems :: any).Content
+		local line = (window.GuiElems :: any).Line
 		if main then
 			main.BackgroundTransparency = 0
 			Theme.ApplyRounding(main, 8)
-			Theme.ApplyStroke(main, theme.Outline1, 1, 0.2)
+			Theme.ApplyStroke(main, theme and theme.Outline1, 1, 0.2)
 		end
 		if topBar then
-			topBar.BackgroundColor3 = theme.Menu
+			topBar.BackgroundColor3 = theme and theme.Menu
 			topBar.BorderSizePixel = 0
 		end
 		if content then
-			content.BackgroundColor3 = theme.Main2
+			content.BackgroundColor3 = theme and theme.Main2
 			content.BorderSizePixel = 0
 		end
 		if line then
-			line.BackgroundColor3 = theme.Outline1
+			line.BackgroundColor3 = theme and theme.Outline1
 		end
 	end
 

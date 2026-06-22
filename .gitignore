@@ -29,3 +29,5 @@ HelperServer/*.db
 scratch/
 
 .agents/
+.github/workflows/ci.yml
+.gitignore
