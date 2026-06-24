@@ -72,6 +72,8 @@ At least one decompile path must be available:
 
 `getscriptbytecode` does not move script discovery or bytecode extraction outside Roblox. It only allows the extracted payload to be processed by the external helper.
 
+The helper auto-detects `Decompiler.exe` next to the helper or under `Potassium\bin\`. If Potassium is installed elsewhere, set `DEX_DECOMPILER_PATH` or `POTASSIUM_DECOMPILER_PATH` to the full `Decompiler.exe` path before starting the helper.
+
 ### Optional inspection APIs
 
 | API | Enables |
@@ -169,7 +171,7 @@ The helper now prevents duplicate instances:
 - if another application owns port `8080`, the helper reports that port conflict instead of silently closing;
 - after a successful startup, the helper opens the dashboard in an Edge/Chrome app window;
 - the app starts centered at a compact size based on the available desktop area;
-- the helper console hides after the app window opens;
+- the helper console hides after the app window opens and shows a Windows notification so you know it is still running;
 - if Edge/Chrome app mode is unavailable, the helper falls back to `http://localhost:8080/` in the default browser;
 - only one helper instance should run at a time.
 
@@ -219,6 +221,14 @@ Build the Helper C++ executable:
 ```powershell
 cd .\HelperServer
 .\compile.bat
+```
+
+Or build it through CMake:
+
+```powershell
+cd .\HelperServer
+cmake --preset mingw-release
+cmake --build --preset mingw-release
 ```
 
 Build and validate the Python/Rust workers:

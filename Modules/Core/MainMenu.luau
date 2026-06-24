@@ -443,8 +443,8 @@ local function main()
 	Main.SetMainGuiOpen = function(val)
 		Main.MainGuiOpen = val
 
-		if val then Main.MainGui.OpenButton.MainFrame.Visible = true end
-		Main.MainGui.OpenButton.MainFrame:TweenSize(val and UDim2.new(0,500,0,560) or UDim2.new(0,0,0,0),Enum.EasingDirection.Out,Enum.EasingStyle.Quart,0.22,true)
+		if val then Main.MainGui.MainFrame.Visible = true end
+		Main.MainGui.MainFrame:TweenSize(val and UDim2.new(0,500,0,560) or UDim2.new(0,0,0,0),Enum.EasingDirection.Out,Enum.EasingStyle.Quart,0.22,true)
 		
 		if Main.UpdateDockStates then
 			Main.UpdateDockStates()
@@ -458,7 +458,7 @@ local function main()
 			Main.MainGuiCloseTime = startTime
 			coroutine.wrap(function()
 				Lib.FastWait(0.2)
-				if not Main.MainGuiOpen and startTime == Main.MainGuiCloseTime then Main.MainGui.OpenButton.MainFrame.Visible = false end
+				if not Main.MainGuiOpen and startTime == Main.MainGuiCloseTime then Main.MainGui.MainFrame.Visible = false end
 			end)()
 		else
 			service.ContextActionService:BindActionAtPriority("DEXPP_MenuWheel", function(_, inputState, input)
@@ -467,7 +467,7 @@ local function main()
 				end
 				if input.UserInputType == Enum.UserInputType.MouseWheel
 					and Main.ScrollMenuBy
-					and Lib.CheckMouseInGui(Main.MainGui.OpenButton.MainFrame)
+					and Lib.CheckMouseInGui(Main.MainGui.MainFrame)
 				then
 					Main.ScrollMenuBy(input)
 					return Enum.ContextActionResult.Sink
@@ -476,7 +476,7 @@ local function main()
 			end, false, Enum.ContextActionPriority.High.Value + 100, Enum.UserInputType.MouseWheel)
 
 			Main.MainGuiMouseEvent = service.UserInputService.InputBegan:Connect(function(input)
-				if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not Lib.CheckMouseInGui(Main.MainGui.OpenButton) and not Lib.CheckMouseInGui(Main.MainGui.OpenButton.MainFrame) then
+				if (input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch) and not Lib.CheckMouseInGui(Main.MainGui.OpenButton) and not Lib.CheckMouseInGui(Main.MainGui.MainFrame) then
 					Main.SetMainGuiOpen(false)
 				end
 			end)
@@ -488,7 +488,7 @@ local function main()
 			{1,"ScreenGui",{IgnoreGuiInset=true,Name="MainMenu",}},
 			{2,"TextButton",{AnchorPoint=Vector2.new(0.5,0),AutoButtonColor=false,BackgroundColor3=Color3.fromRGB(11, 12, 16),BackgroundTransparency=0.35,BorderSizePixel=0,Name="OpenButton",Parent={1},Position=UDim2.new(0.5,0,0,10),Size=UDim2.new(0,480,0,48),Text="",}},
 			{3,"UICorner",{CornerRadius=UDim.new(0,24),Parent={2},}},
-			{4,"Frame",{AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Settings.Theme.Main2,ClipsDescendants=true,Name="MainFrame",Parent={2},Position=UDim2.new(0.5,0,1,8),Size=UDim2.new(0,500,0,560),}},
+			{4,"Frame",{AnchorPoint=Vector2.new(0.5,0),BackgroundColor3=Settings.Theme.Main2,ClipsDescendants=true,Name="MainFrame",Parent={1},Position=UDim2.new(0.5,0,0,66),Size=UDim2.new(0,500,0,560),}},
 			{5,"UICorner",{CornerRadius=UDim.new(0,8),Parent={4},}},
 			{6,"Frame",{BackgroundColor3=Settings.Theme.Menu,Name="BottomFrame",Parent={4},Position=UDim2.new(0,0,1,-46),Size=UDim2.new(1,0,0,46),}},
 			{7,"UICorner",{CornerRadius=UDim.new(0,8),Parent={6},}},
@@ -522,7 +522,7 @@ local function main()
 			{35,"Frame",{BackgroundColor3=Settings.Theme.Highlight,BorderSizePixel=0,Name="ActiveMarker",Parent={18},Position=UDim2.new(0,0,0,0),Size=UDim2.new(0,3,1,0),Visible=false,}},
 		})
 		Main.MainGui = gui
-		Main.AppsFrame = gui.OpenButton.MainFrame.AppsFrame
+		Main.AppsFrame = gui.MainFrame.AppsFrame
 		Main.AppsContainer = Main.AppsFrame.Container
 		Main.AppsContainerGrid = Main.AppsContainer.UIGridLayout
 		Main.AppTemplate = gui.App
@@ -530,12 +530,12 @@ local function main()
 		Main.HiddenAppsContainer.Name = "HiddenApps"
 		Main.HiddenAppsContainer.Visible = false
 		Main.HiddenAppsContainer.Parent = gui
-		Main.MenuSearchBox = gui.OpenButton.MainFrame.Header.SearchBox
-		Main.MenuCountLabel = gui.OpenButton.MainFrame.BottomFrame.AppCount
+		Main.MenuSearchBox = gui.MainFrame.Header.SearchBox
+		Main.MenuCountLabel = gui.MainFrame.BottomFrame.AppCount
 		Main.MainGuiOpen = false
 
 		-- Dynamically modify dimensions to make space for category tabs
-		local mainFrame = gui.OpenButton.MainFrame
+		local mainFrame = gui.MainFrame
 		local header = mainFrame.Header
 		header.Size = UDim2.new(1, 0, 0, 142)
 		mainFrame.AppsFrame.Position = UDim2.new(0.5, 0, 0, 148)
@@ -624,8 +624,9 @@ local function main()
 
 		local openButton = gui.OpenButton
 		openButton.BackgroundTransparency = 0.35
-		openButton.MainFrame.Size = UDim2.new(0,0,0,0)
-		openButton.MainFrame.Visible = false
+		openButton.ClipsDescendants = true
+		gui.MainFrame.Size = UDim2.new(0,0,0,0)
+		gui.MainFrame.Visible = false
 		Main.MenuSearchBox:GetPropertyChangedSignal("Text"):Connect(function()
 			Main.MenuSearchText = Main.MenuSearchBox.Text
 			Main.ApplyMenuFilter()
@@ -634,13 +635,23 @@ local function main()
 		Main.ScrollMenuBy = Main.SmoothScrollingFrame(Main.AppsFrame, 76)
 
 		-- Create Dock UI Items
+		local dockButtonSize = 36
+		local dockIconSize = 26
+		local dockPadding = 14
+		local dockSidePadding = 18
+
 		local listLayout = Instance.new("UIListLayout")
 		listLayout.FillDirection = Enum.FillDirection.Horizontal
 		listLayout.HorizontalAlignment = Enum.HorizontalAlignment.Center
 		listLayout.VerticalAlignment = Enum.VerticalAlignment.Center
-		listLayout.Padding = UDim.new(0, 14)
+		listLayout.Padding = UDim.new(0, dockPadding)
 		listLayout.SortOrder = Enum.SortOrder.LayoutOrder
 		listLayout.Parent = openButton
+
+		local dockEdgePadding = Instance.new("UIPadding")
+		dockEdgePadding.PaddingLeft = UDim.new(0, dockSidePadding)
+		dockEdgePadding.PaddingRight = UDim.new(0, dockSidePadding)
+		dockEdgePadding.Parent = openButton
 
 		local function toggleApp(appName)
 			local control = Main.MenuApps[appName]
@@ -664,8 +675,12 @@ local function main()
 			{Name = "Code Search",      IconIndex = 2, Action = function() toggleApp("Code Search") end},
 			{Name = "Snippet Library",  IconIndex = 6, Action = function() toggleApp("Snippet Library") end},
 			{Name = "Property Tracker", IconIndex = 3, Action = function() toggleApp("Property Tracker") end},
+			{Name = "IDE Sync",         IconIndex = 7, Action = function() toggleApp("IDE Sync") end},
 			{Name = "Settings",         IconIndex = 8, Action = function() toggleApp("Settings") end},
 		}
+
+		local dockWidth = (#dockItems * dockButtonSize) + (math.max(0, #dockItems - 1) * dockPadding) + (dockSidePadding * 2)
+		openButton.Size = UDim2.new(0, dockWidth, 0, 48)
 
 		table.clear(dockButtons)
 
@@ -674,7 +689,7 @@ local function main()
 			btn.Name = item.Name
 			btn.AutoButtonColor = false
 			btn.BackgroundTransparency = 1
-			btn.Size = UDim2.new(0, 36, 0, 36)
+			btn.Size = UDim2.new(0, dockButtonSize, 0, dockButtonSize)
 			btn.Text = ""
 			btn.LayoutOrder = i
 			btn.Parent = openButton
@@ -682,12 +697,12 @@ local function main()
 			local icon = Instance.new("ImageLabel")
 			icon.Name = "Icon"
 			icon.BackgroundTransparency = 1
-			icon.Size = UDim2.new(0, 32, 0, 32)
-			icon.Position = UDim2.new(0.5, 0, 0.5, -2)
+			icon.Size = UDim2.new(0, dockIconSize, 0, dockIconSize)
+			icon.Position = UDim2.new(0.5, 0, 0.5, -3)
 			icon.AnchorPoint = Vector2.new(0.5, 0.5)
 			icon.ImageColor3 = Color3.fromRGB(150, 150, 155)
 			icon.ImageTransparency = 0.5
-			icon.ScaleType = Enum.ScaleType.Crop
+			icon.ScaleType = Enum.ScaleType.Fit
 			-- Apply Lucide icon (async, falls back to LargeIcons if no exploit API)
 			if Main.LucideIcons then
 				Main.LucideIcons.ApplyByName(icon, item.Name)

@@ -1,6 +1,38 @@
 #include "WsProtocol.h"
 #include "HttpUtil.h"
 
+
+static std::string lower_ascii_copy(const std::string& value) {
+    std::string out = value;
+    std::transform(out.begin(), out.end(), out.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    return out;
+}
+
+static std::string trim_ascii_copy(const std::string& value) {
+    size_t start = 0;
+    while (start < value.size() && std::isspace(static_cast<unsigned char>(value[start]))) start++;
+    size_t end = value.size();
+    while (end > start && std::isspace(static_cast<unsigned char>(value[end - 1]))) end--;
+    return value.substr(start, end - start);
+}
+
+static std::string get_header_value_case_insensitive(const std::string& headers, const std::string& header_name) {
+    std::string lower_headers = lower_ascii_copy(headers);
+    std::string lower_name = lower_ascii_copy(header_name);
+    size_t pos = lower_headers.find(lower_name);
+    if (pos == std::string::npos) return "";
+    size_t value_start = pos + header_name.size();
+    size_t value_end = headers.find("\r\n", value_start);
+    if (value_end == std::string::npos) value_end = headers.size();
+    return trim_ascii_copy(headers.substr(value_start, value_end - value_start));
+}
+
+static bool is_allowed_ws_origin(const std::string& origin) {
+    if (origin.empty()) return true;
+    std::string lower = lower_ascii_copy(origin);
+    const std::string port = DEFAULT_PORT;
+    return lower == "http://localhost:" + port || lower == "http://127.0.0.1:" + port || lower == "http://[::1]:" + port;
+}
 // Lightweight SHA-1 implementation
 namespace sha1 {
     inline unsigned int rol(unsigned int value, unsigned int bits) {
@@ -224,7 +256,7 @@ bool read_ws_text_frame(SOCKET client_socket, std::string& out_payload) {
                 }
             }
             pong_frame.insert(pong_frame.end(), buffer.begin(), buffer.end());
-            send(client_socket, pong_frame.data(), static_cast<int>(pong_frame.size()), 0);
+            send_all(client_socket, pong_frame.data(), pong_frame.size());
             continue;
         }
         
@@ -243,6 +275,13 @@ bool read_ws_text_frame(SOCKET client_socket, std::string& out_payload) {
 }
 
 bool perform_ws_handshake(SOCKET ClientSocket, const std::string& request_headers) {
+    std::string origin = get_header_value_case_insensitive(request_headers, "Origin:");
+    if (!is_allowed_ws_origin(origin)) {
+        send_response(ClientSocket, 403, "Forbidden", "WebSocket origin is not allowed.");
+        close_client(ClientSocket);
+        return false;
+    }
+
     size_t key_pos = request_headers.find("Sec-WebSocket-Key:");
     if (key_pos == std::string::npos) {
         send_response(ClientSocket, 400, "Bad Request", "Missing Sec-WebSocket-Key");
@@ -270,6 +309,6 @@ bool perform_ws_handshake(SOCKET ClientSocket, const std::string& request_header
              << "Connection: Upgrade\r\n"
              << "Sec-WebSocket-Accept: " << accept_key << "\r\n\r\n";
     std::string hand_str = response.str();
-    send(ClientSocket, hand_str.data(), static_cast<int>(hand_str.size()), 0);
+    send_all(ClientSocket, hand_str.data(), hand_str.size());
     return true;
 }

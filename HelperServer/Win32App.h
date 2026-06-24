@@ -19,6 +19,8 @@ std::wstring expand_path(const wchar_t* path);
 std::wstring find_app_browser();
 bool launch_dashboard_app();
 void show_startup_notice(const wchar_t* message, bool open_dashboard);
+void show_console_hidden_notification();
+void hide_helper_terminal();
 void open_dashboard();
 bool terminate_process_by_name(const wchar_t* process_name);
 BOOL WINAPI helper_console_control(DWORD control_type);

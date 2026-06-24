@@ -48,7 +48,17 @@ std::string shell_quote(const std::string& path) {
     return out;
 }
 
-bool run_command_with_input(const std::string& command, const std::string& input, std::string& output) {
+std::string process_quote(const std::string& value) {
+    std::string out = "\"";
+    for (char c : value) {
+        if (c == '"' || c == '\\') out += '\\';
+        out += c;
+    }
+    out += "\"";
+    return out;
+}
+
+bool run_process_with_input(const std::string& executable, const std::vector<std::string>& args, const std::string& input, std::string& output, DWORD timeout_ms = 15000) {
     std::string input_path = temp_file_path("dpp");
     std::string output_path = temp_file_path("dpp");
     if (input_path.empty() || output_path.empty()) return false;
@@ -59,16 +69,70 @@ bool run_command_with_input(const std::string& command, const std::string& input
         input_file.write(input.data(), static_cast<std::streamsize>(input.size()));
     }
 
-    std::string full_command = command + " < " + shell_quote(input_path) + " > " + shell_quote(output_path);
-    if (!full_command.empty() && full_command.front() == '"') {
-        full_command = "\"" + full_command + "\"";
+    HANDLE input_handle = CreateFileA(input_path.c_str(), GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    HANDLE output_handle = CreateFileA(output_path.c_str(), GENERIC_WRITE, FILE_SHARE_READ, NULL, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, NULL);
+    if (input_handle == INVALID_HANDLE_VALUE || output_handle == INVALID_HANDLE_VALUE) {
+        if (input_handle != INVALID_HANDLE_VALUE) CloseHandle(input_handle);
+        if (output_handle != INVALID_HANDLE_VALUE) CloseHandle(output_handle);
+        std::remove(input_path.c_str());
+        std::remove(output_path.c_str());
+        return false;
     }
-    int code = std::system(full_command.c_str());
+
+    SetHandleInformation(input_handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+    SetHandleInformation(output_handle, HANDLE_FLAG_INHERIT, HANDLE_FLAG_INHERIT);
+
+    std::string command_line = process_quote(executable);
+    for (const std::string& arg : args) {
+        command_line += " " + process_quote(arg);
+    }
+
+    STARTUPINFOA startup{};
+    startup.cb = sizeof(startup);
+    startup.dwFlags = STARTF_USESTDHANDLES;
+    startup.hStdInput = input_handle;
+    startup.hStdOutput = output_handle;
+    startup.hStdError = output_handle;
+
+    PROCESS_INFORMATION process{};
+    std::vector<char> mutable_command(command_line.begin(), command_line.end());
+    mutable_command.push_back('\0');
+
+    BOOL created = CreateProcessA(
+        NULL,
+        mutable_command.data(),
+        NULL,
+        NULL,
+        TRUE,
+        CREATE_NO_WINDOW,
+        NULL,
+        NULL,
+        &startup,
+        &process
+    );
+
+    DWORD exit_code = 1;
+    bool ok = false;
+    if (created) {
+        DWORD wait_result = WaitForSingleObject(process.hProcess, timeout_ms);
+        if (wait_result == WAIT_TIMEOUT) {
+            TerminateProcess(process.hProcess, 124);
+            WaitForSingleObject(process.hProcess, 1000);
+        }
+        if (GetExitCodeProcess(process.hProcess, &exit_code)) {
+            ok = exit_code == 0;
+        }
+        CloseHandle(process.hThread);
+        CloseHandle(process.hProcess);
+    }
+
+    CloseHandle(input_handle);
+    CloseHandle(output_handle);
     output = read_text_file(output_path);
 
     std::remove(input_path.c_str());
     std::remove(output_path.c_str());
-    return code == 0 && !output.empty();
+    return ok && !output.empty();
 }
 
 std::string resolve_worker_path(const std::string& relative_path) {
@@ -134,17 +198,22 @@ bool run_python_analyzer(const std::string& source, std::string& output) {
     std::string worker_path = resolve_worker_path("python/deep_source_analyzer.py");
     if (worker_path.empty()) return false;
 
-    std::string command = "python " + shell_quote(worker_path);
-    if (run_command_with_input(command, source, output)) return true;
+    char python_path[MAX_PATH + 1];
+    if (SearchPathA(NULL, "python", ".exe", MAX_PATH, python_path, NULL) > 0) {
+        if (run_process_with_input(python_path, {worker_path}, source, output)) return true;
+    }
 
-    command = "py -3 " + shell_quote(worker_path);
-    return run_command_with_input(command, source, output);
+    char py_path[MAX_PATH + 1];
+    if (SearchPathA(NULL, "py", ".exe", MAX_PATH, py_path, NULL) > 0) {
+        return run_process_with_input(py_path, {"-3", worker_path}, source, output);
+    }
+    return false;
 }
 
 bool run_rust_analyzer(const std::string& source, std::string& output) {
     std::string worker_path = resolve_worker_path("rust_source_analyzer/target/release/rust_source_analyzer.exe");
     if (worker_path.empty()) return false;
-    return run_command_with_input(shell_quote(worker_path), source, output);
+    return run_process_with_input(worker_path, {}, source, output);
 }
 
 std::string worker_status() {
@@ -409,4 +478,3 @@ std::string start_mcp_bridger() {
     }
     return "{\"ok\":true}";
 }
-

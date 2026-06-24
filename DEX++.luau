@@ -556,6 +556,9 @@ Main = (function()
 			if not s then
 				Main.Error("FAILED LOADING " .. v .. " CAUSE " .. e)
 			end
+			if i % 4 == 0 then
+				task.wait()
+			end
 		end
 
 		-- Init Major Apps and define them in modules
@@ -1327,12 +1330,20 @@ Main = (function()
 		Lib.FastWait()
 
 		-- Init other modules
-		intro.SetProgress("Initializing Modules",0.8)
+		intro.SetProgress("Initializing Explorer",0.8)
 		Explorer.Init()
 		selection = Explorer.Selection
+		task.wait()
+		intro.SetProgress("Initializing Properties",0.84)
 		Properties.Init()
+		task.wait()
+		intro.SetProgress("Initializing Notepad",0.88)
 		Notepad.Init()
+		task.wait()
+		intro.SetProgress("Initializing Console",0.92)
 		Console.Init()
+		task.wait()
+		intro.SetProgress("Initializing Settings",0.96)
 		SettingsWindow.Init()
 
 		if env.readfile and listfiles then

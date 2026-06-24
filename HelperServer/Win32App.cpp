@@ -105,18 +105,65 @@ void show_startup_notice(const wchar_t* message, bool open_dashboard) {
     MessageBoxW(NULL, message, L"DEX++ Helper", MB_OK | MB_ICONINFORMATION | MB_SETFOREGROUND);
 }
 
+
+
+BOOL CALLBACK hide_helper_terminal_window(HWND window, LPARAM) {
+    if (!IsWindowVisible(window)) return TRUE;
+
+    wchar_t title[256] = {};
+    GetWindowTextW(window, title, 256);
+    if (wcsstr(title, L"DEX++ Local Helper") || wcsstr(title, L"DEX++ Local Helper Server")) {
+        ShowWindow(window, SW_HIDE);
+    }
+    return TRUE;
+}
+
+void hide_helper_terminal() {
+    HWND console = GetConsoleWindow();
+    if (console) ShowWindow(console, SW_HIDE);
+    EnumWindows(hide_helper_terminal_window, 0);
+}
+void show_console_hidden_notification() {
+    if (!startup_dialogs_enabled()) return;
+
+    NOTIFYICONDATAW nid{};
+    nid.cbSize = sizeof(nid);
+    nid.hWnd = GetConsoleWindow();
+    nid.uID = 8080;
+    nid.uFlags = NIF_INFO | NIF_ICON | NIF_TIP;
+    nid.hIcon = LoadIconW(NULL, IDI_INFORMATION);
+    wcscpy_s(nid.szTip, L"DEX++ Helper");
+    wcscpy_s(nid.szInfoTitle, L"DEX++ Helper is running");
+    wcscpy_s(nid.szInfo, L"The helper terminal was hidden automatically. Dashboard: http://localhost:8080/");
+    nid.dwInfoFlags = NIIF_INFO;
+
+    if (Shell_NotifyIconW(NIM_ADD, &nid)) {
+        Shell_NotifyIconW(NIM_MODIFY, &nid);
+        std::thread([]() {
+            std::this_thread::sleep_for(std::chrono::seconds(8));
+            NOTIFYICONDATAW cleanup{};
+            cleanup.cbSize = sizeof(cleanup);
+            cleanup.hWnd = GetConsoleWindow();
+            cleanup.uID = 8080;
+            Shell_NotifyIconW(NIM_DELETE, &cleanup);
+        }).detach();
+    }
+}
 void open_dashboard() {
     if (!startup_dialogs_enabled()) return;
     if (!env_flag_enabled("DEX_HELPER_WEB_MODE") && launch_dashboard_app()) {
         if (!env_flag_enabled("DEX_HELPER_KEEP_CONSOLE")) {
-            HWND console = GetConsoleWindow();
-            if (console) ShowWindow(console, SW_HIDE);
+            show_console_hidden_notification();
+            hide_helper_terminal();
         }
         return;
     }
     HINSTANCE result = ShellExecuteW(NULL, L"open", DASHBOARD_URL, NULL, NULL, SW_SHOWNORMAL);
     if (reinterpret_cast<INT_PTR>(result) <= 32) {
         std::cerr << "Could not open the helper dashboard automatically." << std::endl;
+    } else if (!env_flag_enabled("DEX_HELPER_KEEP_CONSOLE")) {
+        show_console_hidden_notification();
+        hide_helper_terminal();
     }
 }
 
@@ -140,6 +187,24 @@ bool terminate_process_by_name(const wchar_t* process_name) {
     }
     CloseHandle(snapshot);
     return terminated;
+}
+
+static void wake_local_accept_loop() {
+    addrinfo hints{};
+    hints.ai_family = AF_INET;
+    hints.ai_socktype = SOCK_STREAM;
+    hints.ai_protocol = IPPROTO_TCP;
+
+    addrinfo* result = nullptr;
+    if (getaddrinfo("127.0.0.1", DEFAULT_PORT, &hints, &result) != 0) {
+        return;
+    }
+    SOCKET wake_socket = socket(result->ai_family, result->ai_socktype, result->ai_protocol);
+    if (wake_socket != INVALID_SOCKET) {
+        connect(wake_socket, result->ai_addr, static_cast<int>(result->ai_addrlen));
+        closesocket(wake_socket);
+    }
+    freeaddrinfo(result);
 }
 
 BOOL WINAPI helper_console_control(DWORD control_type) {
@@ -174,7 +239,7 @@ void schedule_local_shutdown(bool clean_data) {
             std::remove((get_index_dir() + "dex_server_logs.txt").c_str());
             std::remove((get_index_dir() + "dex_server_logs.txt.old").c_str());
         }
-        ExitProcess(0);
+        wake_local_accept_loop();
     }).detach();
 }
 

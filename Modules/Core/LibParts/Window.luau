@@ -670,6 +670,12 @@
 
 		funcs.SetSize = funcs.Resize
 
+		funcs.SetPosition = function(self, posX, posY)
+			self.PosX = posX or self.PosX
+			self.PosY = posY or self.PosY
+			self.GuiElems.Main.Position = UDim2.new(0, self.PosX, 0, self.PosY)
+		end
+
 		funcs.SetTitle = function(self,title)
 			self.GuiElems.Title.Text = title
 		end
@@ -906,6 +912,14 @@
 					static.SetSideVisible(window.ClosedSide,true)
 				else
 					if table.find(visibleWindows,window) then return end
+
+					if window.PosX == 0 and window.PosY == 0 then
+						local screenX = sidesGui and sidesGui.AbsoluteSize.X or 1000
+						local screenY = sidesGui and sidesGui.AbsoluteSize.Y or 800
+						window.PosX = (screenX - window.SizeX) / 2
+						window.PosY = (screenY - window.SizeY) / 2
+					end
+					window.GuiElems.Main.Position = UDim2.new(0, window.PosX, 0, window.PosY)
 
 					-- TODO: make better
 					window.GuiElems.Main.Size = UDim2.new(0,window.SizeX,0,20)

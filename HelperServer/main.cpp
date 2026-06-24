@@ -21,6 +21,9 @@ ULONGLONG g_last_mcp_time = 0;
 std::mutex g_ws_mutex;
 std::map<long long, SOCKET> g_roblox_ws_map;
 SOCKET g_dashboard_ws = INVALID_SOCKET;
+static constexpr size_t MAX_SYNC_WS_FILES_PER_FRAME = 200;
+static constexpr size_t MAX_SYNC_WS_FILE_BYTES = 512 * 1024;
+static constexpr size_t MAX_SYNC_WS_PAYLOAD_BYTES = 2 * 1024 * 1024;
 
 static long long get_request_place_id_from_path_and_headers(const std::string& path, const std::string& headers) {
     size_t pos = path.find("placeId=");
@@ -37,6 +40,21 @@ static long long get_request_place_id_from_path_and_headers(const std::string& p
         }
     }
     return get_request_place_id(headers);
+}
+static std::wstring get_ws_sync_dir_w() {
+    DWORD attrs = GetFileAttributesA("..\\DEX++.luau");
+    if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+        return L"..\\workspace_sync";
+    }
+    return L"workspace_sync";
+}
+
+static std::wstring get_ws_sync_path_w(const std::wstring& relative_path) {
+    DWORD attrs = GetFileAttributesA("..\\DEX++.luau");
+    if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
+        return L"..\\workspace_sync\\" + relative_path;
+    }
+    return L"workspace_sync\\" + relative_path;
 }
 
 inline void handle_client_ws(SOCKET ClientSocket, const std::string& request_headers, const std::string& path) {
@@ -97,6 +115,11 @@ inline void handle_client_ws(SOCKET ClientSocket, const std::string& request_hea
 }
 
 inline void handle_dashboard_ws(SOCKET ClientSocket, const std::string& request_headers) {
+    if (!request_has_valid_session(request_headers)) {
+        send_response(ClientSocket, 403, "Forbidden", "WebSocket session token is required.");
+        close_client(ClientSocket);
+        return;
+    }
     if (!perform_ws_handshake(ClientSocket, request_headers)) return;
     
     {
@@ -151,34 +174,7 @@ inline void handle_dashboard_ws(SOCKET ClientSocket, const std::string& request_
 
 // Handle WebSocket client upgrades and updates
 inline void handle_ws_client(SOCKET ClientSocket, const std::string& request_headers) {
-    size_t key_pos = request_headers.find("Sec-WebSocket-Key:");
-    if (key_pos == std::string::npos) {
-        send_response(ClientSocket, 400, "Bad Request", "Missing Sec-WebSocket-Key");
-        close_client(ClientSocket);
-        return;
-    }
-    size_t value_start = key_pos + 18;
-    while (value_start < request_headers.size() && std::isspace(static_cast<unsigned char>(request_headers[value_start]))) {
-        value_start++;
-    }
-    size_t value_end = request_headers.find("\r\n", value_start);
-    if (value_end == std::string::npos) value_end = request_headers.size();
-    std::string ws_key = request_headers.substr(value_start, value_end - value_start);
-    while (!ws_key.empty() && std::isspace(static_cast<unsigned char>(ws_key.back()))) {
-        ws_key.pop_back();
-    }
-    
-    std::string concat = ws_key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
-    std::string sha1_hash = sha1::hash(concat);
-    std::string accept_key = base64::encode(sha1_hash);
-    
-    std::stringstream response;
-    response << "HTTP/1.1 101 Switching Protocols\r\n"
-             << "Upgrade: websocket\r\n"
-             << "Connection: Upgrade\r\n"
-             << "Sec-WebSocket-Accept: " << accept_key << "\r\n\r\n";
-    std::string hand_str = response.str();
-    send(ClientSocket, hand_str.data(), static_cast<int>(hand_str.size()), 0);
+    if (!perform_ws_handshake(ClientSocket, request_headers)) return;
     
     unsigned long long client_time = 0;
     FILETIME current_ft;
@@ -187,6 +183,7 @@ inline void handle_ws_client(SOCKET ClientSocket, const std::string& request_hea
     current_ui.LowPart = current_ft.dwLowDateTime;
     current_ui.HighPart = current_ft.dwHighDateTime;
     client_time = current_ui.QuadPart;
+    int idle_polls = 0;
     
     while (!g_shutdown_requested.load()) {
         fd_set read_fds;
@@ -194,8 +191,9 @@ inline void handle_ws_client(SOCKET ClientSocket, const std::string& request_hea
         FD_SET(ClientSocket, &read_fds);
         
         timeval timeout;
-        timeout.tv_sec = 0;
-        timeout.tv_usec = 500000; // 500ms
+        int poll_ms = idle_polls > 20 ? 2000 : (idle_polls > 5 ? 1000 : 500);
+        timeout.tv_sec = poll_ms / 1000;
+        timeout.tv_usec = (poll_ms % 1000) * 1000;
         
         int sel = select(0, &read_fds, NULL, NULL, &timeout);
         if (sel == SOCKET_ERROR) {
@@ -222,9 +220,10 @@ inline void handle_ws_client(SOCKET ClientSocket, const std::string& request_hea
             }
         }
         
-        CreateDirectoryW(WORKSPACE_SYNC_DIR, NULL);
+        std::wstring sync_dir = get_ws_sync_dir_w();
+        CreateDirectoryW(sync_dir.c_str(), NULL);
         std::vector<FileInfo> files;
-        scan_directory_recursive(WORKSPACE_SYNC_DIR, L"", files);
+        scan_directory_recursive(sync_dir, L"", files);
         
         bool has_changes = false;
         unsigned long long latest_time = client_time;
@@ -241,16 +240,37 @@ inline void handle_ws_client(SOCKET ClientSocket, const std::string& request_hea
             std::stringstream json;
             json << "{\"ok\":true,\"files\":[";
             bool first_file = true;
+            bool truncated = false;
+            size_t files_in_frame = 0;
+            size_t payload_budget = 0;
+            unsigned long long frame_latest_time = client_time;
             for (const auto& file : files) {
                 if (file.last_write_time > client_time) {
-                    std::wstring full_w = std::wstring(WORKSPACE_SYNC_DIR) + L"\\" + to_wstring(file.relative_path);
+                    if (files_in_frame >= MAX_SYNC_WS_FILES_PER_FRAME) {
+                        truncated = true;
+                        break;
+                    }
+                    std::wstring full_w = get_ws_sync_path_w(to_wstring(file.relative_path));
                     std::ifstream in(full_w.c_str(), std::ios::binary);
                     std::string src = "";
                     if (in.is_open()) {
-                        std::stringstream buffer;
-                        buffer << in.rdbuf();
-                        src = buffer.str();
+                        in.seekg(0, std::ios::end);
+                        std::streamoff size = in.tellg();
+                        in.seekg(0, std::ios::beg);
+                        if (size > static_cast<std::streamoff>(MAX_SYNC_WS_FILE_BYTES)) {
+                            truncated = true;
+                            frame_latest_time = std::max(frame_latest_time, file.last_write_time);
+                            continue;
+                        }
+                        src.assign(static_cast<size_t>(std::max<std::streamoff>(0, size)), '\0');
+                        if (!src.empty()) {
+                            in.read(&src[0], static_cast<std::streamsize>(src.size()));
+                        }
                         in.close();
+                    }
+                    if (payload_budget + src.size() > MAX_SYNC_WS_PAYLOAD_BYTES) {
+                        truncated = true;
+                        break;
                     }
                     
                     std::string script_path = "";
@@ -272,6 +292,9 @@ inline void handle_ws_client(SOCKET ClientSocket, const std::string& request_hea
                     json << "{\"path\":\"" << escape_json(script_path) << "\","
                          << "\"source\":\"" << escape_json(src) << "\","
                          << "\"timestamp\":" << file.last_write_time << "}";
+                    payload_budget += src.size();
+                    files_in_frame++;
+                    frame_latest_time = std::max(frame_latest_time, file.last_write_time);
                 }
             }
             
@@ -280,14 +303,18 @@ inline void handle_ws_client(SOCKET ClientSocket, const std::string& request_hea
             ULARGE_INTEGER ui;
             ui.LowPart = ft.dwLowDateTime;
             ui.HighPart = ft.dwHighDateTime;
-            latest_time = std::max(latest_time, ui.QuadPart);
+            latest_time = truncated ? frame_latest_time : std::max(latest_time, ui.QuadPart);
             
-            json << "],\"timestamp\":" << latest_time << "}";
+            json << "],\"timestamp\":" << latest_time
+                 << ",\"truncated\":" << (truncated ? "true" : "false") << "}";
             
             if (!send_ws_text_frame(ClientSocket, json.str())) {
                 break;
             }
             client_time = latest_time;
+            idle_polls = 0;
+        } else {
+            idle_polls++;
         }
     }
     
@@ -361,6 +388,10 @@ void handle_client(SOCKET ClientSocket) {
             close_client(ClientSocket);
             return;
         }
+        if (!require_allowed_host(ClientSocket, request_data.substr(0, header_end))) {
+            close_client(ClientSocket);
+            return;
+        }
 
         if (request_data.find("X-MCP-Client:") != std::string::npos) {
             std::lock_guard<std::mutex> lock(g_auth_mutex);
@@ -370,6 +401,11 @@ void handle_client(SOCKET ClientSocket) {
         std::stringstream ss(request_data.substr(0, header_end));
         std::string method, path, protocol;
         ss >> method >> path >> protocol;
+        std::string route_path = path;
+        size_t query_pos = route_path.find('?');
+        if (query_pos != std::string::npos) {
+            route_path = route_path.substr(0, query_pos);
+        }
 
         std::string body = request_data.substr(header_end + 4);
         size_t content_len = 0;
@@ -398,17 +434,17 @@ void handle_client(SOCKET ClientSocket) {
 
         if (method == "OPTIONS") {
             send_response(ClientSocket, 204, "No Content", "");
-        } else if (path == "/sync-ws" && method == "GET") {
+        } else if (route_path == "/sync-ws" && method == "GET") {
             handle_ws_client(ClientSocket, request_data);
             return;
-        } else if (path.rfind("/client-ws", 0) == 0 && method == "GET") {
+        } else if (route_path == "/client-ws" && method == "GET") {
             handle_client_ws(ClientSocket, request_data, path);
             return;
-        } else if (path == "/dashboard-ws" && method == "GET") {
+        } else if (route_path == "/dashboard-ws" && method == "GET") {
             handle_dashboard_ws(ClientSocket, request_data);
             return;
         } else {
-            RouteDispatchResult route_result = dispatch_http_routes(ClientSocket, method, path, body, request_data);
+            RouteDispatchResult route_result = dispatch_http_routes(ClientSocket, method, route_path, body, request_data);
             if (route_result == RouteDispatchResult::NotFound) {
                 send_response(ClientSocket, 404, "Not Found", "404 Route Not Found");
             } else if (route_result == RouteDispatchResult::CloseConnection) {
@@ -461,10 +497,10 @@ int main() {
     hints.ai_family = AF_INET;
     hints.ai_socktype = SOCK_STREAM;
     hints.ai_protocol = IPPROTO_TCP;
-    hints.ai_flags = AI_PASSIVE;
+    hints.ai_flags = 0;
 
     // Resolve the server address and port
-    iResult = getaddrinfo(NULL, DEFAULT_PORT, &hints, &result);
+    iResult = getaddrinfo("127.0.0.1", DEFAULT_PORT, &hints, &result);
     if (iResult != 0) {
         std::cerr << "getaddrinfo failed with error: " << iResult << std::endl;
         WSACleanup();
@@ -519,18 +555,25 @@ int main() {
 
     std::string load_result = load_index_response();
     load_auth_credentials();
-    std::cout << "DEX++ C++ Local Helper Server listening on port " << DEFAULT_PORT << "..." << std::endl;
+    std::cout << "DEX++ C++ Local Helper Server listening on http://127.0.0.1:" << DEFAULT_PORT << " ..." << std::endl;
     std::cout << "Index load: " << load_result << std::endl;
     std::cout << "Dashboard: http://localhost:" << DEFAULT_PORT << "/" << std::endl;
     open_dashboard();
 
-    while (true) {
+    while (!g_shutdown_requested.load()) {
         // Accept a client socket
         ClientSocket = accept(ListenSocket, NULL, NULL);
         if (ClientSocket == INVALID_SOCKET) {
             std::cerr << "accept failed with error: " << WSAGetLastError() << std::endl;
             continue;
         }
+        if (g_shutdown_requested.load()) {
+            close_client(ClientSocket);
+            break;
+        }
+        DWORD client_timeout_ms = CLIENT_SOCKET_TIMEOUT_MS;
+        setsockopt(ClientSocket, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&client_timeout_ms), sizeof(client_timeout_ms));
+        setsockopt(ClientSocket, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&client_timeout_ms), sizeof(client_timeout_ms));
 
         if (g_active_clients.load() >= MAX_CLIENT_THREADS) {
             send_response(ClientSocket, 503, "Service Unavailable", "DEX++ Helper is busy. Try again shortly.");

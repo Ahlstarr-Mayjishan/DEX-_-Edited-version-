@@ -387,22 +387,32 @@ local function main()
 		updateButtons()
 	end
 
-	IDESync.ExportWorkspace = function()
-		local explorer = apps_ref and apps_ref.Explorer
-		local selection = explorer and explorer.Selection
-		local targets = selection and selection:GetSelected()
-		if not targets or #targets == 0 then
-			setStatus("Error: Select target instances in Explorer first.")
-			return
-		end
-		
-		-- extract standard objects from Explorer nodes
+	IDESync.ExportWorkspace = function(targetsOverride)
 		local list = {}
-		for _, node in ipairs(targets) do
-			if typeof(node) == "table" and node.Obj then
-				table.insert(list, node.Obj)
-			elseif typeof(node) == "Instance" then
-				table.insert(list, node)
+		if targetsOverride then
+			for _, node in ipairs(targetsOverride) do
+				if typeof(node) == "table" and node.Obj then
+					table.insert(list, node.Obj)
+				elseif typeof(node) == "Instance" then
+					table.insert(list, node)
+				end
+			end
+		else
+			local explorer = apps_ref and apps_ref.Explorer
+			local selection = explorer and explorer.Selection
+			local targets = selection and selection:GetSelected()
+			if not targets or #targets == 0 then
+				setStatus("Error: Select target instances in Explorer first.")
+				return
+			end
+			
+			-- extract standard objects from Explorer nodes
+			for _, node in ipairs(targets) do
+				if typeof(node) == "table" and node.Obj then
+					table.insert(list, node.Obj)
+				elseif typeof(node) == "Instance" then
+					table.insert(list, node)
+				end
 			end
 		end
 

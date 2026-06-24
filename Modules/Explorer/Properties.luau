@@ -1535,13 +1535,19 @@ local function main()
 						Properties.DisplayProp(prop,i)
 						if propObj then
 							if prop.IsAttribute then
-								propCons[#propCons+1] = getAttributeChangedSignal(propObj,prop.AttributeName):Connect(function()
-									Properties.DisplayProp(prop,i)
-								end)
+								local ok, sig = pcall(getAttributeChangedSignal, propObj, prop.AttributeName)
+								if ok and sig then
+									propCons[#propCons+1] = sig:Connect(function()
+										Properties.DisplayProp(prop,i)
+									end)
+								end
 							else
-								propCons[#propCons+1] = getPropChangedSignal(propObj,propName):Connect(function()
-									Properties.DisplayProp(prop,i)
-								end)
+								local ok, sig = pcall(getPropChangedSignal, propObj, propName)
+								if ok and sig then
+									propCons[#propCons+1] = sig:Connect(function()
+										Properties.DisplayProp(prop,i)
+									end)
+								end
 							end
 						end
 

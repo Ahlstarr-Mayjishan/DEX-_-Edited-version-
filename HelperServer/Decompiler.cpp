@@ -1,6 +1,55 @@
 #include "Decompiler.h"
 #include "Index.h" // For trim_copy
 
+namespace {
+
+std::string env_value(const char* name) {
+    char buffer[MAX_PATH * 4];
+    DWORD len = GetEnvironmentVariableA(name, buffer, static_cast<DWORD>(sizeof(buffer)));
+    if (len == 0 || len >= sizeof(buffer)) {
+        return "";
+    }
+    return std::string(buffer, len);
+}
+
+bool file_exists_a(const std::string& path) {
+    DWORD attrs = GetFileAttributesA(path.c_str());
+    return attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY);
+}
+
+std::string dirname_of(const std::string& path) {
+    size_t pos = path.find_last_of("\\/");
+    if (pos == std::string::npos) {
+        return ".";
+    }
+    return path.substr(0, pos);
+}
+
+std::string resolve_decompiler_exe_path() {
+    const char* env_names[] = {"DEX_DECOMPILER_PATH", "POTASSIUM_DECOMPILER_PATH", nullptr};
+    for (int i = 0; env_names[i]; ++i) {
+        std::string configured = env_value(env_names[i]);
+        if (!configured.empty() && file_exists_a(configured)) {
+            return configured;
+        }
+    }
+
+    const char* candidates[] = {
+        "Decompiler.exe",
+        "Potassium\\bin\\Decompiler.exe",
+        "D:\\Exploiter\\Potassium\\bin\\Decompiler.exe",
+        nullptr,
+    };
+    for (int i = 0; candidates[i]; ++i) {
+        if (file_exists_a(candidates[i])) {
+            return candidates[i];
+        }
+    }
+    return "";
+}
+
+} // namespace
+
 // Check and auto-launch Potassium Decompiler if not running
 void ensure_decompiler_running() {
     struct addrinfo* result = NULL;
@@ -35,18 +84,24 @@ void ensure_decompiler_running() {
     si.cb = sizeof(si);
     ZeroMemory(&pi, sizeof(pi));
 
-    const char* path = "D:\\Exploiter\\Potassium\\bin\\Decompiler.exe";
-    const char* dir = "D:\\Exploiter\\Potassium\\bin";
+    std::string path = resolve_decompiler_exe_path();
+    if (path.empty()) {
+        std::cerr << "[Decompiler] Decompiler.exe was not found. Set DEX_DECOMPILER_PATH to the executable path." << std::endl;
+        return;
+    }
+    std::string dir = dirname_of(path);
+    std::vector<char> command_line(path.begin(), path.end());
+    command_line.push_back('\0');
 
     BOOL success = CreateProcessA(
-        path,
-        NULL,
+        path.c_str(),
+        command_line.data(),
         NULL,
         NULL,
         FALSE,
         CREATE_NO_WINDOW,
         NULL,
-        dir,
+        dir.c_str(),
         &si,
         &pi
     );
@@ -127,6 +182,9 @@ std::string decompile_bytecode(const std::string& bytecode) {
     if (ConnectSocket == INVALID_SOCKET) {
         return "-- Error: Could not connect to Potassium Decompiler server (port 56535).";
     }
+    DWORD socket_timeout_ms = 15000;
+    setsockopt(ConnectSocket, SOL_SOCKET, SO_SNDTIMEO, reinterpret_cast<const char*>(&socket_timeout_ms), sizeof(socket_timeout_ms));
+    setsockopt(ConnectSocket, SOL_SOCKET, SO_RCVTIMEO, reinterpret_cast<const char*>(&socket_timeout_ms), sizeof(socket_timeout_ms));
 
     // Send the request
     size_t total_sent = 0;
@@ -152,6 +210,10 @@ std::string decompile_bytecode(const std::string& bytecode) {
         bytes_received = recv(ConnectSocket, recvbuf, BUFFER_SIZE, 0);
         if (bytes_received > 0) {
             response.append(recvbuf, bytes_received);
+            if (response.size() > 10 * 1024 * 1024) {
+                closesocket(ConnectSocket);
+                return "-- Decompile failed: response from Potassium Decompiler is too large.";
+            }
         }
     } while (bytes_received > 0);
 

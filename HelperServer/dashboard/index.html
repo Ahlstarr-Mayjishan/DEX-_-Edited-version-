@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>DEX++ Helper</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.9/dist/chart.umd.min.js" integrity="sha384-b0GXujLkk9eYYSmcSfoyZbfyElGAQnDyY0skCHSG6w3JgTMFnz11ggrTAr7seu9f" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
 <style>
 :root{color-scheme:dark;--bg:#0b0f14;--sidebar:#10151b;--panel:#151b22;--panel2:#1a222b;--panel3:#202a34;--line:#2a3743;--line-soft:#202a34;--text:#f2f5f7;--muted:#8fa0b1;--accent:#52b69a;--accent2:#68c7a9;--warn:#d7ad56;--bad:#e66a73}
 *{box-sizing:border-box;scrollbar-width:thin;scrollbar-color:#53606c transparent}*::-webkit-scrollbar{width:8px;height:8px}*::-webkit-scrollbar-track{background:transparent}*::-webkit-scrollbar-thumb{background:#4a5662;border:2px solid transparent;background-clip:padding-box;border-radius:8px}*::-webkit-scrollbar-thumb:hover{background:#65727e;border:2px solid transparent;background-clip:padding-box}*::-webkit-scrollbar-button{display:none;width:0;height:0}
@@ -450,10 +450,12 @@ To analyze Roblox scripts and sync with the Roblox Studio workspace.</textarea>
 </section>
 </main>
 <script>
+window.DEX_SESSION_TOKEN="__DEX_SESSION_TOKEN__";
 const $=id=>document.getElementById(id);
 const fmt=n=>Number(n||0).toLocaleString();
 function setStatus(text, cls){const p=$('statusPill');p.textContent=text;p.className='pill '+(cls||'')}
-async function textFetch(path, opts={}){const r=await fetch(path,opts);const t=await r.text();if(!r.ok)throw new Error(t||r.statusText);return t}
+function withDexSession(opts={}){const next={...opts};const headers=new Headers(next.headers||{});headers.set('X-DEX-Session',window.DEX_SESSION_TOKEN||'');next.headers=headers;return next}
+async function textFetch(path, opts={}){const r=await fetch(path,withDexSession(opts));const t=await r.text();if(!r.ok)throw new Error(t||r.statusText);return t}
 async function refreshStatus(){try{await textFetch('/status');setStatus('active','ok');const raw=await textFetch('/index-status');const j=JSON.parse(raw);$('scripts').textContent=fmt(j.scripts);$('bytes').textContent=fmt(j.bytes)}catch(e){setStatus('offline','bad')}}
 async function refreshScriptStatus(){try{const raw=await textFetch('/script-status');const j=JSON.parse(raw);const ok=!!j.ok;$('scriptDot').className='dot '+(ok?'ok':'bad');$('scriptPill').textContent=ok?'script ready':'script missing';$('scriptPill').className='pill '+(ok?'ok':'bad');$('scriptStatus').textContent=ok?`/script is ready (${fmt(j.bytes)} bytes from ${j.file}).`:'DEX++_compiled.luau was not found. Run python .\\build.py first.'}catch(e){$('scriptDot').className='dot bad';$('scriptPill').textContent='script error';$('scriptPill').className='pill bad';$('scriptStatus').textContent=e.message}}
 async function refreshWorkers(){try{const raw=await textFetch('/worker-status');const j=JSON.parse(raw);const roles=j.roles||[];$('workerRoles').innerHTML=roles.map(r=>`<div class="stateRow"><b>${esc(r.language)} <span class="${r.ready?'ok':'warn'}" style="display:inline">${r.ready?'ready':'source only'}</span></b><span>${esc(r.role||'')}</span></div>`).join('')||'<div class="stateRow"><b>No workers reported</b><span>Helper did not return role data.</span></div>'}catch(e){$('workerRoles').innerHTML='<div class="stateRow"><b class="bad">Worker status failed</b><span>'+esc(e.message)+'</span></div>'}}
@@ -2210,7 +2212,7 @@ $('connectGithub').onclick = async () => {
 };
 
 $('connectGithubOAuth').onclick = () => {
-  window.open('/api/auth/github/login', 'DEX_OAuth', 'width=600,height=700');
+  window.open('/api/auth/github/login?session=' + encodeURIComponent(window.DEX_SESSION_TOKEN||''), 'DEX_OAuth', 'width=600,height=700');
 };
 
 $('disconnectGithub').onclick = async () => {
@@ -2258,7 +2260,7 @@ $('connectGoogle').onclick = async () => {
 };
 
 $('connectGoogleOAuth').onclick = () => {
-  window.open('/api/auth/google/login', 'DEX_OAuth', 'width=600,height=700');
+  window.open('/api/auth/google/login?session=' + encodeURIComponent(window.DEX_SESSION_TOKEN||''), 'DEX_OAuth', 'width=600,height=700');
 };
 
 $('disconnectGoogle').onclick = async () => {
@@ -2352,7 +2354,7 @@ let selectedNodeElement = null;
 
 function connectDashboardWs() {
   const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-  const url = `${protocol}//${window.location.host}/dashboard-ws`;
+  const url = `${protocol}//${window.location.host}/dashboard-ws?session=${encodeURIComponent(window.DEX_SESSION_TOKEN||'')}`;
   dashWs = new WebSocket(url);
   
   dashWs.onopen = () => {

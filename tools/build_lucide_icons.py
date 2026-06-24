@@ -4,6 +4,7 @@ No native C library required.
 """
 
 import base64
+import hashlib
 import io
 import json
 import os
@@ -178,7 +179,9 @@ def make_placeholder(size: int, label: str) -> "Image.Image":
 
 def build_spritesheet(chrome_exe: str) -> "Image.Image":
     n = len(DOCK_ICONS)
-    sheet = Image.new("RGBA", (ICON_SIZE * n, ICON_SIZE), (0, 0, 0, 0))
+    columns = 8
+    rows = (n + columns - 1) // columns
+    sheet = Image.new("RGBA", (ICON_SIZE * columns, ICON_SIZE * rows), (0, 0, 0, 0))
 
     for i, (name, slug, _) in enumerate(DOCK_ICONS):
         print(f"[{i+1}/{n}] {name} ({slug})")
@@ -202,7 +205,9 @@ def build_spritesheet(chrome_exe: str) -> "Image.Image":
                 icon_img = make_placeholder(ICON_SIZE, name)
                 icon_img.save(cache_png)
 
-        sheet.paste(icon_img, (i * ICON_SIZE, 0), icon_img)
+        col = i % columns
+        row = i // columns
+        sheet.paste(icon_img, (col * ICON_SIZE, row * ICON_SIZE), icon_img)
 
     return sheet
 
@@ -256,7 +261,8 @@ local function initAfterMain() end
 local function main()
     local ICON_SIZE    = {size}
     local CACHE_FOLDER = "{asset_folder}"
-    local CACHE_FILE   = CACHE_FOLDER .. "/lucide_dock.png"
+    local CACHE_VERSION = "{asset_hash}"
+    local CACHE_FILE   = CACHE_FOLDER .. "/lucide_dock_" .. CACHE_VERSION .. ".png"
 
     -- base64-encoded PNG spritesheet ({w}x{h})
     local B64 = {b64_long}
@@ -295,20 +301,21 @@ local function main()
 
     local function tryGetUri(): string?
         local e         = rawget(_G, "env") or {{}}
-        local writefile = e.writefile    or rawget(_G, "writefile")
-        local isfile    = e.isfile       or rawget(_G, "isfile")
-        local isfolder  = e.isfolder     or rawget(_G, "isfolder")
-        local mkfolder  = e.makefolder   or rawget(_G, "makefolder")
-        local getca     = e.getcustomasset or rawget(_G, "getcustomasset")
+        local _env      = (getfenv and getfenv()) or {{}}
+        local writefile = e.writefile    or _env.writefile or (getgenv and getgenv().writefile) or rawget(_G, "writefile")
+        local isfile    = e.isfile       or _env.isfile or (getgenv and getgenv().isfile) or rawget(_G, "isfile")
+        local isfolder  = e.isfolder     or _env.isfolder or (getgenv and getgenv().isfolder) or rawget(_G, "isfolder")
+        local mkfolder  = e.makefolder   or _env.makefolder or (getgenv and getgenv().makefolder) or rawget(_G, "makefolder")
+        local getca     = e.getcustomasset or _env.getcustomasset or (getgenv and getgenv().getcustomasset) or rawget(_G, "getcustomasset")
         if not (writefile and isfile and isfolder and mkfolder and getca) then return nil end
 
         if not isfolder(CACHE_FOLDER) then
             if not pcall(mkfolder, CACHE_FOLDER) then return nil end
         end
-        if not isfile(CACHE_FILE) then
-            local ok, data = pcall(b64decode, B64)
-            if not ok then return nil end
-            if not pcall(writefile, CACHE_FILE, data) then return nil end
+        local ok, data = pcall(b64decode, B64)
+        if not ok then return nil end
+        if not pcall(writefile, CACHE_FILE, data) and not isfile(CACHE_FILE) then
+            return nil
         end
         local ok, uri = pcall(getca, CACHE_FILE)
         return (ok and uri) or nil
@@ -335,14 +342,24 @@ local function main()
     -- -----------------------------------------------------------------------
     local function Apply(label: ImageLabel, index: number, fallbackIdx: number?)
         ensureLoaded(function(uri: string?)
+            label.BackgroundTransparency = 1
             if uri then
+                local cols = 8
+                local col = index % cols
+                local row = math.floor(index / cols)
                 label.Image           = uri
-                label.ImageRectOffset = Vector2.new(index * ICON_SIZE, 0)
+                label.ImageRectOffset = Vector2.new(col * ICON_SIZE, row * ICON_SIZE)
                 label.ImageRectSize   = Vector2.new(ICON_SIZE, ICON_SIZE)
-                label.ScaleType       = Enum.ScaleType.Crop
-                label.Size            = UDim2.new(0, ICON_SIZE, 0, ICON_SIZE)
+                label.ScaleType       = Enum.ScaleType.Fit
             elseif Main.LargeIcons and fallbackIdx ~= nil then
+                label.ImageRectOffset = Vector2.new(0, 0)
+                label.ImageRectSize   = Vector2.new(0, 0)
+                label.ScaleType       = Enum.ScaleType.Fit
                 Main.LargeIcons:Display(label, fallbackIdx)
+            else
+                label.Image = ""
+                label.ImageRectOffset = Vector2.new(0, 0)
+                label.ImageRectSize   = Vector2.new(0, 0)
             end
         end)
     end
@@ -373,9 +390,11 @@ def generate_luau(sheet: "Image.Image") -> str:
     png_bytes = buf.getvalue()
     w, h = sheet.size
     b64_long = luau_long_string(chunk_b64(png_bytes))
+    asset_hash = hashlib.sha256(png_bytes).hexdigest()[:12]
     return LUAU_TEMPLATE.format(
         n=len(DOCK_ICONS), w=w, h=h, size=ICON_SIZE,
         asset_folder=ASSET_FOLDER,
+        asset_hash=asset_hash,
         b64_long=b64_long,
         name_table=build_name_table(),
     )

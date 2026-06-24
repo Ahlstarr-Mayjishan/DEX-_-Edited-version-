@@ -503,6 +503,10 @@ local function main()
 		lowImpactIndex.OnInput:Connect(function()
 			Settings.Decompiler.CodeSearchLowImpact = lowImpactIndex.Toggled == true
 		end)
+		local helperDangerousWs = AddCheckbox("Allow Helper Write/Run Actions", Settings.Decompiler.HelperAllowDangerousWsActions == true)
+		helperDangerousWs.OnInput:Connect(function()
+			Settings.Decompiler.HelperAllowDangerousWsActions = helperDangerousWs.Toggled == true
+		end)
 		local decompilerOption = {"Executor (Native)", "Konstant", "AdvancedDecompiler", "Shiny"}
 		local initialSelected = "Executor (Native)"
 		if Settings.Decompiler.PreferDecompilerFallback then

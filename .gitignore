@@ -24,6 +24,7 @@ HelperServer/*.o
 HelperServer/DEX_Helper.exe
 HelperServer/DEX_Language_Manager.exe
 HelperServer/*.db
+HelperServer/build/
 
 # Index files
 index_data/

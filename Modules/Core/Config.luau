@@ -118,6 +118,7 @@ local function main()
 			HelperRequestTimeout = 2,
 			HelperDecompileTimeout = 15,
 			CodeSearchLowImpact = true,
+			HelperAllowDangerousWsActions = false,
 		},
 		AutoCheckUpdate = true,
 		AutoUpdateRef = "v3.1",

@@ -505,6 +505,7 @@ local function main()
 	local function createDecompileQueue()
 		local queue = {
 			Jobs = {} :: {any},
+			PendingByScript = {} :: {[any]: any},
 			Running = false,
 			Paused = false,
 			ActiveJob = nil :: any,
@@ -524,13 +525,15 @@ local function main()
 			end
 		end
 
-		local function sortJobs()
-			table.sort(queue.Jobs, function(a, b)
-				if a.Priority == b.Priority then
-					return a.CreatedAt < b.CreatedAt
+		local function insertJob(job)
+			local insertAt = #queue.Jobs + 1
+			for i, existing in ipairs(queue.Jobs) do
+				if job.Priority > existing.Priority or (job.Priority == existing.Priority and job.CreatedAt < existing.CreatedAt) then
+					insertAt = i
+					break
 				end
-				return a.Priority > b.Priority
-			end)
+			end
+			table.insert(queue.Jobs, insertAt, job)
 		end
 
 		local function startWorker()
@@ -543,7 +546,6 @@ local function main()
 						continue
 					end
 
-					sortJobs()
 					local job = table.remove(queue.Jobs, 1)
 					queue.ActiveJob = job
 
@@ -556,6 +558,9 @@ local function main()
 					job.Done = true
 					queue.LastRun = os.clock()
 					queue.ActiveJob = nil
+					if queue.PendingByScript[job.Script] == job then
+						queue.PendingByScript[job.Script] = nil
+					end
 
 					if success then
 						queue.Completed += 1
@@ -563,8 +568,8 @@ local function main()
 						queue.Failed += 1
 					end
 
-					if job.Callback then
-						pcall(job.Callback, success, result, job.Script)
+					for _, callback in ipairs(job.Callbacks) do
+						pcall(callback, success, result, job.Script)
 					end
 
 					task.wait()
@@ -575,18 +580,36 @@ local function main()
 
 		queue.Submit = function(script_instance, options, ...)
 			options = options or {}
+			local existing = queue.PendingByScript[script_instance]
+			if existing and not existing.Done then
+				if options.Callback then
+					table.insert(existing.Callbacks, options.Callback)
+				end
+				if options.Async then
+					return existing
+				end
+				while not existing.Done do
+					task.wait()
+				end
+				if not existing.Success then
+					error(existing.Result)
+				end
+				return existing.Result
+			end
+
 			local job = {
 				Script = script_instance,
 				Args = {...},
 				Priority = options.Priority or 50,
 				CreatedAt = os.clock(),
-				Callback = options.Callback,
+				Callbacks = options.Callback and {options.Callback} or {},
 				Done = false,
 				Success = false,
 				Result = nil :: any,
 			}
 
-			table.insert(queue.Jobs, job)
+			queue.PendingByScript[script_instance] = job
+			insertJob(job)
 			startWorker()
 
 			if options.Async then
@@ -624,6 +647,9 @@ local function main()
 				job.Done = true
 				job.Success = false
 				job.Result = "Cancelled"
+				if queue.PendingByScript[job.Script] == job then
+					queue.PendingByScript[job.Script] = nil
+				end
 			end
 			table.clear(queue.Jobs)
 		end

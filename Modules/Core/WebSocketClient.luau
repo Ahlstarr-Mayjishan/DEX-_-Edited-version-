@@ -152,6 +152,9 @@ local function main()
 	end
 
 	local function handleSetProperty(path, name, value, valueType)
+		if not Settings.Decompiler.HelperAllowDangerousWsActions then
+			return {ok = false, error = "Dangerous WebSocket actions are disabled in DEX settings."}
+		end
 		local inst = resolveInstance(path)
 		if not inst then return {ok = false, error = "Instance not found"} end
 		local parsedVal = parsePropertyValue(value, valueType)
@@ -168,6 +171,9 @@ local function main()
 	end
 
 	local function handleRunScript(source, path)
+		if not Settings.Decompiler.HelperAllowDangerousWsActions then
+			return {ok = false, error = "Dangerous WebSocket actions are disabled in DEX settings."}
+		end
 		local contextInst = path and resolveInstance(path) or nil
 		local fn, err = env.loadstring(source)
 		if not fn then
@@ -195,75 +201,77 @@ local function main()
 			local url = "ws://localhost:" .. tostring(port) .. "/client-ws?placeId=" .. tostring(game.PlaceId)
 
 			local socket = nil
-			local function connect()
-				local ok, res = pcall(ws_connect, url)
-				if ok and res then
-					socket = res
-					print("DEX++ WS Client: Connected to Helper Server.")
+			local running = true
 
-					if env.HelperServer then
-						env.HelperServer.SendWSMessage = function(msgTable)
-							if socket then
-								local okEnc, enc = pcall(serviceInst.JSONEncode, serviceInst, msgTable)
-								if okEnc then
-									local sent = pcall(function() socket:Send(enc) end)
-									if not sent then
-										pcall(function() socket.Send(socket, enc) end)
+			while running do
+				if not socket then
+					local ok, res = pcall(ws_connect, url)
+					if ok and res then
+						socket = res
+						print("DEX++ WS Client: Connected to Helper Server.")
+
+						if env.HelperServer then
+							env.HelperServer.SendWSMessage = function(msgTable)
+								if socket then
+									local okEnc, enc = pcall(serviceInst.JSONEncode, serviceInst, msgTable)
+									if okEnc then
+										local sent = pcall(function() socket:Send(enc) end)
+										if not sent then
+											pcall(function() socket.Send(socket, enc) end)
+										end
+										return true
 									end
-									return true
+								end
+								return false
+							end
+						end
+
+						local conn1, conn2, conn3
+						local function disconnect()
+							if conn1 then pcall(function() conn1:Disconnect() end) pcall(function() conn1:disconnect() end) end
+							if conn2 then pcall(function() conn2:Disconnect() end) pcall(function() conn2:disconnect() end) end
+							if conn3 then pcall(function() conn3:Disconnect() end) pcall(function() conn3:disconnect() end) end
+							socket = nil
+							if env.HelperServer then
+								env.HelperServer.SendWSMessage = nil
+							end
+							print("DEX++ WS Client: Connection lost. Will try reconnecting in 5 seconds.")
+						end
+
+						conn1 = connectSignal(socket.OnClose, disconnect)
+						conn2 = connectSignal(socket.OnError, disconnect)
+						conn3 = connectSignal(socket.OnMessage, function(msg)
+							local okMsg, data = pcall(serviceInst.JSONDecode, serviceInst, msg)
+							if okMsg and data and data.action then
+								local response = { id = data.id }
+								if data.action == "get_children" then
+									local res = handleGetChildren(data.path)
+									for k, v in pairs(res) do response[k] = v end
+								elseif data.action == "get_properties" then
+									local res = handleGetProperties(data.path)
+									for k, v in pairs(res) do response[k] = v end
+								elseif data.action == "set_property" then
+									local res = handleSetProperty(data.path, data.name, data.value, data.valueType)
+									for k, v in pairs(res) do response[k] = v end
+								elseif data.action == "run_script" then
+									local res = handleRunScript(data.source, data.path)
+									for k, v in pairs(res) do response[k] = v end
+								end
+
+								local okEnc, enc = pcall(serviceInst.JSONEncode, serviceInst, response)
+								if okEnc then
+									pcall(function() socket:Send(enc) end)
+									pcall(function() socket.Send(socket, enc) end)
 								end
 							end
-							return false
-						end
-					end
-
-					local conn1, conn2, conn3
-					local function disconnect()
-						if conn1 then pcall(function() conn1:Disconnect() end) pcall(function() conn1:disconnect() end) end
-						if conn2 then pcall(function() conn2:Disconnect() end) pcall(function() conn2:disconnect() end) end
-						if conn3 then pcall(function() conn3:Disconnect() end) pcall(function() conn3:disconnect() end) end
-						socket = nil
-						if env.HelperServer then
-							env.HelperServer.SendWSMessage = nil
-						end
+						end)
+					else
 						task.wait(5)
-						connect()
 					end
-
-					conn1 = connectSignal(socket.OnClose, disconnect)
-					conn2 = connectSignal(socket.OnError, disconnect)
-					conn3 = connectSignal(socket.OnMessage, function(msg)
-						local okMsg, data = pcall(serviceInst.JSONDecode, serviceInst, msg)
-						if okMsg and data and data.action then
-							local response = { id = data.id }
-							if data.action == "get_children" then
-								local res = handleGetChildren(data.path)
-								for k, v in pairs(res) do response[k] = v end
-							elseif data.action == "get_properties" then
-								local res = handleGetProperties(data.path)
-								for k, v in pairs(res) do response[k] = v end
-							elseif data.action == "set_property" then
-								local res = handleSetProperty(data.path, data.name, data.value, data.valueType)
-								for k, v in pairs(res) do response[k] = v end
-							elseif data.action == "run_script" then
-								local res = handleRunScript(data.source, data.path)
-								for k, v in pairs(res) do response[k] = v end
-							end
-
-							local okEnc, enc = pcall(serviceInst.JSONEncode, serviceInst, response)
-							if okEnc then
-								pcall(function() socket:Send(enc) end)
-								pcall(function() socket.Send(socket, enc) end)
-							end
-						end
-					end)
 				else
-					task.wait(5)
-					connect()
+					task.wait(1)
 				end
 			end
-
-			connect()
 		end)
 	end
 

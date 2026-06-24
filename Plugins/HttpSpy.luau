@@ -47,6 +47,24 @@ local function format_body(body)
 	return body
 end
 
+local MAX_CAPTURE_BODY_BYTES = 32768
+
+local function cap_body(body)
+	if not body or body == "" then
+		return body
+	end
+	if typeof(body) ~= "string" then
+		body = tostring(body)
+	end
+	if is_binary(body) then
+		return "[Binary Data: " .. #body .. " bytes]"
+	end
+	if #body > MAX_CAPTURE_BODY_BYTES then
+		return string.sub(body, 1, MAX_CAPTURE_BODY_BYTES) .. "\n\n[Truncated: " .. tostring(#body - MAX_CAPTURE_BODY_BYTES) .. " bytes omitted]"
+	end
+	return body
+end
+
 local function format_headers(headers)
 	if not headers or typeof(headers) ~= "table" then return "None" end
 	local lines = {}
@@ -407,6 +425,7 @@ local function main()
 	end
 
 	local function log_request(source, method, url, headers, body)
+		body = cap_body(body)
 		local entry = {
 			time = os.date("%H:%M:%S"),
 			source = source,
@@ -444,7 +463,7 @@ local function main()
 		entry.completed = true
 		entry.response_status = status or 200
 		entry.response_headers = headers
-		entry.response_body = body
+		entry.response_body = cap_body(body)
 
 		if selected_entry == entry then
 			task.spawn(show_details, entry)

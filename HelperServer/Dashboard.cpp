@@ -1,4 +1,5 @@
 #include "Dashboard.h"
+#include "HttpUtil.h"
 
 #include <fstream>
 #include <sstream>
@@ -29,7 +30,14 @@ std::string read_dashboard_file() {
 std::string helper_dashboard_html() {
     static std::string cached = read_dashboard_file();
     if (!cached.empty()) {
-        return cached;
+        std::string html = cached;
+        const std::string marker = "__DEX_SESSION_TOKEN__";
+        size_t pos = 0;
+        while ((pos = html.find(marker, pos)) != std::string::npos) {
+            html.replace(pos, marker.size(), get_session_token());
+            pos += get_session_token().size();
+        }
+        return html;
     }
     return "<!doctype html><html><body style=\"background:#0b0f14;color:#f2f5f7;font-family:Segoe UI,sans-serif;padding:24px\">"
            "<h1>Dashboard missing</h1>"

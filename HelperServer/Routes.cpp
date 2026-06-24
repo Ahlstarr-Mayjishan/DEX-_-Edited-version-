@@ -11,6 +11,11 @@
 extern ULONGLONG g_last_mcp_time;
 extern std::mutex g_log_mutex;
 
+static std::string g_google_oauth_state;
+static std::string g_github_oauth_state;
+static constexpr size_t MAX_ANALYZE_SOURCE_BYTES = 1024 * 1024;
+static constexpr size_t MAX_DECOMPILE_BYTECODE_BYTES = 8 * 1024 * 1024;
+
 static std::string get_sync_dir() {
     DWORD attrs = GetFileAttributesA("..\\DEX++.luau");
     if (attrs != INVALID_FILE_ATTRIBUTES && !(attrs & FILE_ATTRIBUTE_DIRECTORY)) {
@@ -34,6 +39,28 @@ static std::wstring get_sync_path_w(const std::wstring& relative_path) {
     }
     return L"workspace_sync\\" + relative_path;
 }
+static bool is_safe_sync_script_path(const std::string& script_path) {
+    if (script_path.size() < 4 || script_path.rfind("game", 0) != 0 || script_path.size() > 512) {
+        return false;
+    }
+    if (script_path.size() > 4 && script_path[4] != '.') {
+        return false;
+    }
+    std::string segment;
+    for (char c : script_path) {
+        unsigned char uc = static_cast<unsigned char>(c);
+        if (uc < 32 || c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' || c == '"' || c == '<' || c == '>' || c == '|') {
+            return false;
+        }
+        if (c == '.') {
+            if (segment.empty() || segment == "..") return false;
+            segment.clear();
+        } else {
+            segment.push_back(c);
+        }
+    }
+    return !segment.empty() && segment != "..";
+}
 
 static size_t find_header_case_insensitive(const std::string& request, const std::string& header_name) {
     std::string lower_request = lower_copy(request);
@@ -54,6 +81,41 @@ long long get_request_place_id(const std::string& request_headers) {
     }
 }
 
+static std::string get_query_param(const std::string& request_data, const std::string& name) {
+    size_t line_end = request_data.find("\r\n");
+    std::string request_line = request_data.substr(0, line_end == std::string::npos ? request_data.size() : line_end);
+    std::string needle = name + "=";
+    size_t pos = request_line.find(needle);
+    if (pos == std::string::npos) return "";
+    size_t start = pos + needle.size();
+    size_t end = request_line.find_first_of("& #\r\n", start);
+    return request_line.substr(start, end == std::string::npos ? std::string::npos : end - start);
+}
+
+static bool requires_session_token(const std::string& path, const std::string& method) {
+    if (method == "OPTIONS") return false;
+    if (path == "/api/auth/google/callback" || path == "/api/auth/github/callback") return false;
+    if (path == "/script" || path == "/script-status" || path == "/status") return false;
+    if (path.rfind("/api/", 0) == 0) return true;
+    return path == "/open-toolchain-setup"
+        || path == "/index-clear"
+        || path == "/index-save"
+        || path == "/index-load"
+        || path == "/stop-local-services"
+        || path == "/clean-local"
+        || path == "/sync-to-disk";
+}
+
+static bool reject_body_over(SOCKET client_socket, const std::string& body, size_t limit, const char* label) {
+    if (body.size() <= limit) {
+        return false;
+    }
+    std::stringstream json;
+    json << "{\"ok\":false,\"error\":\"" << label << " payload is too large\",\"limit\":" << limit << "}";
+    send_response(client_socket, 413, "Payload Too Large", json.str(), "application/json");
+    return true;
+}
+
 RouteDispatchResult dispatch_http_routes(
     SOCKET client_socket,
     const std::string& method,
@@ -61,6 +123,11 @@ RouteDispatchResult dispatch_http_routes(
     const std::string& body,
     const std::string& request_data
 ) {
+        if (requires_session_token(path, method) && !require_valid_session(client_socket, request_data)) {
+            close_client(client_socket);
+            return RouteDispatchResult::CloseConnection;
+        }
+
         if ((path == "/" || path == "/app") && method == "GET") {
             send_response(client_socket, 200, "OK", helper_dashboard_html(), "text/html; charset=utf-8");
             return RouteDispatchResult::Handled;
@@ -105,24 +172,29 @@ RouteDispatchResult dispatch_http_routes(
             create_directories_for_file(to_wstring(log_path));
             std::ofstream log_file(log_path.c_str(), std::ios::app);
             if (log_file.is_open()) {
-                log_file << body << std::endl;
+                log_file << redact_sensitive(body) << std::endl;
                 log_file.close();
             }
             send_response(client_socket, 200, "OK", "Logged");
             return RouteDispatchResult::Handled;
         } else if ((path == "/normalize-source" || path == "/deobfuscate") && method == "POST") {
+            if (reject_body_over(client_socket, body, MAX_ANALYZE_SOURCE_BYTES, "source")) return RouteDispatchResult::Handled;
             send_response(client_socket, 200, "OK", normalize_source(body));
             return RouteDispatchResult::Handled;
         } else if (path == "/analyze-source" && method == "POST") {
+            if (reject_body_over(client_socket, body, MAX_ANALYZE_SOURCE_BYTES, "source")) return RouteDispatchResult::Handled;
             send_response(client_socket, 200, "OK", analyze_source(body), "application/json");
             return RouteDispatchResult::Handled;
         } else if (path == "/analyze-source-fast" && method == "POST") {
+            if (reject_body_over(client_socket, body, MAX_ANALYZE_SOURCE_BYTES, "source")) return RouteDispatchResult::Handled;
             send_response(client_socket, 200, "OK", analyze_source_fast(body), "application/json");
             return RouteDispatchResult::Handled;
         } else if (path == "/analyze-source-deep" && method == "POST") {
+            if (reject_body_over(client_socket, body, MAX_ANALYZE_SOURCE_BYTES, "source")) return RouteDispatchResult::Handled;
             send_response(client_socket, 200, "OK", analyze_source_deep(body), "application/json");
             return RouteDispatchResult::Handled;
         } else if (path == "/analyze-source-auto" && method == "POST") {
+            if (reject_body_over(client_socket, body, MAX_ANALYZE_SOURCE_BYTES, "source")) return RouteDispatchResult::Handled;
             send_response(client_socket, 200, "OK", analyze_source_auto(body), "application/json");
             return RouteDispatchResult::Handled;
         } else if (path == "/analyze-remotes" && method == "POST") {
@@ -159,6 +231,10 @@ RouteDispatchResult dispatch_http_routes(
         } else if (path == "/index-clear" && method == "POST") {
             std::lock_guard<std::mutex> lock(g_script_index_mutex);
             long long place_id = get_request_place_id(request_data);
+            extern long long g_selected_place_id;
+            if (place_id == 0) {
+                place_id = g_selected_place_id;
+            }
             clear_db_for_place(place_id);
             for (auto it = g_script_index.begin(); it != g_script_index.end(); ) {
                 if (it->second.place_id == place_id) {
@@ -169,11 +245,11 @@ RouteDispatchResult dispatch_http_routes(
             }
             send_response(client_socket, 200, "OK", "{\"ok\":true,\"total\":0,\"persisted\":true}");
             return RouteDispatchResult::Handled;
-        } else if (path.rfind("/api/select-place", 0) == 0) {
-            size_t pos = path.find("placeId=");
-            if (pos != std::string::npos) {
+        } else if (path == "/api/select-place") {
+            std::string place_id_text = get_query_param(request_data, "placeId");
+            if (!place_id_text.empty()) {
                 try {
-                    long long pid = std::stoll(path.substr(pos + 8));
+                    long long pid = std::stoll(place_id_text);
                     {
                         std::lock_guard<std::mutex> lock(g_tool_state_mutex);
                         g_selected_place_id = pid;
@@ -347,6 +423,7 @@ RouteDispatchResult dispatch_http_routes(
                 send_response(client_socket, 400, "Bad Request", "{\"ok\":false,\"error\":\"Google OAuth is not configured in Developer settings.\"}");
                 return RouteDispatchResult::CloseConnection;
             }
+            g_google_oauth_state = make_random_token(24);
             std::stringstream redirect;
             redirect << "https://accounts.google.com/o/oauth2/v2/auth?"
                      << "client_id=" << g_google_client_id
@@ -354,13 +431,15 @@ RouteDispatchResult dispatch_http_routes(
                      << "&response_type=code"
                      << "&scope=https%3A%2F%2Fwww.googleapis.com%2Fauth%2Fgenerative-language%20email%20profile"
                      << "&access_type=offline"
-                     << "&prompt=consent";
+                     << "&prompt=consent"
+                     << "&state=" << g_google_oauth_state;
             
             std::stringstream response;
             response << "HTTP/1.1 302 Found\r\n"
                      << "Location: " << redirect.str() << "\r\n"
                      << "Content-Length: 0\r\n\r\n";
-            send(client_socket, response.str().data(), static_cast<int>(response.str().size()), 0);
+            std::string response_str = response.str();
+            send_all(client_socket, response_str.data(), response_str.size());
             return RouteDispatchResult::CloseConnection;
         } else if (path == "/api/auth/google/callback" && method == "GET") {
             size_t code_pos = request_data.find("code=");
@@ -368,6 +447,12 @@ RouteDispatchResult dispatch_http_routes(
                 send_response(client_socket, 400, "Bad Request", "Authentication failed: no code returned.");
                 return RouteDispatchResult::CloseConnection;
             }
+            std::string state = get_query_param(request_data, "state");
+            if (state.empty() || state != g_google_oauth_state) {
+                send_response(client_socket, 400, "Bad Request", "Authentication failed: invalid state.");
+                return RouteDispatchResult::CloseConnection;
+            }
+            g_google_oauth_state.clear();
             size_t amp_pos = request_data.find("&", code_pos);
             size_t space_pos = request_data.find(" ", code_pos);
             size_t end_pos = (amp_pos != std::string::npos && amp_pos < space_pos) ? amp_pos : space_pos;
@@ -401,17 +486,20 @@ RouteDispatchResult dispatch_http_routes(
                 send_response(client_socket, 400, "Bad Request", "{\"ok\":false,\"error\":\"GitHub OAuth is not configured.\"}");
                 return RouteDispatchResult::CloseConnection;
             }
+            g_github_oauth_state = make_random_token(24);
             std::stringstream redirect;
             redirect << "https://github.com/login/oauth/authorize?"
                      << "client_id=" << g_github_client_id
                      << "&redirect_uri=http%3A%2F%2Flocalhost%3A8080%2Fapi%2Fauth%2Fgithub%2Fcallback"
-                     << "&scope=repo";
+                     << "&scope=repo"
+                     << "&state=" << g_github_oauth_state;
             
             std::stringstream response;
             response << "HTTP/1.1 302 Found\r\n"
                      << "Location: " << redirect.str() << "\r\n"
                      << "Content-Length: 0\r\n\r\n";
-            send(client_socket, response.str().data(), static_cast<int>(response.str().size()), 0);
+            std::string response_str = response.str();
+            send_all(client_socket, response_str.data(), response_str.size());
             return RouteDispatchResult::CloseConnection;
         } else if (path == "/api/auth/github/callback" && method == "GET") {
             size_t code_pos = request_data.find("code=");
@@ -419,6 +507,12 @@ RouteDispatchResult dispatch_http_routes(
                 send_response(client_socket, 400, "Bad Request", "Authentication failed: no code returned.");
                 return RouteDispatchResult::CloseConnection;
             }
+            std::string state = get_query_param(request_data, "state");
+            if (state.empty() || state != g_github_oauth_state) {
+                send_response(client_socket, 400, "Bad Request", "Authentication failed: invalid state.");
+                return RouteDispatchResult::CloseConnection;
+            }
+            g_github_oauth_state.clear();
             size_t amp_pos = request_data.find("&", code_pos);
             size_t space_pos = request_data.find(" ", code_pos);
             size_t end_pos = (amp_pos != std::string::npos && amp_pos < space_pos) ? amp_pos : space_pos;
@@ -471,6 +565,7 @@ RouteDispatchResult dispatch_http_routes(
             send_response(client_socket, 200, "OK", assign_role(body));
             return RouteDispatchResult::Handled;
         } else if (path == "/decompile" && method == "POST") {
+            if (reject_body_over(client_socket, body, MAX_DECOMPILE_BYTECODE_BYTES, "bytecode")) return RouteDispatchResult::Handled;
             send_response(client_socket, 200, "OK", decompile_bytecode(body));
             return RouteDispatchResult::Handled;
         } else if (path == "/sync-to-disk" && method == "POST") {
@@ -483,6 +578,11 @@ RouteDispatchResult dispatch_http_routes(
             
             std::string script_path = parts[0];
             std::string source_code = parts[1];
+            if (!is_safe_sync_script_path(script_path)) {
+                send_response(client_socket, 400, "Bad Request", "{\"ok\":false,\"error\":\"unsafe script path\"}", "application/json");
+                close_client(client_socket);
+                return RouteDispatchResult::CloseConnection;
+            }
             
             std::string local_rel = get_sync_dir();
             for (char c : script_path) {
